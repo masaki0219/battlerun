@@ -24,7 +24,9 @@
         "NSHealthShareUsageDescription": "歩数データを読み取るためにHealthKitを使用します。",
         "NSHealthUpdateUsageDescription": "運動データを記録するためにHealthKitを使用します。",
         "ITSAppUsesNonExemptEncryption": false,
-        "UIBackgroundModes": ["location"]
+        "UIBackgroundModes": [
+          "location"
+        ]
       }
     },
     "android": {
@@ -50,7 +52,8 @@
           "locationAlwaysAndWhenInUsePermission": "バックグラウンドでもGPSを追跡するために位置情報を使用します。"
         }
       ],
-      "expo-task-manager"
+      "expo-task-manager",
+      "expo-font"
     ],
     "extra": {
       "router": {},

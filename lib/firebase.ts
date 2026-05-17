@@ -15,11 +15,11 @@ const firebaseConfig = {
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-// metro.config.js の react-native condition により、Metro は @firebase/auth の
-// RN ビルド（registerAuth + getReactNativePersistence を含む）を使用する。
-// TypeScript の型定義には getReactNativePersistence が含まれないため require で取得する。
+// getReactNativePersistence は firebase/auth の型定義に含まれないため require で取得する。
+// @firebase/auth（サブパッケージ）ではなく firebase/auth 経由で参照することで
+// EAS ビルドサーバー上でも Metro が正しく解決できる。
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { getReactNativePersistence } = require('@firebase/auth') as {
+const { getReactNativePersistence } = require('firebase/auth') as {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getReactNativePersistence: (storage: typeof AsyncStorage) => any;
 };
