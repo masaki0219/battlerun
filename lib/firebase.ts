@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { initializeAuth } from 'firebase/auth';
+import { initializeAuth, type Persistence } from '@firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -15,13 +15,12 @@ const firebaseConfig = {
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-// getReactNativePersistence は firebase/auth の型定義に含まれないため require で取得する。
-// @firebase/auth（サブパッケージ）ではなく firebase/auth 経由で参照することで
-// EAS ビルドサーバー上でも Metro が正しく解決できる。
+// getReactNativePersistence は @firebase/auth の web 型定義に含まれないが、
+// metro.config.js の react-native condition により RN ビルドを参照するため実行時には存在する。
+// @firebase/auth を直接 devDependency にしたことで EAS でも require が解決できる。
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { getReactNativePersistence } = require('firebase/auth') as {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  getReactNativePersistence: (storage: typeof AsyncStorage) => any;
+const { getReactNativePersistence } = require('@firebase/auth') as {
+  getReactNativePersistence: (storage: typeof AsyncStorage) => Persistence;
 };
 
 export const auth = initializeAuth(app, {

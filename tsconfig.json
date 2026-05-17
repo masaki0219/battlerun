@@ -6,7 +6,8 @@
     "paths": {
       "@/*": ["./*"]
     },
-    "moduleResolution": "bundler"
+    "moduleResolution": "bundler",
+    "customConditions": ["react-native"]
   },
   "exclude": ["node_modules", "scripts"]
 }
