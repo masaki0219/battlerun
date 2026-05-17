@@ -1,30 +1,62 @@
 {
   "expo": {
-    "name": "battlerun",
+    "name": "BattleRun",
     "slug": "battlerun",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "scheme": "battlerun",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#F8FAFB"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.battlerun.app",
+      "entitlements": {
+        "com.apple.developer.healthkit": true
+      },
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "ランニングのルートを記録するために位置情報を使用します。",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "バックグラウンドでもGPSを追跡するために位置情報を使用します。",
+        "NSHealthShareUsageDescription": "歩数データを読み取るためにHealthKitを使用します。",
+        "NSHealthUpdateUsageDescription": "運動データを記録するためにHealthKitを使用します。",
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIBackgroundModes": ["location"]
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#F8FAFB"
       },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ],
+      "package": "com.battlerun.app"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "バックグラウンドでもGPSを追跡するために位置情報を使用します。"
+        }
+      ],
+      "expo-task-manager"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "4c64c367-df9b-463c-819d-35b0ab39c5cd"
+      }
     }
   }
 }
