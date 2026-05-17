@@ -36,7 +36,7 @@ export default function LoginScreen() {
     }
     try {
       await signIn(email, password);
-      router.replace('/(tabs)');
+      // 画面遷移は onAuthStateChanged → user セット → TabLayout に任せる
     } catch (e: any) {
       Alert.alert('ログイン失敗', e.message ?? '認証に失敗しました');
     }

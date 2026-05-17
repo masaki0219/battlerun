@@ -9,13 +9,16 @@ import { useStepCounter } from '../../hooks/useStepCounter';
 import { Colors, TabBar } from '../../design_tokens';
 
 export default function TabLayout() {
-  const { user } = useAuthStore();
+  const { user, isLoading } = useAuthStore();
   const isRecording = useRecordStore((s) => s.isRecording);
   const measurementType = useRecordStore((s) => s.measurementType);
 
   // タブ全体の親で呼ぶ → どのタブに居ても計測が止まらない
   useLocation({ enabled: isRecording });
   useStepCounter({ enabled: isRecording && measurementType === 'steps' });
+
+  // 認証状態が確定するまで待つ（確定前にリダイレクトするとログインループが発生する）
+  if (isLoading) return null;
 
   if (!user) {
     return <Redirect href="/auth/login" />;

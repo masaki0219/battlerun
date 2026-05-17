@@ -17,9 +17,10 @@ export const useAuthStore = create<AuthStore>((set) => ({
     set({ isLoading: true });
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      // ユーザー情報は onAuthStateChanged リスナーが自動的に set する
-    } finally {
+      // isLoading は onAuthStateChanged が user をセットしたタイミングで false になる
+    } catch (error) {
       set({ isLoading: false });
+      throw error;
     }
   },
 
@@ -33,9 +34,10 @@ export const useAuthStore = create<AuthStore>((set) => ({
         plan: 'free',
         createdAt: new Date(),
       });
-      // onAuthStateChanged がユーザー情報を set する
-    } finally {
+      // isLoading は onAuthStateChanged が user をセットしたタイミングで false になる
+    } catch (error) {
       set({ isLoading: false });
+      throw error;
     }
   },
 
@@ -59,14 +61,6 @@ export function initAuthListener(): () => void {
             avatarUrl: data['avatarUrl'] as string | undefined,
             plan: data['plan'] as 'free' | 'pro',
             createdAt: (data['createdAt'] as any)?.toDate?.()?.toISOString() ?? '',
-            titles: ((data['titles'] as any[]) ?? []).map((t: any) => ({
-              seasonId: (t.seasonId as string) ?? '',
-              battleId: (t.battleId as string) ?? '',
-              battleTitle: (t.battleTitle as string) ?? '',
-              teamName: (t.teamName as string) ?? '',
-              rank: (t.rank as number) ?? 0,
-              awardedAt: t.awardedAt?.toDate?.()?.toISOString() ?? new Date().toISOString(),
-            })),
           }
         : null;
       useAuthStore.setState({ user, isLoading: false });

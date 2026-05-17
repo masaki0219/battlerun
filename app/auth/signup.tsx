@@ -26,7 +26,7 @@ export default function SignupScreen() {
     }
     try {
       await signUp(email, password, name);
-      router.replace('/(tabs)');
+      // 画面遷移は onAuthStateChanged → user セット → TabLayout に任せる
     } catch (e: any) {
       Alert.alert('登録失敗', e.message ?? '登録に失敗しました');
     }
