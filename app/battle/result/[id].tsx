@@ -160,6 +160,7 @@ export default function BattleResultScreen() {
   }, [id, localBattle, user]);
 
   // 称号をFirestoreに自動書き込み（バトル終了済み＆MVP/準MVP）
+  // TODO: 称号付与のサーバー移管（次スプリント）。現状はクライアントの結果画面初回表示時に書き込んでいる。
   useEffect(() => {
     if (loading || titleAwardedRef.current) return;
     if (!user || !localBattle) return;
