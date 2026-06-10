@@ -42,3 +42,15 @@ yarn-error.*
 /android
 
 service-account.json
+
+# Cloud Functions
+functions/lib/
+functions/.secret.local
+
+# Firebase emulator data/logs
+firebase-debug.log
+firebase-debug.*.log
+firestore-debug.log
+ui-debug.log
+.firebase/
+emulator-data/
