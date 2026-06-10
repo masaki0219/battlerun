@@ -16,6 +16,7 @@ import {
 import { auth, db, storage } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import { purchasePro, restorePurchases } from '../../lib/revenuecat';
+import { isPro } from '../../lib/pro';
 import { Avatar } from '../../components/ui/Avatar';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -49,7 +50,7 @@ const ANIMAL_EMOJIS = [
 ];
 
 export default function ProfileScreen() {
-  const { user, signOut } = useAuthStore();
+  const { user, proEntitlement, signOut } = useAuthStore();
   const [uploading, setUploading] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -80,11 +81,8 @@ export default function ProfileScreen() {
     if (!user) return;
     setPurchasing(true);
     try {
-      const ok = await purchasePro(user.id);
+      const ok = await purchasePro();
       if (ok) {
-        useAuthStore.setState((s) => ({
-          user: s.user ? { ...s.user, plan: 'pro' } : null,
-        }));
         Alert.alert('🎉 ありがとうございます！', 'Proプランが有効になりました。');
       }
     } catch {
@@ -98,9 +96,8 @@ export default function ProfileScreen() {
     if (!user) return;
     setPurchasing(true);
     try {
-      const ok = await restorePurchases(user.id);
+      const ok = await restorePurchases();
       Alert.alert(ok ? '復元しました' : '購入履歴が見つかりませんでした');
-      if (ok) useAuthStore.setState((s) => ({ user: s.user ? { ...s.user, plan: 'pro' } : null }));
     } catch {
       Alert.alert('エラー', '復元に失敗しました');
     } finally {
@@ -270,9 +267,9 @@ export default function ProfileScreen() {
             </TouchableOpacity>
             <View style={styles.userInfo}>
               <Text style={styles.userName}>{user.name}</Text>
-              <View style={[styles.planBadge, user.plan === 'pro' && styles.planBadgePro]}>
-                <Text style={[styles.planText, user.plan === 'pro' && styles.planTextPro]}>
-                  {user.plan === 'pro' ? '✨ Pro' : 'Free'}
+              <View style={[styles.planBadge, isPro(user.plan, proEntitlement) && styles.planBadgePro]}>
+                <Text style={[styles.planText, isPro(user.plan, proEntitlement) && styles.planTextPro]}>
+                  {isPro(user.plan, proEntitlement) ? '✨ Pro' : 'Free'}
                 </Text>
               </View>
             </View>
@@ -282,7 +279,7 @@ export default function ProfileScreen() {
         {/* サブスク管理 */}
         <Card style={styles.card}>
           <Text style={styles.sectionTitle}>サブスクリプション</Text>
-          {user.plan === 'pro' ? (
+          {isPro(user.plan, proEntitlement) ? (
             <View style={styles.proRow}>
               <Text style={styles.proLabel}>✨ Proプラン 有効中</Text>
               <TouchableOpacity

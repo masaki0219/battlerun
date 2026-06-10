@@ -190,7 +190,10 @@ export interface RecordStore {
 export interface AuthStore {
   user: User | null;
   isLoading: boolean;
+  // RevenueCatの`pro` entitlementがアクティブかどうか（Firestoreのplanとは別管理）
+  proEntitlement: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, name: string) => Promise<void>;
   signOut: () => Promise<void>;
+  setProEntitlement: (active: boolean) => void;
 }

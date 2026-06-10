@@ -9,6 +9,7 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
+import { isPro } from '../../lib/pro';
 import type { BattleTheme } from '../../types';
 
 const BR = {
@@ -107,15 +108,15 @@ const THEMES: ThemeDef[] = [
 
 export default function BattleThemeScreen() {
   const { id: battleId } = useLocalSearchParams<{ id?: string }>();
-  const { user } = useAuthStore();
+  const { user, proEntitlement } = useAuthStore();
   const [selected, setSelected] = useState<BattleTheme>('sports');
   const [saving, setSaving] = useState(false);
 
-  const isPro = user?.plan === 'pro';
+  const userIsPro = isPro(user?.plan, proEntitlement);
 
   async function handleSave() {
     if (!battleId) { router.back(); return; }
-    if (!isPro && THEMES.find((t) => t.id === selected)?.proOnly) {
+    if (!userIsPro && THEMES.find((t) => t.id === selected)?.proOnly) {
       Alert.alert('Proプランが必要です', 'このテーマはProプランで利用できます', [
         { text: 'キャンセル', style: 'cancel' },
         { text: 'Proを見る', onPress: () => router.push('/(tabs)/profile' as any) },
@@ -153,7 +154,7 @@ export default function BattleThemeScreen() {
         </TouchableOpacity>
       </View>
 
-      {!isPro && (
+      {!userIsPro && (
         <View style={s.proBanner}>
           <Ionicons name="sparkles" size={16} color={BR.pro} />
           <Text style={s.proBannerText}>Proプランで全テーマを選択できます</Text>
@@ -168,7 +169,7 @@ export default function BattleThemeScreen() {
 
         {THEMES.map((theme) => {
           const isSelected = selected === theme.id;
-          const locked = theme.proOnly && !isPro;
+          const locked = theme.proOnly && !userIsPro;
           return (
             <TouchableOpacity
               key={theme.id}

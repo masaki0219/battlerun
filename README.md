@@ -57,6 +57,42 @@ EASビルド後に動作確認してください。
 
 `.env` の `EXPO_PUBLIC_REVENUECAT_API_KEY` に iOS 用のキーを設定してください。
 
+`users/{uid}.plan` の更新は RevenueCat Webhook（`functions/src/revenuecatWebhook.ts`）が
+行います。クライアントは購入直後、RevenueCat の entitlement を `authStore.proEntitlement`
+に即時反映して Pro UI を表示します（`lib/pro.ts` の `isPro()` を参照）。
+Firestore の `plan` は Webhook 経由で数秒遅れて追従します。
+
+### RevenueCat Webhook の設定
+
+1. シークレットを設定する（本番）:
+   ```bash
+   firebase functions:secrets:set REVENUECAT_WEBHOOK_AUTH
+   ```
+   任意のランダムな文字列を設定してください（RevenueCat側のAuthorizationヘッダと一致させる）。
+
+2. RevenueCat ダッシュボード → Project settings → Integrations → Webhooks で:
+   - URL: デプロイ後に表示される `revenuecatWebhook` のURL
+     （例: `https://asia-northeast1-<project-id>.cloudfunctions.net/revenuecatWebhook`）
+   - Authorization header: 手順1で設定した値
+
+3. ローカルエミュレータでは `functions/.secret.local`（gitignore済み）の
+   `REVENUECAT_WEBHOOK_AUTH=dev-placeholder-token` が使われます。
+
+---
+
+## Cloud Functions / エミュレータ
+
+```bash
+cd functions && npm install && npm run build
+cd .. && firebase emulators:start --only functions,firestore,auth
+```
+
+Firestore ルールのテスト:
+
+```bash
+npm run test:rules
+```
+
 ---
 
 ## Google / Apple サインイン

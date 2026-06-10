@@ -11,8 +11,7 @@
 // トップレベルで import するとネイティブモジュール未登録時にクラッシュするため
 // require を使って各関数内で遅延ロードする。
 import Constants from 'expo-constants';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db } from './firebase';
+import { useAuthStore } from '../stores/authStore';
 
 const API_KEY = process.env['EXPO_PUBLIC_REVENUECAT_API_KEY'] ?? '';
 
@@ -44,6 +43,8 @@ export function initRevenueCat(userId: string): void {
     const { LOG_LEVEL } = require('react-native-purchases');
     Purchases.setLogLevel(LOG_LEVEL.WARN);
     Purchases.configure({ apiKey: API_KEY, appUserID: userId });
+    // app_user_id が Firebase の uid と一致していることを保証する
+    Purchases.logIn(userId);
   } catch (e) {
     console.warn('[RevenueCat] 初期化エラー:', e);
   }
@@ -61,7 +62,13 @@ export async function checkProEntitlement(): Promise<boolean> {
   }
 }
 
-export async function purchasePro(userId: string): Promise<boolean> {
+/**
+ * Proプランを購入する。
+ *
+ * Firestoreの`users/{uid}.plan`はRevenueCat Webhook経由で数秒遅れて反映されるため、
+ * ここではFirestoreを直接更新せず、RevenueCat entitlementをauthStoreへ即時反映する。
+ */
+export async function purchasePro(): Promise<boolean> {
   if (!API_KEY) return false;
   const Purchases = getPurchases();
   if (!Purchases) return false;
@@ -71,29 +78,25 @@ export async function purchasePro(userId: string): Promise<boolean> {
     if (!proPackage) throw new Error('プランが見つかりません');
 
     const { customerInfo } = await Purchases.purchasePackage(proPackage);
-    const isPro = customerInfo.entitlements.active['pro'] !== undefined;
-
-    if (isPro) {
-      await updateDoc(doc(db, 'users', userId), { plan: 'pro' });
-    }
-    return isPro;
+    const proEntitlement = customerInfo.entitlements.active['pro'] !== undefined;
+    useAuthStore.getState().setProEntitlement(proEntitlement);
+    return proEntitlement;
   } catch (e: any) {
     if (!e.userCancelled) throw e;
     return false;
   }
 }
 
-export async function restorePurchases(userId: string): Promise<boolean> {
+/** 購入履歴を復元する。Webhookによる`plan`反映までの間はentitlementで即時判定する */
+export async function restorePurchases(): Promise<boolean> {
   if (!API_KEY) return false;
   const Purchases = getPurchases();
   if (!Purchases) return false;
   try {
     const info = await Purchases.restorePurchases();
-    const isPro = info.entitlements.active['pro'] !== undefined;
-    if (isPro) {
-      await updateDoc(doc(db, 'users', userId), { plan: 'pro' });
-    }
-    return isPro;
+    const proEntitlement = info.entitlements.active['pro'] !== undefined;
+    useAuthStore.getState().setProEntitlement(proEntitlement);
+    return proEntitlement;
   } catch {
     return false;
   }

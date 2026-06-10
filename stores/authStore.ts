@@ -12,6 +12,7 @@ import type { AuthStore, User } from '../types';
 export const useAuthStore = create<AuthStore>((set) => ({
   user: null,
   isLoading: true,
+  proEntitlement: false,
 
   signIn: async (email, password) => {
     set({ isLoading: true });
@@ -45,6 +46,8 @@ export const useAuthStore = create<AuthStore>((set) => ({
     await firebaseSignOut(auth);
     set({ user: null });
   },
+
+  setProEntitlement: (active) => set({ proEntitlement: active }),
 }));
 
 // アプリ起動時に一度だけ呼ぶ。Firebase Auth のセッションを永続的に監視する。

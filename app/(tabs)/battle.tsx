@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import { useBattleStore } from '../../stores/battleStore';
+import { isPro } from '../../lib/pro';
 import { scheduleBattleEndNotification, scheduleBattleEnd1hNotification } from '../../lib/notifications';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -93,7 +94,8 @@ function CategorySelectModal({
 // メイン画面
 // ────────────────────────────────────────────────────────────────
 export default function BattleScreen() {
-  const { user } = useAuthStore();
+  const { user, proEntitlement } = useAuthStore();
+  const userIsPro = isPro(user?.plan, proEntitlement);
   const {
     publicBattles, privateBattles, myMemberships, seasons, isLoading,
     fetchPublicBattles, fetchMyMemberships, fetchMyPrivateBattles, fetchSeason,
@@ -901,9 +903,9 @@ export default function BattleScreen() {
                 )}
                 {privateBattles.map(renderPrivateBattleCard)}
                 <Button
-                  label={user?.plan === 'pro' ? '＋ 新しいチャレンジを作る' : '＋ 新しいチャレンジを作る（Pro）'}
+                  label={userIsPro ? '＋ 新しいチャレンジを作る' : '＋ 新しいチャレンジを作る（Pro）'}
                   onPress={() => {
-                    if (user?.plan !== 'pro') {
+                    if (!userIsPro) {
                       Alert.alert('Proプランが必要です',
                         'プライベートチャレンジの作成にはProプランが必要です。\nプロフィール画面からアップグレードできます。');
                       return;
@@ -970,9 +972,9 @@ export default function BattleScreen() {
         {/* チャレンジ作成（Proのみ） */}
         {privateView === 'list' && (
           <Button
-            label={user?.plan === 'pro' ? '＋ 友達チャレンジを作る' : '＋ 友達チャレンジを作る（Pro）'}
+            label={userIsPro ? '＋ 友達チャレンジを作る' : '＋ 友達チャレンジを作る（Pro）'}
             onPress={() => {
-              if (user?.plan !== 'pro') {
+              if (!userIsPro) {
                 Alert.alert('Proプランが必要です',
                   'プライベートチャレンジの作成にはProプランが必要です。\nプロフィール画面からアップグレードできます。');
                 return;

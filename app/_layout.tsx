@@ -4,7 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db } from '../lib/firebase';
 import { initAuthListener, useAuthStore } from '../stores/authStore';
-import { initRevenueCat } from '../lib/revenuecat';
+import { initRevenueCat, checkProEntitlement } from '../lib/revenuecat';
 import { registerPushToken } from '../lib/notifications';
 import { ONBOARDING_KEY } from './onboarding';
 
@@ -34,6 +34,7 @@ export default function RootLayout() {
     if (!user) return;
     initRevenueCat(user.id);
     registerPushToken(user.id);
+    checkProEntitlement().then((active) => useAuthStore.getState().setProEntitlement(active));
   }, [user?.id]);
 
   // バトル終了後の自動表示: ログイン後に一度だけチェック

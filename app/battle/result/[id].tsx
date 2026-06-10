@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../../lib/firebase';
 import { useAuthStore } from '../../../stores/authStore';
 import { useBattleStore } from '../../../stores/battleStore';
+import { isPro } from '../../../lib/pro';
 import type { Battle, CategoryStats, UserTitle } from '../../../types';
 
 const BR = {
@@ -70,8 +71,9 @@ function mapFirestoreToBattle(id: string, data: Record<string, unknown>): Battle
 
 export default function BattleResultScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { user } = useAuthStore();
+  const { user, proEntitlement } = useAuthStore();
   const { publicBattles, privateBattles, myMemberships } = useBattleStore();
+  const userIsPro = isPro(user?.plan, proEntitlement);
 
   const [stats, setStats] = useState<CategoryStats[]>([]);
   const [participants, setParticipants] = useState<ParticipantInfo[]>([]);
@@ -383,7 +385,7 @@ export default function BattleResultScreen() {
               </Text>
               <Text style={s.sharePreviewTag}>#BattleRun</Text>
             </View>
-            {user?.plan === 'free' && (
+            {!userIsPro && (
               <View style={s.watermarkBadge}>
                 <Text style={s.watermarkText}>BattleRun</Text>
               </View>
@@ -393,7 +395,7 @@ export default function BattleResultScreen() {
             <Ionicons name="share-outline" size={18} color="#fff" />
             <Text style={s.shareBtnText}>結果をシェアする</Text>
           </TouchableOpacity>
-          {user?.plan === 'free' && (
+          {!userIsPro && (
             <TouchableOpacity onPress={() => router.push('/(tabs)/profile' as any)}>
               <Text style={s.proHint}>Proなら透かしなしでシェアできます →</Text>
             </TouchableOpacity>
@@ -413,13 +415,13 @@ export default function BattleResultScreen() {
               <Text style={s.nextBtnText}>次のバトルを探す</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[s.nextBtn, user?.plan === 'pro' && s.nextBtnPro]}
+              style={[s.nextBtn, userIsPro && s.nextBtnPro]}
               onPress={() => router.push('/(tabs)/battle' as any)}
               activeOpacity={0.85}
             >
-              <Ionicons name="add-circle-outline" size={18} color={user?.plan === 'pro' ? BR.primary : BR.ink} />
-              <Text style={[s.nextBtnText, user?.plan === 'pro' && { color: BR.primary }]}>
-                バトルを作る{user?.plan !== 'pro' ? ' (Pro)' : ''}
+              <Ionicons name="add-circle-outline" size={18} color={userIsPro ? BR.primary : BR.ink} />
+              <Text style={[s.nextBtnText, userIsPro && { color: BR.primary }]}>
+                バトルを作る{!userIsPro ? ' (Pro)' : ''}
               </Text>
             </TouchableOpacity>
           </View>
