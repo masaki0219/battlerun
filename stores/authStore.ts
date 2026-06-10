@@ -7,7 +7,7 @@ import {
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
-import type { AuthStore, User } from '../types';
+import type { AuthStore, User, UserTitle } from '../types';
 
 export const useAuthStore = create<AuthStore>((set) => ({
   user: null,
@@ -77,6 +77,7 @@ export function initAuthListener(): () => void {
               avatarUrl: firebaseUser.photoURL ?? undefined,
               plan: 'free',
               createdAt: new Date().toISOString(),
+              titles: [],
               battleIds: [],
             },
             isLoading: false,
@@ -93,6 +94,7 @@ export function initAuthListener(): () => void {
           plan: data!['plan'] as 'free' | 'pro',
           role: data!['role'] as 'admin' | undefined,
           createdAt: (data!['createdAt'] as any)?.toDate?.()?.toISOString() ?? '',
+          titles: (data!['titles'] as UserTitle[] | undefined) ?? [],
           battleIds: (data!['battleIds'] as string[] | undefined) ?? [],
         };
         useAuthStore.setState({ user, isLoading: false });
