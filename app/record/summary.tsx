@@ -115,30 +115,32 @@ export default function RecordingSummaryScreen() {
               ? b.totalDistanceKm - a.totalDistanceKm
               : b.avgDistanceKm - a.avgDistanceKm
           );
-          const currentRank = sorted.findIndex((s) => s.categoryId === mem.categoryId) + 1;
+          const rankBefore = sorted.findIndex((s) => s.categoryId === mem.categoryId) + 1;
           const myTeam = sorted.find((s) => s.categoryId === mem.categoryId);
 
           if (!myTeam) continue;
 
-          // 追加前の距離でシミュレーション（保存後に呼ばれるため加算済みの現在値から逆算）
-          const prevKm = myTeam.totalDistanceKm - distanceKm;
-          const simPrev = sorted.map((s) =>
+          // Cloud Functionsによる集計はまだ反映されていないため、
+          // この記録の距離をローカルで加算した「加算後」の状態をシミュレーションする
+          const newTotalDistanceKm = myTeam.totalDistanceKm + distanceKm;
+          const newAvgDistanceKm = newTotalDistanceKm / Math.max(myTeam.participantCount, 1);
+          const simAfter = sorted.map((s) =>
             s.categoryId === mem.categoryId
-              ? { ...s, totalDistanceKm: prevKm }
+              ? { ...s, totalDistanceKm: newTotalDistanceKm, avgDistanceKm: newAvgDistanceKm }
               : s
           ).sort((a, b) =>
             battle.rankingType === 'total'
               ? b.totalDistanceKm - a.totalDistanceKm
               : b.avgDistanceKm - a.avgDistanceKm
           );
-          const prevRank = simPrev.findIndex((s) => s.categoryId === mem.categoryId) + 1;
+          const rankAfter = simAfter.findIndex((s) => s.categoryId === mem.categoryId) + 1;
 
           results.push({
             battleId: battle.id,
             battleTitle: battle.title,
-            rankBefore: prevRank || currentRank,
-            rankAfter: currentRank,
-            totalKm: myTeam.totalDistanceKm,
+            rankBefore,
+            rankAfter,
+            totalKm: newTotalDistanceKm,
           });
         }
         setImpacts(results);
@@ -149,7 +151,7 @@ export default function RecordingSummaryScreen() {
             doc(db, 'battles', myMemberships[0]?.battleId ?? 'x', 'participants', user.id)
           ).catch(() => null);
           const myContrib = (partSnap?.data()?.['totalDistanceKm'] as number) ?? 0;
-          if (myContrib >= 10 && myContrib - distanceKm < 10) {
+          if (myContrib < 10 && myContrib + distanceKm >= 10) {
             setEarnedBadge('陣営貢献者');
           }
         }

@@ -1,7 +1,5 @@
 import { create } from 'zustand';
-import {
-  addDoc, collection, doc, updateDoc, increment, getDoc, runTransaction, Timestamp,
-} from 'firebase/firestore';
+import { addDoc, collection, Timestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import type { RecordStore, Activity, MeasurementType, RoutePoint } from '../types';
 import { MAX_SPEED_KMH } from '../lib/constants';
@@ -99,7 +97,8 @@ export const useRecordStore = create<RecordState>((set, get) => ({
     }),
 }));
 
-// Firestore へのアクティビティ保存 + 参加中の全アクティブバトルに距離加算
+// Firestore へのアクティビティ保存
+// 参加中バトルへの距離加算（participants/category_stats）はCloud Functions側で集計する
 export async function saveActivityToFirestore(params: {
   userId: string;
   displayName: string;         // 通知・活動履歴表示用
@@ -125,43 +124,6 @@ export async function saveActivityToFirestore(params: {
     startedAt: Timestamp.fromDate(new Date(activity.startedAt)),
     endedAt: Timestamp.fromDate(new Date(activity.endedAt)),
   });
-
-  // 2. 参加中の全アクティブバトルに距離を加算
-  // battles/{battleId}/participants/{uid} → categoryId を取得
-  // → participants の totalDistanceKm を更新
-  // → category_stats/{categoryId} をトランザクションで再集計
-  await Promise.all(
-    activeBattleIds.map(async (battleId) => {
-      const participantRef = doc(db, 'battles', battleId, 'participants', userId);
-      const participantSnap = await getDoc(participantRef);
-      if (!participantSnap.exists()) return;
-
-      const categoryId = participantSnap.data()['categoryId'] as string | null;
-
-      // 参加者の個人距離を加算
-      await updateDoc(participantRef, {
-        totalDistanceKm: increment(activity.distanceKm),
-      });
-
-      // チーム戦の場合: category_stats をトランザクションで更新
-      if (categoryId) {
-        const categoryStatsRef = doc(db, 'battles', battleId, 'category_stats', categoryId);
-        await runTransaction(db, async (transaction) => {
-          const statsSnap = await transaction.get(categoryStatsRef);
-          if (!statsSnap.exists()) return;
-          const { totalDistanceKm, participantCount } = statsSnap.data() as {
-            totalDistanceKm: number;
-            participantCount: number;
-          };
-          const newTotal = totalDistanceKm + activity.distanceKm;
-          transaction.update(categoryStatsRef, {
-            totalDistanceKm: newTotal,
-            avgDistanceKm: newTotal / Math.max(participantCount, 1),
-          });
-        });
-      }
-    })
-  );
 
   return actRef.id;
 }
