@@ -6,7 +6,8 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "test:rules": "firebase emulators:exec --only firestore \"ts-node --project tests/tsconfig.json tests/firestore-rules.test.ts\""
   },
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",
@@ -48,6 +49,7 @@
     "zustand": "^5.0.13"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
     "@types/node": "^25.8.0",
     "@types/react": "~19.1.0",
     "babel-preset-expo": "~54.0.10",

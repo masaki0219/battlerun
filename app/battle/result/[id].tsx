@@ -10,7 +10,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../../lib/firebase';
 import { useAuthStore } from '../../../stores/authStore';
 import { useBattleStore } from '../../../stores/battleStore';
-import { writeFirestoreNotification } from '../../../lib/notifications';
 import type { Battle, CategoryStats, UserTitle } from '../../../types';
 
 const BR = {
@@ -179,7 +178,6 @@ export default function BattleResultScreen() {
 
     titleAwardedRef.current = true;
 
-    const titleLabel = myRankLocal === 1 ? 'MVP' : '準MVP';
     const newTitle: UserTitle = {
       seasonId: localBattle.seasonId ?? '',
       battleId: localBattle.id,
@@ -189,14 +187,8 @@ export default function BattleResultScreen() {
       awardedAt: new Date().toISOString(),
     };
 
+    // 称号獲得通知はCloud Functions（onUserTitlesUpdated）が作成する
     updateDoc(doc(db, 'users', user.id), { titles: arrayUnion(newTitle) }).catch(() => {});
-    void writeFirestoreNotification({
-      userId: user.id,
-      type: 'title_earned',
-      title: `称号「${titleLabel}」を獲得しました！`,
-      body: `「${localBattle.title}」での貢献が認められました`,
-      relatedBattleId: localBattle.id,
-    });
   }, [loading, user, localBattle, stats, myCatId]);
 
   if (!localBattle) {

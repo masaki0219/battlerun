@@ -6,7 +6,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
-import { notifyReaction } from '../../lib/notifications';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import { db } from '../../lib/firebase';
@@ -160,16 +159,8 @@ export default function ActivityDetailScreen() {
     if (existing?.isMine) {
       await deleteDoc(ref);
     } else {
+      // リアクション通知はCloud Functions（onReactionCreated）が作成する
       await setDoc(ref, { type, userId: user.id, createdAt: serverTimestamp() });
-      // 自分以外の記録にリアクションした場合のみ通知
-      if (activity.userId !== user.id) {
-        notifyReaction({
-          activityOwnerId: activity.userId,
-          reactorName: user.name,
-          activityId: id,
-          reactionType: type,
-        }).catch(() => {});
-      }
     }
     setReactions((prev) =>
       prev.map((r) => {

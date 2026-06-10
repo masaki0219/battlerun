@@ -1,15 +1,89 @@
 import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import { logger } from 'firebase-functions/v2';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 
-// TODO: タスク3で実装（リアクション通知の作成）
+interface UserTitle {
+  seasonId: string;
+  battleId: string;
+  battleTitle: string;
+  teamName: string;
+  rank: number;
+  awardedAt: string;
+}
+
+/**
+ * activities/{activityId}/reactions/{userId} の作成をトリガーに、
+ * 記録の持ち主（自分以外からのリアクション時のみ）へ通知を作成する。
+ */
 export const onReactionCreated = onDocumentCreated(
   'activities/{activityId}/reactions/{userId}',
   async (event) => {
-    logger.info('onReactionCreated: not yet implemented', { params: event.params });
+    const snapshot = event.data;
+    if (!snapshot) return;
+
+    const { activityId, userId: reactorId } = event.params;
+    const reaction = snapshot.data();
+    const reactionType = (reaction['type'] as string) ?? '';
+
+    const db = getFirestore();
+    const activitySnap = await db.doc(`activities/${activityId}`).get();
+    if (!activitySnap.exists) {
+      logger.warn('onReactionCreated: activity not found, skipping', { activityId });
+      return;
+    }
+    const activity = activitySnap.data()!;
+    const activityOwnerId = activity['userId'] as string;
+
+    // 自分の記録への自分のリアクションは通知しない
+    if (activityOwnerId === reactorId) return;
+
+    const reactorSnap = await db.doc(`users/${reactorId}`).get();
+    const reactorName = (reactorSnap.data()?.['name'] as string) ?? 'メンバー';
+
+    await db.collection(`users/${activityOwnerId}/notifications`).add({
+      type: 'reaction',
+      title: `${reactorName}さんがリアクションしました`,
+      body: `あなたの記録に ${reactionType} がつきました`,
+      isRead: false,
+      relatedBattleId: null,
+      relatedActivityId: activityId,
+      createdAt: FieldValue.serverTimestamp(),
+    });
   },
 );
 
-// TODO: タスク3で実装（称号獲得(titles)通知の作成）
+/**
+ * users/{userId} の更新をトリガーに、titles 配列に新規追加された称号があれば
+ * 「title_earned」通知を作成する。
+ */
 export const onUserTitlesUpdated = onDocumentUpdated('users/{userId}', async (event) => {
-  logger.info('onUserTitlesUpdated: not yet implemented', { params: event.params });
+  const change = event.data;
+  if (!change) return;
+
+  const before = (change.before.data()?.['titles'] as UserTitle[] | undefined) ?? [];
+  const after = (change.after.data()?.['titles'] as UserTitle[] | undefined) ?? [];
+
+  if (after.length <= before.length) return;
+
+  const beforeKeys = new Set(before.map((t) => t.battleId));
+  const newTitles = after.filter((t) => !beforeKeys.has(t.battleId));
+  if (newTitles.length === 0) return;
+
+  const { userId } = event.params;
+  const db = getFirestore();
+
+  await Promise.all(
+    newTitles.map((title) => {
+      const titleLabel = title.rank === 1 ? 'MVP' : '準MVP';
+      return db.collection(`users/${userId}/notifications`).add({
+        type: 'title_earned',
+        title: `称号「${titleLabel}」を獲得しました！`,
+        body: `「${title.battleTitle}」での貢献が認められました`,
+        isRead: false,
+        relatedBattleId: title.battleId,
+        relatedActivityId: null,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    }),
+  );
 });

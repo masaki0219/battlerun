@@ -9,5 +9,5 @@
     "moduleResolution": "bundler",
     "customConditions": ["react-native"]
   },
-  "exclude": ["node_modules", "scripts"]
+  "exclude": ["node_modules", "scripts", "tests"]
 }
