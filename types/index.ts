@@ -109,11 +109,12 @@ export interface UserTitle {
 // ===== 通知 =====
 
 export type NotificationType =
-  | 'rank_change'       // 自分の陣営順位変動
-  | 'battle_end_soon'   // バトル終了前（24h / 1h）
-  | 'title_earned'      // 称号獲得
-  | 'battle_ended'      // バトル終了
-  | 'reaction';         // 自分の記録にリアクション
+  | 'rank_change'           // 自分の陣営順位変動
+  | 'battle_end_soon'       // バトル終了前（24h / 1h）
+  | 'title_earned'          // 称号獲得
+  | 'battle_ended'          // バトル終了
+  | 'reaction'              // 自分の記録にリアクション
+  | 'battle_title_rejected'; // バトル名NGワードによる強制終了
 
 export interface AppNotification {
   id: string;

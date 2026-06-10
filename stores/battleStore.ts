@@ -5,6 +5,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuthStore } from './authStore';
+import { validateBattleTitle } from '../lib/validation/battleTitle';
 import type { Battle, CategoryStats, Season, Category, BattleParticipation } from '../types';
 
 interface CreateBattleParams {
@@ -232,6 +233,11 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
   },
 
   createBattle: async ({ title, description, mode, categories, rankingType, startAt, endAt, userId, isPublic, seasonId }) => {
+    const titleValidation = validateBattleTitle(title);
+    if (!titleValidation.ok) {
+      throw new Error(titleValidation.reason ?? 'このチーム名は利用できません');
+    }
+
     const plan = useAuthStore.getState().user?.plan ?? 'free';
 
     if (!isPublic && plan !== 'pro') {

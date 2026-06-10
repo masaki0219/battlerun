@@ -1,4 +1,4 @@
-// 同期して更新すること: lib/validation/bannedWords.ts と同一内容を保つ
+// 同期して更新すること: functions/src/bannedWords.ts と同一内容を保つ
 // TODO: 運用で拡充
 export const BANNED_WORDS: string[] = [
   // 菓子・食品ブランド
