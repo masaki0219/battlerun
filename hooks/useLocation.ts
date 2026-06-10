@@ -14,6 +14,20 @@ function haversine(a: RoutePoint, b: RoutePoint): number {
   return R * 2 * Math.asin(Math.sqrt(sin2));
 }
 
+/**
+ * GPS追跡の動作条件:
+ *
+ * ■ フォアグラウンドのみ（Expo Go で動作）
+ *   - バックグラウンド権限が付与されていない場合に自動選択
+ *   - アプリをバックグラウンドに移動すると追跡が止まる
+ *
+ * ■ バックグラウンド追跡（EASカスタムビルドのみ）
+ *   - `expo-task-manager` と `UIBackgroundModes: ["location"]` が必要
+ *   - Expo Go では動作しない（バックグラウンド権限の取得自体は成功するが、
+ *     startLocationUpdatesAsync が LocationTaskManagerError を返す）
+ *   - eas.json に "developmentClient": true を設定し、
+ *     `eas build --profile development` でビルドすること
+ */
 export function useLocation({ enabled }: { enabled: boolean }) {
   const measurementType = useRecordStore((s) => s.measurementType);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
@@ -27,11 +41,13 @@ export function useLocation({ enabled }: { enabled: boolean }) {
       const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
       if (cancelled || fgStatus !== 'granted') return;
 
-      // バックグラウンド権限を要求（EASビルド時のみ有効、Expo Goでは無視）
+      // バックグラウンド権限を要求
+      // ※ Expo Go では取得できても startLocationUpdatesAsync は失敗する
+      // ※ EASビルド + UIBackgroundModes: ["location"] が必要
       const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
 
       if (bgStatus === 'granted') {
-        // バックグラウンド追跡（EASビルド + UIBackgroundModes が必要）
+        // バックグラウンド追跡: EASカスタムビルドのみ動作
         const isRegistered = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => false);
         if (!isRegistered) {
           await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
@@ -46,7 +62,7 @@ export function useLocation({ enabled }: { enabled: boolean }) {
           });
         }
       } else {
-        // フォアグラウンドのみ（Expo Go でも動作）
+        // フォアグラウンドのみ: Expo Go でも動作
         watchRef.current = await Location.watchPositionAsync(
           { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1000, distanceInterval: 2 },
           (loc) => {

@@ -1,79 +1,63 @@
 import { create } from 'zustand';
 import {
   collection, query, where, getDocs, getDoc,
-  doc, setDoc, updateDoc, increment, serverTimestamp, addDoc,
+  doc, setDoc, updateDoc, increment, serverTimestamp, addDoc, Timestamp, arrayUnion, runTransaction,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import type { Battle, BattleStats, BattleTeam, Season } from '../types';
-
-interface BattleMembership {
-  battleId: string;
-  teamId: string;
-}
+import { useAuthStore } from './authStore';
+import type { Battle, CategoryStats, Season, Category, BattleParticipation } from '../types';
 
 interface CreateBattleParams {
   title: string;
   description: string;
-  teamAName: string;
-  teamBName: string;
+  mode: 'team' | 'individual';
+  categories: Category[];
   rankingType: 'average' | 'total';
+  startAt: Date;
+  endAt: Date;
   userId: string;
+  isPublic?: boolean;
+  seasonId?: string | null;
 }
 
 interface BattleStore {
   publicBattles: Battle[];
   privateBattles: Battle[];
-  myMemberships: BattleMembership[];
-  seasons: Record<string, Season>;  // seasonId → Season のキャッシュ
+  myMemberships: BattleParticipation[];
+  seasons: Record<string, Season>;
   isLoading: boolean;
 
   fetchPublicBattles: () => Promise<void>;
   fetchMyMemberships: (userId: string) => Promise<void>;
   fetchMyPrivateBattles: (userId: string) => Promise<void>;
   fetchSeason: (seasonId: string) => Promise<void>;
-  joinPublicBattle: (battleId: string, teamId: string, userId: string) => Promise<void>;
-  joinPrivateBattle: (battleId: string, teamId: string, userId: string) => Promise<void>;
-  createPrivateBattle: (params: CreateBattleParams) => Promise<string>;
+  joinBattle: (battleId: string, categoryId: string | null, userId: string) => Promise<void>;
+  createBattle: (params: CreateBattleParams) => Promise<string>;
   findBattleByInviteCode: (inviteCode: string) => Promise<Battle>;
   getActiveBattleIds: () => string[];
+}
+
+function generateCategoryId(label: string): string {
+  const base = label.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '').slice(0, 20);
+  return base || `cat_${Date.now()}`;
 }
 
 function mapDocToBattle(id: string, data: Record<string, any>): Battle {
   return {
     id,
     type: data['type'] as 'public' | 'private',
-    seasonId: data['seasonId'] as string | null,
+    seasonId: (data['seasonId'] as string | null | undefined) ?? null,
     title: data['title'] as string,
-    description: data['description'] as string,
-    teams: data['teams'] as BattleTeam[],
-    rankingType: data['rankingType'] as 'average' | 'total',
-    startAt: (data['startAt'] as any)?.toDate?.()?.toISOString() ?? '',
-    endAt: (data['endAt'] as any)?.toDate?.()?.toISOString() ?? '',
-    status: data['status'] as 'upcoming' | 'active' | 'finished',
-    createdBy: data['createdBy'] as string,
-    inviteCode: data['inviteCode'] as string | null,
+    description: (data['description'] as string) ?? '',
+    mode: (data['mode'] as 'team' | 'individual') ?? 'team',
+    categories: (data['categories'] as Category[]) ?? [],
+    rankingType: (data['rankingType'] as 'average' | 'total') ?? 'average',
+    startAt: (data['startAt'] as Timestamp)?.toDate?.()?.toISOString() ?? '',
+    endAt: (data['endAt'] as Timestamp)?.toDate?.()?.toISOString() ?? '',
+    status: (data['status'] as 'upcoming' | 'active' | 'finished') ?? 'active',
+    createdBy: (data['createdBy'] as string | null) ?? null,
+    inviteCode: (data['inviteCode'] as string | null) ?? null,
   };
-}
-
-async function joinBattle(
-  battleId: string,
-  teamId: string,
-  userId: string,
-  set: (fn: (state: BattleStore) => Partial<BattleStore>) => void
-): Promise<void> {
-  await setDoc(doc(db, 'battles', battleId, 'members', userId), {
-    teamId,
-    joinedAt: serverTimestamp(),
-  });
-
-  const statsId = `${battleId}_${teamId}`;
-  await updateDoc(doc(db, 'battle_stats', statsId), {
-    memberCount: increment(1),
-  });
-
-  set((state) => ({
-    myMemberships: [...state.myMemberships, { battleId, teamId }],
-  }));
 }
 
 export const useBattleStore = create<BattleStore>((set, get) => ({
@@ -100,112 +84,196 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
   },
 
   fetchSeason: async (seasonId: string) => {
-    // すでにキャッシュ済みならスキップ
     if (get().seasons[seasonId]) return;
-
     const snap = await getDoc(doc(db, 'seasons', seasonId));
     if (!snap.exists()) return;
-
     const data = snap.data();
     const season: Season = {
       id: snap.id,
       title: data['title'] as string,
-      startAt: (data['startAt'] as any)?.toDate?.()?.toISOString() ?? '',
-      endAt: (data['endAt'] as any)?.toDate?.()?.toISOString() ?? '',
+      startAt: (data['startAt'] as Timestamp)?.toDate?.()?.toISOString() ?? '',
+      endAt: (data['endAt'] as Timestamp)?.toDate?.()?.toISOString() ?? '',
       status: data['status'] as 'active' | 'archived',
     };
     set((state) => ({ seasons: { ...state.seasons, [seasonId]: season } }));
   },
 
   fetchMyMemberships: async (userId: string) => {
-    const battlesSnap = await getDocs(
-      query(collection(db, 'battles'), where('status', '==', 'active'))
-    );
+    // users/{uid}.battleIds で O(k) 取得（k = 参加バトル数）
+    const userSnap = await getDoc(doc(db, 'users', userId));
+    const battleIds = (userSnap.data()?.['battleIds'] as string[] | undefined) ?? [];
 
-    const memberships: BattleMembership[] = [];
-    await Promise.all(
-      battlesSnap.docs.map(async (battleDoc) => {
-        const memberSnap = await getDoc(
-          doc(db, 'battles', battleDoc.id, 'members', userId)
-        );
-        if (memberSnap.exists()) {
-          memberships.push({
-            battleId: battleDoc.id,
-            teamId: memberSnap.data()['teamId'] as string,
-          });
-        }
-      })
-    );
+    if (battleIds.length === 0) {
+      set({ myMemberships: [] });
+      return;
+    }
+
+    const memberships: BattleParticipation[] = (
+      await Promise.all(
+        battleIds.map(async (battleId) => {
+          const participantSnap = await getDoc(
+            doc(db, 'battles', battleId, 'participants', userId)
+          );
+          if (!participantSnap.exists()) return null;
+          return {
+            battleId,
+            categoryId: (participantSnap.data()['categoryId'] as string | null) ?? null,
+          } satisfies BattleParticipation;
+        })
+      )
+    ).filter((m): m is BattleParticipation => m !== null);
+
     set({ myMemberships: memberships });
   },
 
   fetchMyPrivateBattles: async (userId: string) => {
-    const snap = await getDocs(
-      query(
-        collection(db, 'battles'),
-        where('type', '==', 'private'),
-        where('status', '==', 'active'),
-      )
-    );
+    // users/{uid}.battleIds で O(k) 取得
+    const userSnap = await getDoc(doc(db, 'users', userId));
+    const battleIds = (userSnap.data()?.['battleIds'] as string[] | undefined) ?? [];
 
-    const myBattles: Battle[] = [];
-    await Promise.all(
-      snap.docs.map(async (battleDoc) => {
-        const memberSnap = await getDoc(
-          doc(db, 'battles', battleDoc.id, 'members', userId)
-        );
-        if (memberSnap.exists()) {
-          myBattles.push(mapDocToBattle(battleDoc.id, battleDoc.data()));
-        }
-      })
-    );
+    if (battleIds.length === 0) {
+      set({ privateBattles: [] });
+      return;
+    }
+
+    const myBattles: Battle[] = (
+      await Promise.all(
+        battleIds.map(async (battleId) => {
+          const battleSnap = await getDoc(doc(db, 'battles', battleId));
+          if (!battleSnap.exists()) return null;
+          const data = battleSnap.data();
+          if (data['type'] !== 'private' || data['status'] !== 'active') return null;
+          const participantSnap = await getDoc(
+            doc(db, 'battles', battleId, 'participants', userId)
+          );
+          if (!participantSnap.exists()) return null;
+          return mapDocToBattle(battleId, data);
+        })
+      )
+    ).filter((b): b is Battle => b !== null);
+
     set({ privateBattles: myBattles });
   },
 
-  joinPublicBattle: async (battleId, teamId, userId) => {
-    await joinBattle(battleId, teamId, userId, set);
+  joinBattle: async (battleId, categoryId, userId) => {
+    // 参加人数上限チェック (Freeバトル: 上限10名) — トランザクション外で事前確認
+    const battleSnap = await getDoc(doc(db, 'battles', battleId));
+    if (battleSnap.exists()) {
+      const bData = battleSnap.data();
+      if (bData['type'] !== 'public' && bData['createdBy']) {
+        const creatorSnap = await getDoc(doc(db, 'users', bData['createdBy'])).catch(() => null);
+        if ((creatorSnap?.data()?.['plan'] ?? 'free') === 'free') {
+          const partCount = (await getDocs(collection(db, 'battles', battleId, 'participants'))).size;
+          if (partCount >= 10) {
+            throw new Error('PARTICIPANT_LIMIT: このバトルは定員（10名）に達しています。バトル作成者がProにアップグレードすると上限が拡大されます。');
+          }
+        }
+      }
+    }
+
+    const participantRef = doc(db, 'battles', battleId, 'participants', userId);
+    const userRef = doc(db, 'users', userId);
+
+    await runTransaction(db, async (transaction) => {
+      const participantSnap = await transaction.get(participantRef);
+      const isNew = !participantSnap.exists();
+      const oldCategoryId = isNew ? null : (participantSnap.data()['categoryId'] as string | null);
+      const categoryChanged = !isNew && oldCategoryId !== categoryId;
+
+      // 参加者ドキュメントを作成、またはカテゴリのみ更新（既存距離はリセットしない）
+      if (isNew) {
+        transaction.set(participantRef, {
+          categoryId: categoryId ?? null,
+          totalDistanceKm: 0,
+          joinedAt: serverTimestamp(),
+        });
+      } else if (categoryChanged) {
+        transaction.update(participantRef, { categoryId: categoryId ?? null });
+      }
+
+      // category_stats の participantCount を更新
+      if (isNew && categoryId) {
+        transaction.update(
+          doc(db, 'battles', battleId, 'category_stats', categoryId),
+          { participantCount: increment(1) },
+        );
+      } else if (categoryChanged) {
+        // カテゴリ変更: 旧カテゴリをデクリメント、新カテゴリをインクリメント
+        if (oldCategoryId) {
+          transaction.update(
+            doc(db, 'battles', battleId, 'category_stats', oldCategoryId),
+            { participantCount: increment(-1) },
+          );
+        }
+        if (categoryId) {
+          transaction.update(
+            doc(db, 'battles', battleId, 'category_stats', categoryId),
+            { participantCount: increment(1) },
+          );
+        }
+      }
+
+      // arrayUnion は Firestore が重複を自動除外するため再参加時も安全
+      transaction.update(userRef, { battleIds: arrayUnion(battleId) });
+    });
+
+    useAuthStore.setState((s) => ({
+      user: s.user?.id === userId
+        ? { ...s.user, battleIds: [...(s.user.battleIds ?? []).filter((id) => id !== battleId), battleId] }
+        : s.user,
+    }));
+
+    set((state) => ({
+      myMemberships: [
+        ...state.myMemberships.filter((m) => m.battleId !== battleId),
+        { battleId, categoryId },
+      ],
+    }));
   },
 
-  joinPrivateBattle: async (battleId, teamId, userId) => {
-    await joinBattle(battleId, teamId, userId, set);
-  },
+  createBattle: async ({ title, description, mode, categories, rankingType, startAt, endAt, userId, isPublic, seasonId }) => {
+    const plan = useAuthStore.getState().user?.plan ?? 'free';
 
-  createPrivateBattle: async ({ title, description, teamAName, teamBName, rankingType, userId }) => {
-    const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const teamAId = teamAName.toLowerCase().replace(/\s+/g, '_').slice(0, 20) || 'teamA';
-    const teamBId = teamBName.toLowerCase().replace(/\s+/g, '_').slice(0, 20) || 'teamB';
-    const teams: BattleTeam[] = [
-      { teamId: teamAId, name: teamAName },
-      { teamId: teamBId, name: teamBName },
-    ];
+    if (!isPublic && plan !== 'pro') {
+      throw new Error('PRO_REQUIRED: プライベートチャレンジの作成にはProプランが必要です。');
+    }
+
+    const inviteCode = isPublic ? null : Math.random().toString(36).substring(2, 8).toUpperCase();
+
+    // 区分IDを確定（重複ラベルには連番を付与）
+    const resolvedCategories: Category[] = categories.map((cat, i) => ({
+      id: cat.id || generateCategoryId(`${cat.label}_${i}`),
+      label: cat.label,
+    }));
 
     const battleRef = await addDoc(collection(db, 'battles'), {
-      type: 'private',
-      seasonId: null,
+      type: isPublic ? 'public' : 'private',
+      seasonId: seasonId ?? null,
       title,
       description,
-      teams,
+      mode,
+      categories: mode === 'team' ? resolvedCategories : [],
       rankingType,
-      startAt: serverTimestamp(),
-      endAt: null,
+      startAt: Timestamp.fromDate(startAt),
+      endAt: Timestamp.fromDate(endAt),
       status: 'active',
       createdBy: userId,
       inviteCode,
+      createdAt: Timestamp.now(),
     });
 
-    // battle_stats の初期ドキュメントを作成
-    await Promise.all(
-      teams.map((team) =>
-        setDoc(doc(db, 'battle_stats', `${battleRef.id}_${team.teamId}`), {
-          battleId: battleRef.id,
-          teamId: team.teamId,
-          teamName: team.name,
-          totalDistanceKm: 0,
-          memberCount: 0,
-          avgDistanceKm: 0,
-        })
-      )
-    );
+    // category_stats の初期ドキュメントを作成（チーム戦のみ）
+    if (mode === 'team') {
+      await Promise.all(
+        resolvedCategories.map((cat) =>
+          setDoc(doc(db, 'battles', battleRef.id, 'category_stats', cat.id), {
+            totalDistanceKm: 0,
+            avgDistanceKm: 0,
+            participantCount: 0,
+          })
+        )
+      );
+    }
 
     return battleRef.id;
   },
@@ -221,22 +289,35 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
     return mapDocToBattle(d.id, d.data());
   },
 
-  getActiveBattleIds: () => get().myMemberships.map((m) => m.battleId),
+  getActiveBattleIds: () => {
+    const now = Date.now();
+    const allBattles = [...get().publicBattles, ...get().privateBattles];
+    const activeBattleIds = new Set(
+      allBattles
+        .filter((b) =>
+          b.status === 'active' &&
+          new Date(b.startAt).getTime() <= now &&
+          now <= new Date(b.endAt).getTime()
+        )
+        .map((b) => b.id)
+    );
+    return get().myMemberships
+      .map((m) => m.battleId)
+      .filter((id) => activeBattleIds.has(id));
+  },
 }));
 
-export async function fetchBattleStats(battleId: string): Promise<BattleStats[]> {
-  const q = query(
-    collection(db, 'battle_stats'),
-    where('battleId', '==', battleId)
-  );
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => ({
-    id: d.id,
-    battleId: d.data()['battleId'] as string,
-    teamId: d.data()['teamId'] as string,
-    teamName: d.data()['teamName'] as string,
-    totalDistanceKm: (d.data()['totalDistanceKm'] as number) ?? 0,
-    memberCount: (d.data()['memberCount'] as number) ?? 0,
-    avgDistanceKm: (d.data()['avgDistanceKm'] as number) ?? 0,
-  }));
+export async function fetchCategoryStats(battleId: string, categories: Category[]): Promise<CategoryStats[]> {
+  const snap = await getDocs(collection(db, 'battles', battleId, 'category_stats'));
+  return snap.docs.map((d) => {
+    const catId = d.id;
+    const label = categories.find((c) => c.id === catId)?.label ?? catId;
+    return {
+      categoryId: catId,
+      label,
+      totalDistanceKm: (d.data()['totalDistanceKm'] as number) ?? 0,
+      avgDistanceKm: (d.data()['avgDistanceKm'] as number) ?? 0,
+      participantCount: (d.data()['participantCount'] as number) ?? 0,
+    };
+  });
 }

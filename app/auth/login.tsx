@@ -36,7 +36,6 @@ export default function LoginScreen() {
     }
     try {
       await signIn(email, password);
-      // 画面遷移は onAuthStateChanged → user セット → TabLayout に任せる
     } catch (e: any) {
       Alert.alert('ログイン失敗', e.message ?? '認証に失敗しました');
     }
@@ -97,7 +96,7 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary, borderWidth: 1, borderColor: Colors.border,
   },
   btn: { marginTop: Spacing.sm },
-  forgotBtn: { alignSelf: 'center', marginTop: Spacing.sm },
+  forgotBtn: { alignSelf: 'center' },
   forgotText: { fontSize: Typography.fontSize.sm, color: Colors.primary },
-  or: { textAlign: 'center', fontSize: Typography.fontSize.sm, color: Colors.textSecondary, marginTop: Spacing.md },
+  or: { textAlign: 'center', fontSize: Typography.fontSize.sm, color: Colors.textSecondary, marginTop: Spacing.sm },
 });

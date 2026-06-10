@@ -51,19 +51,52 @@ export const useAuthStore = create<AuthStore>((set) => ({
 export function initAuthListener(): () => void {
   return onAuthStateChanged(auth, async (firebaseUser) => {
     if (firebaseUser) {
-      const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
-      const data = snap.data();
-      const user: User | null = snap.exists() && data
-        ? {
-            id: firebaseUser.uid,
-            authId: firebaseUser.uid,
-            name: data['name'] as string,
-            avatarUrl: data['avatarUrl'] as string | undefined,
-            plan: data['plan'] as 'free' | 'pro',
-            createdAt: (data['createdAt'] as any)?.toDate?.()?.toISOString() ?? '',
-          }
-        : null;
-      useAuthStore.setState({ user, isLoading: false });
+      try {
+        const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
+        const data = snap.data();
+
+        // Google/Apple サインインの初回: Firestore にユーザーを自動作成
+        if (!snap.exists()) {
+          const name = firebaseUser.displayName
+            ?? firebaseUser.email?.split('@')[0]
+            ?? 'ユーザー';
+          await setDoc(doc(db, 'users', firebaseUser.uid), {
+            name,
+            avatarUrl: firebaseUser.photoURL ?? null,
+            plan: 'free',
+            createdAt: new Date(),
+          });
+          useAuthStore.setState({
+            user: {
+              id: firebaseUser.uid,
+              authId: firebaseUser.uid,
+              name,
+              avatarUrl: firebaseUser.photoURL ?? undefined,
+              plan: 'free',
+              createdAt: new Date().toISOString(),
+              battleIds: [],
+            },
+            isLoading: false,
+          });
+          return;
+        }
+
+        const user: User = {
+          id: firebaseUser.uid,
+          authId: firebaseUser.uid,
+          name: data!['name'] as string,
+          avatarUrl: data!['avatarUrl'] as string | undefined,
+          avatarEmoji: data!['avatarEmoji'] as string | undefined,
+          plan: data!['plan'] as 'free' | 'pro',
+          role: data!['role'] as 'admin' | undefined,
+          createdAt: (data!['createdAt'] as any)?.toDate?.()?.toISOString() ?? '',
+          battleIds: (data!['battleIds'] as string[] | undefined) ?? [],
+        };
+        useAuthStore.setState({ user, isLoading: false });
+      } catch (e) {
+        console.error('[Auth] Firestoreユーザー取得失敗:', e);
+        useAuthStore.setState({ user: null, isLoading: false });
+      }
     } else {
       useAuthStore.setState({ user: null, isLoading: false });
     }

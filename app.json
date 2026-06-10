@@ -15,9 +15,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.battlerun.app",
-      "entitlements": {
-        "com.apple.developer.healthkit": true
-      },
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "ランニングのルートを記録するために位置情報を使用します。",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "バックグラウンドでもGPSを追跡するために位置情報を使用します。",
@@ -46,6 +44,15 @@
     },
     "plugins": [
       "expo-router",
+      "expo-apple-authentication",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#00C49A",
+          "sounds": []
+        }
+      ],
       [
         "expo-location",
         {

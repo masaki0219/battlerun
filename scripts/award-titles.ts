@@ -25,8 +25,8 @@ const db = admin.firestore();
 // ─── 型定義 ───────────────────────────────────────────────────────────────
 interface Contributor {
   userId: string;
-  teamId: string;
-  teamName: string;
+  categoryId: string | null;
+  categoryLabel: string;
   totalDistanceKm: number;
 }
 
@@ -42,75 +42,60 @@ async function awardTitles(battleId: string, seasonId: string): Promise<void> {
   }
   const battle = battleSnap.data()!;
   const battleTitle = battle['title'] as string;
+  const categories = (battle['categories'] as Array<{ id: string; label: string }>) ?? [];
   console.log(`📋 バトル: ${battleTitle}`);
 
-  // 2. バトル期間中のアクティビティを集計
-  const battleStart: admin.firestore.Timestamp = battle['startAt'];
-  const battleEnd: admin.firestore.Timestamp = battle['endAt'];
-
-  // 参加メンバー一覧を取得
-  const membersSnap = await db
+  // 2. 参加者一覧を取得（battles/{battleId}/participants/{userId}）
+  const participantsSnap = await db
     .collection('battles')
     .doc(battleId)
-    .collection('members')
+    .collection('participants')
     .get();
 
-  if (membersSnap.empty) {
-    console.log('⚠️  参加メンバーがいません');
+  if (participantsSnap.empty) {
+    console.log('⚠️  参加者がいません');
     return;
   }
 
-  // 3. 各メンバーのバトル期間内の走行距離を集計
-  const contributors: Contributor[] = [];
+  // 3. 各参加者の走行距離を participants から取得
+  const contributors: Contributor[] = participantsSnap.docs.map((participantDoc) => {
+    const data = participantDoc.data();
+    const categoryId = (data['categoryId'] as string | null) ?? null;
+    const categoryLabel = categories.find((c) => c.id === categoryId)?.label ?? categoryId ?? '個人';
+    return {
+      userId: participantDoc.id,
+      categoryId,
+      categoryLabel,
+      totalDistanceKm: (data['totalDistanceKm'] as number) ?? 0,
+    };
+  });
 
-  for (const memberDoc of membersSnap.docs) {
-    const userId = memberDoc.id;
-    const teamId = memberDoc.data()['teamId'] as string;
-
-    const activitiesSnap = await db
-      .collection('activities')
-      .where('userId', '==', userId)
-      .where('startedAt', '>=', battleStart)
-      .where('startedAt', '<=', battleEnd)
-      .get();
-
-    const totalKm = activitiesSnap.docs.reduce(
-      (sum, d) => sum + ((d.data()['distanceKm'] as number) ?? 0),
-      0,
-    );
-
-    // チーム名を取得
-    const teamName = (battle['teams'] as Array<{ teamId: string; name: string }>)
-      .find((t) => t.teamId === teamId)?.name ?? teamId;
-
-    contributors.push({ userId, teamId, teamName, totalDistanceKm: totalKm });
-  }
-
-  // 4. チームごとに分けてTOP10を選出
-  const teamGroups = new Map<string, Contributor[]>();
+  // 4. 陣営ごとに分けてTOP10を選出
+  const categoryGroups = new Map<string, Contributor[]>();
   for (const c of contributors) {
-    if (!teamGroups.has(c.teamId)) teamGroups.set(c.teamId, []);
-    teamGroups.get(c.teamId)!.push(c);
+    const key = c.categoryId ?? '__individual__';
+    if (!categoryGroups.has(key)) categoryGroups.set(key, []);
+    categoryGroups.get(key)!.push(c);
   }
 
   const awardedAt = admin.firestore.Timestamp.now();
   let totalAwarded = 0;
 
-  for (const [teamId, members] of teamGroups) {
+  for (const [, members] of categoryGroups) {
     const sorted = members.sort((a, b) => b.totalDistanceKm - a.totalDistanceKm);
     const top10 = sorted.slice(0, 10);
 
-    console.log(`\n🏅 チーム: ${top10[0]?.teamName} (${top10.length}人)`);
+    console.log(`\n🏅 陣営: ${top10[0]?.categoryLabel} (${top10.length}人)`);
 
     for (let i = 0; i < top10.length; i++) {
-      const { userId, teamName, totalDistanceKm } = top10[i];
+      const { userId, categoryLabel, totalDistanceKm } = top10[i];
       const rank = i + 1;
 
       const title = {
         seasonId,
         battleId,
         battleTitle,
-        teamName,
+        teamName: categoryLabel,
         rank,
         awardedAt: awardedAt.toDate(),
       };

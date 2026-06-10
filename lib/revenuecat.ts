@@ -10,13 +10,22 @@
 
 // トップレベルで import するとネイティブモジュール未登録時にクラッシュするため
 // require を使って各関数内で遅延ロードする。
+import Constants from 'expo-constants';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
 const API_KEY = process.env['EXPO_PUBLIC_REVENUECAT_API_KEY'] ?? '';
 
+if (!API_KEY) {
+  console.warn('[RevenueCat] APIキーが設定されていません。.env の EXPO_PUBLIC_REVENUECAT_API_KEY を確認してください。');
+}
+
+// Expo Go では RevenueCat のネイティブストアが使えない
+const isExpoGo = Constants.appOwnership === 'expo';
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function getPurchases(): any {
+  if (isExpoGo) return null;
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     return require('react-native-purchases').default;
@@ -27,10 +36,7 @@ function getPurchases(): any {
 }
 
 export function initRevenueCat(userId: string): void {
-  if (!API_KEY) {
-    console.warn('[RevenueCat] API key が未設定です。EAS 環境変数を確認してください。');
-    return;
-  }
+  if (isExpoGo || !API_KEY) return;
   const Purchases = getPurchases();
   if (!Purchases) return;
   try {

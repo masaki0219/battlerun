@@ -1,14 +1,19 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
-  ScrollView, ActivityIndicator,
+  ScrollView, ActivityIndicator, Modal, FlatList, Pressable, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db, storage } from '../../lib/firebase';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import {
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  deleteUser,
+} from 'firebase/auth';
+import { auth, db, storage } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import { purchasePro, restorePurchases } from '../../lib/revenuecat';
 import { Avatar } from '../../components/ui/Avatar';
@@ -37,10 +42,39 @@ function TitleBadge({ title }: { title: UserTitle }) {
   );
 }
 
+const ANIMAL_EMOJIS = [
+  '🐱','🐶','🐻','🐼','🐨','🐯','🦁','🐸',
+  '🐰','🐹','🦊','🐺','🐮','🐷','🐧','🐬',
+  '🦄','🦔','🦋','🦦','🐙','🦈','🐘','🦒',
+];
+
 export default function ProfileScreen() {
   const { user, signOut } = useAuthStore();
   const [uploading, setUploading] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+
+  function handleAvatarOptions() {
+    Alert.alert('アイコンを変更', undefined, [
+      { text: '写真を選ぶ', onPress: handleAvatarPick },
+      { text: 'イラストを選ぶ', onPress: () => setShowEmojiPicker(true) },
+      { text: 'キャンセル', style: 'cancel' },
+    ]);
+  }
+
+  async function handleEmojiSelect(emoji: string) {
+    if (!user) return;
+    setShowEmojiPicker(false);
+    try {
+      await updateDoc(doc(db, 'users', user.id), { avatarEmoji: emoji, avatarUrl: null });
+      useAuthStore.setState((s) => ({
+        user: s.user ? { ...s.user, avatarEmoji: emoji, avatarUrl: undefined } : null,
+      }));
+    } catch {
+      Alert.alert('エラー', 'アイコンの更新に失敗しました');
+    }
+  }
 
   async function handlePurchasePro() {
     if (!user) return;
@@ -82,7 +116,7 @@ export default function ProfileScreen() {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.6,
@@ -92,22 +126,103 @@ export default function ProfileScreen() {
     setUploading(true);
     try {
       const uri = result.assets[0].uri;
-      const response = await fetch(uri);
-      const blob = await response.blob();
+
+      // React Native では fetch().blob() が不安定なため XMLHttpRequest で Blob を生成する
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.onload = () => resolve(xhr.response as Blob);
+        xhr.onerror = () => reject(new Error('blob 生成失敗'));
+        xhr.responseType = 'blob';
+        xhr.open('GET', uri, true);
+        xhr.send(null);
+      });
 
       const storageRef = ref(storage, `avatars/${user!.id}`);
       await uploadBytes(storageRef, blob);
       const url = await getDownloadURL(storageRef);
 
-      await updateDoc(doc(db, 'users', user!.id), { avatarUrl: url });
+      await updateDoc(doc(db, 'users', user!.id), { avatarUrl: url, avatarEmoji: null });
       useAuthStore.setState((s) => ({
-        user: s.user ? { ...s.user, avatarUrl: url } : null,
+        user: s.user ? { ...s.user, avatarUrl: url, avatarEmoji: undefined } : null,
       }));
     } catch {
       Alert.alert('エラー', 'アップロードに失敗しました');
     } finally {
       setUploading(false);
     }
+  }
+
+  async function doDeleteAccount(password: string) {
+    if (!user) return;
+    setDeleting(true);
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser?.email) throw new Error('認証情報が見つかりません');
+
+      const credential = EmailAuthProvider.credential(currentUser.email, password);
+      await reauthenticateWithCredential(currentUser, credential);
+
+      // Firestore のユーザーデータ削除
+      await deleteDoc(doc(db, 'users', user.id));
+
+      // アバター画像を Storage から削除
+      if (user.avatarUrl) {
+        try {
+          await deleteObject(ref(storage, `avatars/${user.id}`));
+        } catch {
+          // 存在しない場合は無視
+        }
+      }
+
+      // Firebase Auth ユーザー削除（onAuthStateChanged が user: null をセットする）
+      await deleteUser(currentUser);
+
+      router.replace('/auth/login');
+    } catch (error: unknown) {
+      const code = (error as { code?: string }).code;
+      if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+        Alert.alert('エラー', 'パスワードが正しくありません');
+      } else {
+        Alert.alert('エラー', 'アカウントの削除に失敗しました。もう一度お試しください。');
+      }
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  function handleDeleteAccount() {
+    Alert.alert(
+      'アカウント削除',
+      'アカウントを削除すると、すべてのデータが完全に失われます。この操作は取り消せません。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: '削除する',
+          style: 'destructive',
+          onPress: () => {
+            Alert.prompt(
+              'パスワードを確認',
+              '本人確認のためパスワードを入力してください。',
+              [
+                { text: 'キャンセル', style: 'cancel' },
+                {
+                  text: '削除',
+                  style: 'destructive',
+                  onPress: (password: string | undefined) => {
+                    if (!password) {
+                      Alert.alert('エラー', 'パスワードを入力してください');
+                      return;
+                    }
+                    doDeleteAccount(password);
+                  },
+                },
+              ],
+              'secure-text',
+            );
+          },
+        },
+      ],
+    );
   }
 
   async function handleSignOut() {
@@ -131,6 +246,7 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
+        <Text style={styles.headerSub}>BATTLERUN / プロフィール</Text>
         <Text style={styles.headerTitle}>プロフィール</Text>
       </View>
 
@@ -138,14 +254,14 @@ export default function ProfileScreen() {
         {/* ユーザー情報 */}
         <Card style={styles.card}>
           <View style={styles.userRow}>
-            <TouchableOpacity onPress={handleAvatarPick} disabled={uploading}>
+            <TouchableOpacity onPress={handleAvatarOptions} disabled={uploading}>
               {uploading ? (
                 <View style={styles.avatarLoading}>
                   <ActivityIndicator color={Colors.primary} />
                 </View>
               ) : (
                 <View>
-                  <Avatar name={user.name} uri={user.avatarUrl} size="lg" />
+                  <Avatar name={user.name} uri={user.avatarUrl} emoji={user.avatarEmoji} size="lg" />
                   <View style={styles.editBadge}>
                     <Text style={styles.editBadgeText}>編集</Text>
                   </View>
@@ -178,7 +294,7 @@ export default function ProfileScreen() {
           ) : (
             <>
               <Text style={styles.freeDesc}>
-                Proプランにアップグレードすると、プライベートバトルの作成が無制限になります。
+                Proプランにアップグレードすると、プライベートチャレンジの作成が無制限になります。
               </Text>
               <Button
                 label={purchasing ? '処理中...' : 'Proにアップグレード'}
@@ -193,12 +309,32 @@ export default function ProfileScreen() {
           )}
         </Card>
 
+        {/* バッジ・称号リンク */}
+        <TouchableOpacity
+          style={styles.badgeLinkCard}
+          onPress={() => router.push('/badges' as any)}
+          activeOpacity={0.85}
+        >
+          <View style={styles.badgeLinkLeft}>
+            <View style={styles.badgeLinkIcon}>
+              <Text style={{ fontSize: 22 }}>🏅</Text>
+            </View>
+            <View>
+              <Text style={styles.badgeLinkTitle}>バッジ・称号</Text>
+              <Text style={styles.badgeLinkSub}>
+                {titles.length > 0 ? `称号 ${titles.length}件獲得済み` : '走ってバッジを集めよう'}
+              </Text>
+            </View>
+          </View>
+          <Text style={{ fontSize: 16, color: Colors.textTertiary }}>›</Text>
+        </TouchableOpacity>
+
         {/* 獲得称号 */}
         <Card style={styles.card}>
           <Text style={styles.sectionTitle}>獲得称号</Text>
           {titles.length === 0 ? (
             <Text style={styles.emptyText}>
-              まだ称号がありません。バトルで上位入賞しよう！
+              まだ称号がありません。チャレンジで上位入賞しよう！
             </Text>
           ) : (
             <View style={styles.titleList}>
@@ -209,13 +345,84 @@ export default function ProfileScreen() {
           )}
         </Card>
 
+        {/* 管理者リンク */}
+        {user.role === 'admin' && (
+          <TouchableOpacity
+            style={styles.adminBtn}
+            onPress={() => router.push('/admin')}
+          >
+            <Text style={styles.adminBtnText}>⚙️ 管理画面</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* 開発用: 本番ビルドには含まれない */}
+        {__DEV__ && (
+          <TouchableOpacity
+            style={styles.devToggle}
+            onPress={async () => {
+              const next = user.plan === 'pro' ? 'free' : 'pro';
+              await updateDoc(doc(db, 'users', user.id), { plan: next });
+              useAuthStore.setState((s) => ({
+                user: s.user ? { ...s.user, plan: next } : null,
+              }));
+            }}
+          >
+            <Text style={styles.devToggleText}>
+              [DEV] {user.plan === 'pro' ? 'Free に戻す' : 'Pro を有効にする'}
+            </Text>
+          </TouchableOpacity>
+        )}
+
         <Button
           label="ログアウト"
           onPress={handleSignOut}
           variant="danger"
-          style={{ marginBottom: Spacing['3xl'] }}
         />
+
+        <TouchableOpacity
+          onPress={handleDeleteAccount}
+          disabled={deleting}
+          style={styles.deleteAccountBtn}
+        >
+          {deleting ? (
+            <ActivityIndicator size="small" color={Colors.error} />
+          ) : (
+            <Text style={styles.deleteAccountText}>アカウントを削除する</Text>
+          )}
+        </TouchableOpacity>
       </ScrollView>
+
+      {/* 動物イラスト選択モーダル */}
+      <Modal
+        visible={showEmojiPicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowEmojiPicker(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setShowEmojiPicker(false)}>
+          <Pressable style={styles.modalSheet} onPress={() => {}}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>アイコンを選ぶ</Text>
+            <FlatList
+              data={ANIMAL_EMOJIS}
+              numColumns={6}
+              keyExtractor={(item) => item}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.emojiCell,
+                    user.avatarEmoji === item && styles.emojiCellSelected,
+                  ]}
+                  onPress={() => handleEmojiSelect(item)}
+                >
+                  <Text style={styles.emojiText}>{item}</Text>
+                </TouchableOpacity>
+              )}
+              contentContainerStyle={styles.emojiGrid}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -223,10 +430,16 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   header: {
-    paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm, paddingBottom: Spacing.md,
     backgroundColor: Colors.surface, borderBottomWidth: 1, borderBottomColor: Colors.border,
+    gap: 2,
   },
-  headerTitle: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.semibold, color: Colors.textPrimary },
+  headerSub: {
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+    fontSize: 9, fontWeight: '700' as const, letterSpacing: 2,
+    color: Colors.textTertiary, textTransform: 'uppercase' as const,
+  },
+  headerTitle: { fontSize: 22, fontWeight: '900' as const, color: Colors.textPrimary },
   scroll: { padding: Spacing.lg, gap: Spacing['2xl'] },
   card: { marginBottom: 0 },
   userRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
@@ -263,4 +476,113 @@ const styles = StyleSheet.create({
   titleInfo: { flex: 1 },
   titleName: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.semibold, color: Colors.textPrimary },
   titleSeason: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, marginTop: 2 },
+  deleteAccountBtn: {
+    alignSelf: 'center',
+    paddingVertical: Spacing.sm,
+    marginBottom: Spacing['3xl'],
+    minHeight: 36,
+    justifyContent: 'center' as const,
+  },
+  deleteAccountText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.error,
+  },
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: BorderRadius.xl,
+    borderTopRightRadius: BorderRadius.xl,
+    paddingBottom: Spacing['3xl'],
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+  },
+  modalHandle: {
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: Colors.border,
+    alignSelf: 'center', marginBottom: Spacing.md,
+  },
+  modalTitle: {
+    fontSize: Typography.fontSize.md,
+    fontWeight: Typography.fontWeight.semibold,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: Spacing.lg,
+  },
+  emojiGrid: { paddingVertical: Spacing.sm },
+  emojiCell: {
+    flex: 1, aspectRatio: 1,
+    alignItems: 'center', justifyContent: 'center',
+    margin: Spacing.xs,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceGray,
+  },
+  emojiCellSelected: {
+    backgroundColor: Colors.primaryLight,
+    borderWidth: 2, borderColor: Colors.primary,
+  },
+  emojiText: { fontSize: 32 },
+  adminBtn: {
+    alignSelf: 'center',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderColor: Colors.info,
+    backgroundColor: Colors.info + '15',
+  },
+  adminBtnText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.info,
+    fontWeight: Typography.fontWeight.semibold,
+  },
+  devToggle: {
+    alignSelf: 'center',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderColor: Colors.accentYellow,
+    backgroundColor: Colors.accentYellow + '22',
+  },
+  devToggleText: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.accentYellow,
+    fontWeight: Typography.fontWeight.semibold,
+  },
+  badgeLinkCard: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    padding: Spacing.lg,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  badgeLinkLeft: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: Spacing.md,
+  },
+  badgeLinkIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.accentYellow + '20',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  badgeLinkTitle: {
+    fontSize: Typography.fontSize.md,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.textPrimary,
+  },
+  badgeLinkSub: {
+    fontSize: Typography.fontSize.sm,
+    color: Colors.textTertiary,
+    marginTop: 1,
+  },
 });

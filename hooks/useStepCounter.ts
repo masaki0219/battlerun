@@ -1,11 +1,18 @@
-import { useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Pedometer } from 'expo-sensors';
 import { useRecordStore } from '../stores/recordStore';
 
 const STEP_LENGTH_KM = 0.00075; // 1歩 ≈ 0.75m
 
 export function useStepCounter({ enabled }: { enabled: boolean }) {
+  const [isAvailable, setIsAvailable] = useState(false);
   const prevStepsRef = useRef(0);
+
+  useEffect(() => {
+    Pedometer.isAvailableAsync()
+      .then(setIsAvailable)
+      .catch(() => setIsAvailable(false));
+  }, []);
 
   useEffect(() => {
     if (!enabled) {
@@ -41,4 +48,6 @@ export function useStepCounter({ enabled }: { enabled: boolean }) {
       subscription?.remove();
     };
   }, [enabled]);
+
+  return { isAvailable };
 }

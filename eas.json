@@ -6,13 +6,40 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyA6IAZZIFcgYipUwqxzE6RKSAhib75T09E",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "battlerun-75eb6.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "battlerun-75eb6",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "battlerun-75eb6.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "823386766952",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:823386766952:web:1d41fb6b58877d9db805dd",
+        "EXPO_PUBLIC_REVENUECAT_API_KEY": "appl_UEBYfopUMapurjXBOQwCjWzFvsK"
+      }
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyA6IAZZIFcgYipUwqxzE6RKSAhib75T09E",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "battlerun-75eb6.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "battlerun-75eb6",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "battlerun-75eb6.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "823386766952",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:823386766952:web:1d41fb6b58877d9db805dd",
+        "EXPO_PUBLIC_REVENUECAT_API_KEY": "appl_UEBYfopUMapurjXBOQwCjWzFvsK"
+      }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyA6IAZZIFcgYipUwqxzE6RKSAhib75T09E",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "battlerun-75eb6.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "battlerun-75eb6",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "battlerun-75eb6.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "823386766952",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:823386766952:web:1d41fb6b58877d9db805dd",
+        "EXPO_PUBLIC_REVENUECAT_API_KEY": "appl_UEBYfopUMapurjXBOQwCjWzFvsK"
+      }
     }
   },
   "submit": {

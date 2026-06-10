@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import {
-  addDoc, collection, doc, updateDoc, increment, serverTimestamp, getDoc,
+  addDoc, collection, doc, updateDoc, increment, getDoc, runTransaction, Timestamp,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import type { RecordStore, Activity, MeasurementType, RoutePoint } from '../types';
@@ -55,13 +55,16 @@ export const useRecordStore = create<RecordState>((set, get) => ({
   stopRecording: async () => {
     const state = get();
     const endedAt = new Date().toISOString();
-    const validRoute = filterInvalidPoints(state.route);
 
-    // チート防止済みの距離を再計算
-    const distanceKm = validRoute.reduce((sum, pt, i) => {
-      if (i === 0) return sum;
-      return sum + haversine(validRoute[i - 1], pt);
-    }, 0);
+    // 歩数モード: route は空なので store に累積した distanceKm をそのまま使う
+    // GPS モード: チート防止済みの距離を route から再計算
+    const validRoute = state.measurementType === 'gps' ? filterInvalidPoints(state.route) : [];
+    const distanceKm = state.measurementType === 'steps'
+      ? state.distanceKm
+      : validRoute.reduce((sum, pt, i) => {
+          if (i === 0) return sum;
+          return sum + haversine(validRoute[i - 1], pt);
+        }, 0);
 
     // setInterval ではなく開始時刻からの差分で計算
     // バックグラウンドから戻った後も正確な経過時間が得られる
@@ -72,7 +75,6 @@ export const useRecordStore = create<RecordState>((set, get) => ({
     const activity: Activity = {
       id: '',
       userId: '',
-      teamId: '',
       distanceKm,
       steps: state.steps,
       durationSeconds,
@@ -97,67 +99,69 @@ export const useRecordStore = create<RecordState>((set, get) => ({
     }),
 }));
 
-// Firestore へのアクティビティ保存 + チーム距離更新 + 参加中の全アクティブバトルに距離加算
+// Firestore へのアクティビティ保存 + 参加中の全アクティブバトルに距離加算
 export async function saveActivityToFirestore(params: {
   userId: string;
+  displayName: string;         // 通知・活動履歴表示用
   activity: Activity;
-  teamId?: string;             // 所属チームID（省略時はチーム距離更新をスキップ）
   activeBattleIds?: string[];  // 省略時は空配列扱い
-}): Promise<void> {
-  const { userId, activity, teamId, activeBattleIds = [] } = params;
+}): Promise<string | null> {
+  const { userId, displayName, activity, activeBattleIds = [] } = params;
 
-  // 1. activities コレクションに保存
-  await addDoc(collection(db, 'activities'), {
+  if (activity.distanceKm <= 0) return null;
+
+  // 1. activities コレクションに保存（battleId は先頭のアクティブバトルを代表として保持）
+  const primaryBattleId = activeBattleIds[0] ?? null;
+  const actRef = await addDoc(collection(db, 'activities'), {
     userId,
-    teamId: teamId ?? null,
+    displayName,
+    battleId: primaryBattleId,   // 後方互換
+    battleIds: activeBattleIds,  // 全参加バトルへの加算
     distanceKm: activity.distanceKm,
     steps: activity.steps ?? null,
     durationSeconds: activity.durationSeconds,
     measurementType: activity.measurementType,
     route: activity.route ?? [],
-    startedAt: serverTimestamp(),
-    endedAt: serverTimestamp(),
+    startedAt: Timestamp.fromDate(new Date(activity.startedAt)),
+    endedAt: Timestamp.fromDate(new Date(activity.endedAt)),
   });
 
-  if (activity.distanceKm <= 0) return;
-
-  // 2. チームの合計距離とメンバーの個人距離を更新
-  if (teamId) {
-    await Promise.all([
-      updateDoc(doc(db, 'teams', teamId), {
-        totalDistanceKm: increment(activity.distanceKm),
-      }),
-      updateDoc(doc(db, 'teams', teamId, 'members', userId), {
-        totalDistanceKm: increment(activity.distanceKm),
-      }),
-    ]);
-  }
-
-  // 3. 参加中の全アクティブバトルに距離を加算
+  // 2. 参加中の全アクティブバトルに距離を加算
+  // battles/{battleId}/participants/{uid} → categoryId を取得
+  // → participants の totalDistanceKm を更新
+  // → category_stats/{categoryId} をトランザクションで再集計
   await Promise.all(
     activeBattleIds.map(async (battleId) => {
-      const memberSnap = await getDoc(doc(db, 'battles', battleId, 'members', userId));
-      if (!memberSnap.exists()) return;
+      const participantRef = doc(db, 'battles', battleId, 'participants', userId);
+      const participantSnap = await getDoc(participantRef);
+      if (!participantSnap.exists()) return;
 
-      const battleTeamId = memberSnap.data()['teamId'] as string;
-      const statsId = `${battleId}_${battleTeamId}`;
+      const categoryId = participantSnap.data()['categoryId'] as string | null;
 
-      // totalDistanceKm をアトミックに加算
-      await updateDoc(doc(db, 'battle_stats', statsId), {
+      // 参加者の個人距離を加算
+      await updateDoc(participantRef, {
         totalDistanceKm: increment(activity.distanceKm),
       });
 
-      // avgDistanceKm を再計算（totalDistanceKm / memberCount）
-      const statsSnap = await getDoc(doc(db, 'battle_stats', statsId));
-      if (statsSnap.exists()) {
-        const { totalDistanceKm, memberCount } = statsSnap.data() as {
-          totalDistanceKm: number;
-          memberCount: number;
-        };
-        await updateDoc(doc(db, 'battle_stats', statsId), {
-          avgDistanceKm: totalDistanceKm / Math.max(memberCount, 1),
+      // チーム戦の場合: category_stats をトランザクションで更新
+      if (categoryId) {
+        const categoryStatsRef = doc(db, 'battles', battleId, 'category_stats', categoryId);
+        await runTransaction(db, async (transaction) => {
+          const statsSnap = await transaction.get(categoryStatsRef);
+          if (!statsSnap.exists()) return;
+          const { totalDistanceKm, participantCount } = statsSnap.data() as {
+            totalDistanceKm: number;
+            participantCount: number;
+          };
+          const newTotal = totalDistanceKm + activity.distanceKm;
+          transaction.update(categoryStatsRef, {
+            totalDistanceKm: newTotal,
+            avgDistanceKm: newTotal / Math.max(participantCount, 1),
+          });
         });
       }
     })
   );
+
+  return actRef.id;
 }
