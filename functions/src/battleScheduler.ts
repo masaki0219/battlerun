@@ -1,6 +1,7 @@
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions/v2';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { sendPushToUser } from './push';
 
 interface UserTitle {
   seasonId: string;
@@ -113,18 +114,24 @@ export const battleStatusScheduler = onSchedule('every 60 minutes', async () => 
     await batch.commit();
 
     const participantsSnap = await battleDoc.ref.collection('participants').get();
+    const battleEndedTitle = `「${battle['title']}」が終了しました`;
+    const battleEndedBody = '結果を確認しよう';
     await Promise.all(
-      participantsSnap.docs.map((p) =>
-        db.collection(`users/${p.id}/notifications`).add({
+      participantsSnap.docs.map(async (p) => {
+        await db.collection(`users/${p.id}/notifications`).add({
           type: 'battle_ended',
-          title: `「${battle['title']}」が終了しました`,
-          body: '結果を確認しよう',
+          title: battleEndedTitle,
+          body: battleEndedBody,
           isRead: false,
           relatedBattleId: battleDoc.id,
           relatedActivityId: null,
           createdAt: FieldValue.serverTimestamp(),
-        }),
-      ),
+        });
+        await sendPushToUser(p.id, battleEndedTitle, battleEndedBody, {
+          type: 'battle_ended',
+          relatedBattleId: battleDoc.id,
+        });
+      }),
     );
   }
 

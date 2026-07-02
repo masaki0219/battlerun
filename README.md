@@ -95,6 +95,18 @@ npm run test:rules
 
 ---
 
+## Expo Push 通知
+
+`functions/src/push.ts` の `sendPushToUser` が `users/{uid}.expoPushToken` 宛に
+Expo Push通知を送信する（リアクション・バトル終了・称号獲得・順位変動）。
+
+⚠️ **Expo Go では受信テストできません。** 実機 + EASビルド（development/preview）が必要です。
+`registerPushToken`（`lib/notifications.ts`）は `Device.isDevice` と EAS `projectId` の
+両方が揃わないとトークンを取得しないため、シミュレータ/Expo Goでは
+`users/{uid}.expoPushToken` が保存されず、送信自体がスキップされます。
+
+---
+
 ## Google / Apple サインイン
 
 ### Google サインイン

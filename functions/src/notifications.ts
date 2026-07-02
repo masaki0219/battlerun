@@ -1,6 +1,7 @@
 import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import { logger } from 'firebase-functions/v2';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { sendPushToUser } from './push';
 
 interface UserTitle {
   seasonId: string;
@@ -40,15 +41,19 @@ export const onReactionCreated = onDocumentCreated(
     const reactorSnap = await db.doc(`users/${reactorId}`).get();
     const reactorName = (reactorSnap.data()?.['name'] as string) ?? 'メンバー';
 
+    const title = `${reactorName}さんがリアクションしました`;
+    const body = `あなたの記録に ${reactionType} がつきました`;
+
     await db.collection(`users/${activityOwnerId}/notifications`).add({
       type: 'reaction',
-      title: `${reactorName}さんがリアクションしました`,
-      body: `あなたの記録に ${reactionType} がつきました`,
+      title,
+      body,
       isRead: false,
       relatedBattleId: null,
       relatedActivityId: activityId,
       createdAt: FieldValue.serverTimestamp(),
     });
+    await sendPushToUser(activityOwnerId, title, body, { type: 'reaction', relatedActivityId: activityId });
   },
 );
 
@@ -73,18 +78,22 @@ export const onUserTitlesUpdated = onDocumentUpdated('users/{userId}', async (ev
   const db = getFirestore();
 
   await Promise.all(
-    newTitles.map((title) => {
+    newTitles.map(async (title) => {
       const titleLabel = title.rank === 1 ? '優勝陣営の一員' : '準優勝陣営の一員';
       const teamText = title.teamName ? `「${title.teamName}」として` : '';
-      return db.collection(`users/${userId}/notifications`).add({
+      const notifTitle = `称号「${titleLabel}」を獲得しました！`;
+      const notifBody = `「${title.battleTitle}」で${teamText}走った成果が認められました`;
+
+      await db.collection(`users/${userId}/notifications`).add({
         type: 'title_earned',
-        title: `称号「${titleLabel}」を獲得しました！`,
-        body: `「${title.battleTitle}」で${teamText}走った成果が認められました`,
+        title: notifTitle,
+        body: notifBody,
         isRead: false,
         relatedBattleId: title.battleId,
         relatedActivityId: null,
         createdAt: FieldValue.serverTimestamp(),
       });
+      await sendPushToUser(userId, notifTitle, notifBody, { type: 'title_earned', relatedBattleId: title.battleId });
     }),
   );
 });

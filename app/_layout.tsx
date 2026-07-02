@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db } from '../lib/firebase';
 import { initAuthListener, useAuthStore } from '../stores/authStore';
@@ -43,6 +44,22 @@ export default function RootLayout() {
     setResultChecked(true);
     checkFinishedBattles(user.id, router);
   }, [user?.id]);
+
+  // プッシュ通知タップ時、data の relatedBattleId / relatedActivityId で該当画面へ遷移する
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as {
+        relatedBattleId?: string;
+        relatedActivityId?: string;
+      };
+      if (data?.relatedActivityId) {
+        router.push(`/activity/${data.relatedActivityId}` as any);
+      } else if (data?.relatedBattleId) {
+        router.push(`/battle/${data.relatedBattleId}` as any);
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   // 認証状態 + オンボーディング確認が揃ってから画面を振り分ける
   useEffect(() => {
