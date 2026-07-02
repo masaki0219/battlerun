@@ -92,7 +92,6 @@ export default function BattleDetailScreen() {
         seasonId: (data['seasonId'] as string | null) ?? null,
         title: (data['title'] as string) ?? '',
         description: (data['description'] as string) ?? '',
-        mode: (data['mode'] as 'team' | 'individual') ?? 'team',
         categories: (data['categories'] as Category[]) ?? [],
         rankingType: (data['rankingType'] as 'average' | 'total') ?? 'average',
         startAt: (data['startAt'] as Timestamp)?.toDate?.()?.toISOString() ?? '',

@@ -11,7 +11,6 @@ import type { Battle, CategoryStats, Season, Category, BattleParticipation } fro
 interface CreateBattleParams {
   title: string;
   description: string;
-  mode: 'team' | 'individual';
   categories: Category[];
   rankingType: 'average' | 'total';
   startAt: Date;
@@ -43,14 +42,16 @@ function generateCategoryId(label: string): string {
   return base || `cat_${Date.now()}`;
 }
 
-function mapDocToBattle(id: string, data: Record<string, any>): Battle {
+// 個人戦バトル（mode: 'individual'）は1.0で廃止。
+// 既存Firestoreに残っていてもクラッシュさせず一覧から除外するためnullを返す。
+function mapDocToBattle(id: string, data: Record<string, any>): Battle | null {
+  if (data['mode'] === 'individual') return null;
   return {
     id,
     type: data['type'] as 'public' | 'private',
     seasonId: (data['seasonId'] as string | null | undefined) ?? null,
     title: data['title'] as string,
     description: (data['description'] as string) ?? '',
-    mode: (data['mode'] as 'team' | 'individual') ?? 'team',
     categories: (data['categories'] as Category[]) ?? [],
     rankingType: (data['rankingType'] as 'average' | 'total') ?? 'average',
     startAt: (data['startAt'] as Timestamp)?.toDate?.()?.toISOString() ?? '',
@@ -77,7 +78,9 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
         where('status', '==', 'active'),
       );
       const snap = await getDocs(q);
-      const battles: Battle[] = snap.docs.map((d) => mapDocToBattle(d.id, d.data()));
+      const battles: Battle[] = snap.docs
+        .map((d) => mapDocToBattle(d.id, d.data()))
+        .filter((b): b is Battle => b !== null);
       set({ publicBattles: battles });
     } finally {
       set({ isLoading: false });
@@ -232,7 +235,7 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
     }));
   },
 
-  createBattle: async ({ title, description, mode, categories, rankingType, startAt, endAt, userId, isPublic, seasonId }) => {
+  createBattle: async ({ title, description, categories, rankingType, startAt, endAt, userId, isPublic, seasonId }) => {
     const titleValidation = validateBattleTitle(title);
     if (!titleValidation.ok) {
       throw new Error(titleValidation.reason ?? 'このチーム名は利用できません');
@@ -257,8 +260,7 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
       seasonId: seasonId ?? null,
       title,
       description,
-      mode,
-      categories: mode === 'team' ? resolvedCategories : [],
+      categories: resolvedCategories,
       rankingType,
       startAt: Timestamp.fromDate(startAt),
       endAt: Timestamp.fromDate(endAt),
@@ -268,18 +270,16 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
       createdAt: Timestamp.now(),
     });
 
-    // category_stats の初期ドキュメントを作成（チーム戦のみ）
-    if (mode === 'team') {
-      await Promise.all(
-        resolvedCategories.map((cat) =>
-          setDoc(doc(db, 'battles', battleRef.id, 'category_stats', cat.id), {
-            totalDistanceKm: 0,
-            avgDistanceKm: 0,
-            participantCount: 0,
-          })
-        )
-      );
-    }
+    // category_stats の初期ドキュメントを作成
+    await Promise.all(
+      resolvedCategories.map((cat) =>
+        setDoc(doc(db, 'battles', battleRef.id, 'category_stats', cat.id), {
+          totalDistanceKm: 0,
+          avgDistanceKm: 0,
+          participantCount: 0,
+        })
+      )
+    );
 
     return battleRef.id;
   },
@@ -292,7 +292,9 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
     const snap = await getDocs(q);
     if (snap.empty) throw new Error('招待コードが見つかりません');
     const d = snap.docs[0];
-    return mapDocToBattle(d.id, d.data());
+    const battle = mapDocToBattle(d.id, d.data());
+    if (!battle) throw new Error('招待コードが見つかりません');
+    return battle;
   },
 
   getActiveBattleIds: () => {

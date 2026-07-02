@@ -69,11 +69,10 @@ export interface Category {
 export interface Battle {
   id: string;
   type: 'public' | 'private';
-  mode: 'team' | 'individual'; // team=区分選択あり、individual=個人戦
   status: 'upcoming' | 'active' | 'finished';
   title: string;
   description: string;
-  categories: Category[];      // teamモードのみ使用。individualモードは空配列
+  categories: Category[];      // 陣営の一覧（最低2つ）
   rankingType: 'average' | 'total';
   inviteCode: string | null;   // privateのみ6桁英数字、publicはnull
   createdBy: string | null;    // privateは作成者uid、publicは管理者uid
@@ -85,7 +84,7 @@ export interface Battle {
 /** battles/{battleId}/participants/{uid} の型 */
 export interface BattleParticipation {
   battleId: string;
-  categoryId: string | null; // individualモードはnull
+  categoryId: string | null; // 参加中の陣営ID（常に設定される）
 }
 
 /** battles/{battleId}/category_stats/{categoryId} の型（表示用にlabelを結合） */

@@ -119,7 +119,6 @@ export default function BattleScreen() {
   // 友達チャレンジ作成フォーム
   const [createTitle, setCreateTitle] = useState('');
   const [createDesc, setCreateDesc] = useState('');
-  const [createMode, setCreateMode] = useState<'team' | 'individual'>('team');
   const [createCategories, setCreateCategories] = useState<Category[]>([
     { id: '', label: '' },
     { id: '', label: '' },
@@ -301,25 +300,6 @@ export default function BattleScreen() {
     }
   }
 
-  async function handleJoinIndividual(battle: Battle) {
-    if (!user) return;
-    setJoiningBattleId(battle.id);
-    try {
-      await joinBattle(battle.id, null, user.id);
-      void scheduleBattleEndNotification(battle);
-      void scheduleBattleEnd1hNotification(battle);
-      setFoundBattle(null);
-      setPrivateView('list');
-      setInviteCode('');
-      if (user) fetchMyPrivateBattles(user.id);
-      Alert.alert('参加完了', `「${battle.title}」に参加しました！`);
-    } catch (e: any) {
-      Alert.alert('エラー', e.message ?? '参加に失敗しました');
-    } finally {
-      setJoiningBattleId(null);
-    }
-  }
-
   async function handleSearchInviteCode() {
     if (!inviteCode.trim()) return;
     setSearching(true);
@@ -340,12 +320,10 @@ export default function BattleScreen() {
       Alert.alert('入力エラー', 'チャレンジ名を入力してください');
       return;
     }
-    if (createMode === 'team') {
-      const validCats = createCategories.filter((c) => c.label.trim());
-      if (validCats.length < 2) {
-        Alert.alert('入力エラー', '区分を2つ以上入力してください');
-        return;
-      }
+    const validCats = createCategories.filter((c) => c.label.trim());
+    if (validCats.length < 2) {
+      Alert.alert('入力エラー', '区分を2つ以上入力してください');
+      return;
     }
     if (!createStartAt || !createEndAt) {
       Alert.alert('入力エラー', '開始日と終了日を入力してください（YYYY-MM-DD）');
@@ -360,17 +338,14 @@ export default function BattleScreen() {
 
     setCreating(true);
     try {
-      const validCats = createMode === 'team'
-        ? createCategories.filter((c) => c.label.trim()).map((c, i) => ({
-            id: c.label.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') || `cat${i}`,
-            label: c.label.trim(),
-          }))
-        : [];
+      const resolvedCats = validCats.map((c, i) => ({
+        id: c.label.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') || `cat${i}`,
+        label: c.label.trim(),
+      }));
       await createBattle({
         title: createTitle.trim(),
         description: createDesc.trim(),
-        mode: createMode,
-        categories: validCats,
+        categories: resolvedCats,
         rankingType: createRankingType,
         startAt: startDate,
         endAt: endDate,
@@ -391,7 +366,6 @@ export default function BattleScreen() {
   function resetCreateForm() {
     setCreateTitle('');
     setCreateDesc('');
-    setCreateMode('team');
     setCreateCategories([{ id: '', label: '' }, { id: '', label: '' }]);
     setCreateRankingType('average');
     setCreateStartAt('');
@@ -593,22 +567,11 @@ export default function BattleScreen() {
             </View>
           )}
 
-          {!membership && battle.mode === 'team' && battle.categories.length > 0 && (
+          {!membership && battle.categories.length > 0 && (
             <View style={styles.joinSection}>
               <Button
                 label="区分を選んで参加"
                 onPress={() => setCategoryModalBattle(battle)}
-                size="sm"
-                variant="secondary"
-              />
-            </View>
-          )}
-          {!membership && battle.mode === 'individual' && (
-            <View style={styles.joinSection}>
-              <Button
-                label="参加する"
-                onPress={() => handleJoinIndividual(battle)}
-                loading={joiningBattleId === battle.id}
                 size="sm"
                 variant="secondary"
               />
@@ -687,9 +650,6 @@ export default function BattleScreen() {
             </View>
           )}
 
-          {battle.mode === 'individual' && (
-            <Text style={styles.modeBadge}>個人</Text>
-          )}
         </Card>
       </TouchableOpacity>
     );
@@ -712,45 +672,27 @@ export default function BattleScreen() {
           <TextInput style={[styles.input, styles.inputMulti]} value={createDesc} onChangeText={setCreateDesc}
             placeholder="チャレンジの説明..." placeholderTextColor={Colors.textTertiary} multiline maxLength={200} />
 
-          <Text style={styles.inputLabel}>モード *</Text>
-          <View style={styles.modeRow}>
-            {(['team', 'individual'] as const).map((m) => (
-              <TouchableOpacity key={m}
-                style={[styles.modeBtn, createMode === m && styles.modeBtnActive]}
-                onPress={() => setCreateMode(m)}
-              >
-                <Text style={[styles.modeBtnText, createMode === m && styles.modeBtnTextActive]}>
-                  {m === 'team' ? '👥 陣営戦' : '🏃 個人戦'}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {createMode === 'team' && (
-            <>
-              <Text style={styles.inputLabel}>区分リスト *（最低2つ）</Text>
-              {createCategories.map((cat, i) => (
-                <View key={i} style={styles.catInputRow}>
-                  <TextInput
-                    style={[styles.input, { flex: 1 }]}
-                    value={cat.label}
-                    onChangeText={(v) => updateCategoryLabel(i, v)}
-                    placeholder={`区分 ${i + 1}（例: きのこの山）`}
-                    placeholderTextColor={Colors.textTertiary}
-                    maxLength={20}
-                  />
-                  {createCategories.length > 2 && (
-                    <TouchableOpacity style={styles.catRemoveBtn} onPress={() => removeCategory(i)}>
-                      <Text style={styles.catRemoveText}>×</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              ))}
-              <TouchableOpacity style={styles.addCatBtn} onPress={addCategory}>
-                <Text style={styles.addCatText}>＋ 区分を追加</Text>
-              </TouchableOpacity>
-            </>
-          )}
+          <Text style={styles.inputLabel}>区分リスト *（最低2つ）</Text>
+          {createCategories.map((cat, i) => (
+            <View key={i} style={styles.catInputRow}>
+              <TextInput
+                style={[styles.input, { flex: 1 }]}
+                value={cat.label}
+                onChangeText={(v) => updateCategoryLabel(i, v)}
+                placeholder={`区分 ${i + 1}（例: きのこの山）`}
+                placeholderTextColor={Colors.textTertiary}
+                maxLength={20}
+              />
+              {createCategories.length > 2 && (
+                <TouchableOpacity style={styles.catRemoveBtn} onPress={() => removeCategory(i)}>
+                  <Text style={styles.catRemoveText}>×</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ))}
+          <TouchableOpacity style={styles.addCatBtn} onPress={addCategory}>
+            <Text style={styles.addCatText}>＋ 区分を追加</Text>
+          </TouchableOpacity>
 
           <Text style={styles.inputLabel}>ランキング方式</Text>
           <View style={styles.modeRow}>
@@ -822,34 +764,19 @@ export default function BattleScreen() {
           <Text style={styles.battleMeta}>{foundBattle.description}</Text>
         ) : null}
 
-        {foundBattle.mode === 'individual' ? (
-          <>
-            <Text style={[styles.battleMeta, { marginBottom: Spacing.md }]}>
-              個人モードです。区分の選択は不要です。
-            </Text>
+        <Text style={[styles.inputLabel, { marginBottom: Spacing.sm }]}>区分を選んで参加</Text>
+        <View style={styles.catSelectList}>
+          {foundBattle.categories.map((cat) => (
             <Button
-              label="このチャレンジに参加する"
-              onPress={() => handleJoinIndividual(foundBattle)}
+              key={cat.id}
+              label={cat.label}
+              onPress={() => handleJoin(foundBattle, cat.id)}
               loading={joiningBattleId === foundBattle.id}
+              variant="secondary"
+              style={styles.catSelectBtn}
             />
-          </>
-        ) : (
-          <>
-            <Text style={[styles.inputLabel, { marginBottom: Spacing.sm }]}>区分を選んで参加</Text>
-            <View style={styles.catSelectList}>
-              {foundBattle.categories.map((cat) => (
-                <Button
-                  key={cat.id}
-                  label={cat.label}
-                  onPress={() => handleJoin(foundBattle, cat.id)}
-                  loading={joiningBattleId === foundBattle.id}
-                  variant="secondary"
-                  style={styles.catSelectBtn}
-                />
-              ))}
-            </View>
-          </>
-        )}
+          ))}
+        </View>
         <Button label="戻る"
           onPress={() => { setPrivateView('join_code'); setFoundBattle(null); }}
           variant="ghost" style={{ marginTop: Spacing.md }} />
@@ -1164,7 +1091,6 @@ const styles = StyleSheet.create({
   avgText: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary, width: 58 },
   memberCount: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, width: 28 },
   joinSection: { borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: Spacing.md, alignItems: 'flex-start' },
-  modeBadge: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, marginTop: Spacing.xs },
   inviteRow: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.xs },
   inviteLabel: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary },
   inviteCode: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.primary, letterSpacing: 2 },

@@ -21,7 +21,6 @@ function mapBattle(id: string, data: Record<string, any>): Battle {
     seasonId: data['seasonId'] ?? null,
     title: data['title'] as string,
     description: (data['description'] as string) ?? '',
-    mode: (data['mode'] as 'team' | 'individual') ?? 'team',
     categories: (data['categories'] ?? []),
     rankingType: (data['rankingType'] as 'average' | 'total') ?? 'average',
     startAt: (data['startAt'] as Timestamp)?.toDate?.()?.toISOString() ?? '',
@@ -140,11 +139,6 @@ export default function AdminIndexScreen() {
                     <View style={[styles.typeBadge, { backgroundColor: battle.type === 'public' ? Colors.primaryLight : Colors.surfaceGray }]}>
                       <Text style={[styles.typeBadgeText, { color: battle.type === 'public' ? Colors.primary : Colors.textSecondary }]}>
                         {battle.type === 'public' ? '公開' : 'プライベート'}
-                      </Text>
-                    </View>
-                    <View style={[styles.typeBadge, { backgroundColor: battle.mode === 'team' ? Colors.info + '22' : Colors.accentYellow + '22' }]}>
-                      <Text style={[styles.typeBadgeText, { color: battle.mode === 'team' ? Colors.info : Colors.accentYellow }]}>
-                        {battle.mode === 'team' ? '陣営戦' : '個人戦'}
                       </Text>
                     </View>
                   </View>

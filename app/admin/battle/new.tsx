@@ -71,7 +71,6 @@ export default function NewPublicBattleScreen() {
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [mode, setMode] = useState<'team' | 'individual'>('team');
   const [categories, setCategories] = useState<Category[]>([
     { id: '', label: '' },
     { id: '', label: '' },
@@ -153,12 +152,10 @@ export default function NewPublicBattleScreen() {
       Alert.alert('入力エラー', 'チャレンジ名を入力してください');
       return;
     }
-    if (mode === 'team') {
-      const validCats = categories.filter((c) => c.label.trim());
-      if (validCats.length < 2) {
-        Alert.alert('入力エラー', '区分を2つ以上入力してください');
-        return;
-      }
+    const validCats = categories.filter((c) => c.label.trim());
+    if (validCats.length < 2) {
+      Alert.alert('入力エラー', '区分を2つ以上入力してください');
+      return;
     }
     if (!startAt || !endAt) {
       Alert.alert('入力エラー', '開始日と終了日を入力してください（YYYY-MM-DD）');
@@ -209,18 +206,15 @@ export default function NewPublicBattleScreen() {
         resolvedSeasonId = seasonRef.id;
       }
 
-      const validCats: Category[] = mode === 'team'
-        ? categories.filter((c) => c.label.trim()).map((c, i) => ({
-            id: c.label.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') || `cat${i}`,
-            label: c.label.trim(),
-          }))
-        : [];
+      const resolvedCategories: Category[] = validCats.map((c, i) => ({
+        id: c.label.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') || `cat${i}`,
+        label: c.label.trim(),
+      }));
 
       await createBattle({
         title: title.trim(),
         description: description.trim(),
-        mode,
-        categories: validCats,
+        categories: resolvedCategories,
         rankingType,
         startAt: startDate,
         endAt: endDate,
@@ -360,47 +354,28 @@ export default function NewPublicBattleScreen() {
               </>
             )}
 
-            {/* モード */}
-            <Text style={styles.label}>モード *</Text>
-            <View style={styles.toggleRow}>
-              {(['team', 'individual'] as const).map((m) => (
-                <TouchableOpacity key={m}
-                  style={[styles.toggleBtn, mode === m && styles.toggleBtnActive]}
-                  onPress={() => setMode(m)}
-                >
-                  <Text style={[styles.toggleBtnText, mode === m && styles.toggleBtnTextActive]}>
-                    {m === 'team' ? '👥 陣営戦' : '🏃 個人戦'}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* 区分リスト（陣営戦のみ） */}
-            {mode === 'team' && (
-              <>
-                <Text style={styles.label}>区分リスト *（最低2つ）</Text>
-                {categories.map((cat, i) => (
-                  <View key={i} style={styles.catRow}>
-                    <TextInput
-                      style={[styles.input, { flex: 1 }]}
-                      value={cat.label}
-                      onChangeText={(v) => updateLabel(i, v)}
-                      placeholder={`区分 ${i + 1}（例: きのこの山）`}
-                      placeholderTextColor={Colors.textTertiary}
-                      maxLength={20}
-                    />
-                    {categories.length > 2 && (
-                      <TouchableOpacity style={styles.removeBtn} onPress={() => removeCategory(i)}>
-                        <Text style={styles.removeText}>×</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                ))}
-                <TouchableOpacity style={styles.addBtn} onPress={addCategory}>
-                  <Text style={styles.addText}>＋ 区分を追加</Text>
-                </TouchableOpacity>
-              </>
-            )}
+            {/* 区分リスト */}
+            <Text style={styles.label}>区分リスト *（最低2つ）</Text>
+            {categories.map((cat, i) => (
+              <View key={i} style={styles.catRow}>
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  value={cat.label}
+                  onChangeText={(v) => updateLabel(i, v)}
+                  placeholder={`区分 ${i + 1}（例: きのこの山）`}
+                  placeholderTextColor={Colors.textTertiary}
+                  maxLength={20}
+                />
+                {categories.length > 2 && (
+                  <TouchableOpacity style={styles.removeBtn} onPress={() => removeCategory(i)}>
+                    <Text style={styles.removeText}>×</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ))}
+            <TouchableOpacity style={styles.addBtn} onPress={addCategory}>
+              <Text style={styles.addText}>＋ 区分を追加</Text>
+            </TouchableOpacity>
 
             {/* ランキング方式 */}
             <Text style={styles.label}>ランキング方式</Text>
