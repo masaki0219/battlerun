@@ -25,8 +25,18 @@ function filterInvalidPoints(route: RoutePoint[]): RoutePoint[] {
   });
 }
 
+/**
+ * GPS追跡経路の状態。
+ * - 'background': バックグラウンド位置情報タスクが追跡中
+ * - 'foreground': フォアグラウンド監視のみで追跡中（バックグラウンドに移動すると停止する可能性あり）
+ * - 'denied': 位置情報の権限がなく追跡できていない
+ * - 'idle': GPS追跡を開始していない（歩数モード時・記録前など）
+ */
+export type LocationMode = 'background' | 'foreground' | 'denied' | 'idle';
+
 interface RecordState extends RecordStore {
   startedAt: string | null;
+  locationMode: LocationMode;
 }
 
 export const useRecordStore = create<RecordState>((set, get) => ({
@@ -37,6 +47,7 @@ export const useRecordStore = create<RecordState>((set, get) => ({
   durationSeconds: 0,
   route: [],
   startedAt: null,
+  locationMode: 'idle',
 
   startRecording: (type: MeasurementType) => {
     set({
@@ -47,6 +58,7 @@ export const useRecordStore = create<RecordState>((set, get) => ({
       durationSeconds: 0,
       route: [],
       startedAt: new Date().toISOString(),
+      locationMode: 'idle',
     });
   },
 
@@ -94,6 +106,7 @@ export const useRecordStore = create<RecordState>((set, get) => ({
       durationSeconds: 0,
       route: [],
       startedAt: null,
+      locationMode: 'idle',
     }),
 }));
 

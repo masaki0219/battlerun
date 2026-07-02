@@ -86,7 +86,7 @@ export default function RecordScreen() {
     getActiveBattleIds, fetchMyMemberships, fetchMyPrivateBattles, fetchPublicBattles,
   } = useBattleStore();
   const {
-    isRecording, measurementType, distanceKm, steps, route,
+    isRecording, measurementType, distanceKm, steps, route, locationMode,
     startRecording, stopRecording, reset,
   } = useRecordStore();
   const elapsed = useElapsedTime();
@@ -337,6 +337,20 @@ export default function RecordScreen() {
         </View>
       )}
 
+      {/* GPS追跡状態の警告バナー */}
+      {measurementType === 'gps' && locationMode === 'foreground' && (
+        <View style={s.warnBanner}>
+          <Ionicons name="warning-outline" size={14} color={BR.accent} />
+          <Text style={s.warnBannerText}>アプリを閉じると記録が止まる可能性があります</Text>
+        </View>
+      )}
+      {measurementType === 'gps' && locationMode === 'denied' && (
+        <View style={s.warnBanner}>
+          <Ionicons name="warning-outline" size={14} color={BR.accent} />
+          <Text style={s.warnBannerText}>位置情報の権限がありません。設定から許可してください</Text>
+        </View>
+      )}
+
       {/* Map */}
       {measurementType === 'gps' ? (
         lastPoint ? (
@@ -518,6 +532,13 @@ const s = StyleSheet.create({
     borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8,
   },
   hudContribText: { fontSize: 11, fontWeight: '700', color: BR.primary, textAlign: 'center' },
+  warnBanner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    marginHorizontal: 20, marginBottom: 8, gap: 6,
+    backgroundColor: `${BR.accent}18`,
+    borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8,
+  },
+  warnBannerText: { fontSize: 11, fontWeight: '700', color: BR.accent, textAlign: 'center' },
   hudStatsRow: {
     flexDirection: 'row',
     marginHorizontal: 20, marginBottom: 12,

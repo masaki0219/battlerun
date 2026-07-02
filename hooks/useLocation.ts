@@ -17,16 +17,19 @@ function haversine(a: RoutePoint, b: RoutePoint): number {
 /**
  * GPS追跡の動作条件:
  *
- * ■ フォアグラウンドのみ（Expo Go で動作）
- *   - バックグラウンド権限が付与されていない場合に自動選択
- *   - アプリをバックグラウンドに移動すると追跡が止まる
- *
  * ■ バックグラウンド追跡（EASカスタムビルドのみ）
  *   - `expo-task-manager` と `UIBackgroundModes: ["location"]` が必要
- *   - Expo Go では動作しない（バックグラウンド権限の取得自体は成功するが、
- *     startLocationUpdatesAsync が LocationTaskManagerError を返す）
- *   - eas.json に "developmentClient": true を設定し、
- *     `eas build --profile development` でビルドすること
+ *   - bg権限が許可され、startLocationUpdatesAsync が成功した場合に使用
+ *
+ * ■ フォアグラウンド監視（フォールバック・Expo Go で動作）
+ *   - bg権限が無い、または startLocationUpdatesAsync が失敗した場合に自動フォールバック
+ *     （Expo Go では bg権限の取得自体は成功するが startLocationUpdatesAsync が
+ *     LocationTaskManagerError を投げるため、これを捕捉してフォールバックする）
+ *   - アプリをバックグラウンドに移動すると追跡が止まる可能性がある
+ *     （記録画面の警告バナーで明示する）
+ *
+ * いずれの場合も、バックグラウンドタスクとフォアグラウンド監視が同時に
+ * 有効化されないようガードし、距離の二重加算を防ぐ。
  */
 export function useLocation({ enabled }: { enabled: boolean }) {
   const measurementType = useRecordStore((s) => s.measurementType);
@@ -37,32 +40,19 @@ export function useLocation({ enabled }: { enabled: boolean }) {
 
     let cancelled = false;
 
-    const start = async () => {
-      const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
-      if (cancelled || fgStatus !== 'granted') return;
+    const stopBackgroundTask = async () => {
+      const isRegistered = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => false);
+      if (isRegistered) {
+        await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => {});
+      }
+    };
 
-      // バックグラウンド権限を要求
-      // ※ Expo Go では取得できても startLocationUpdatesAsync は失敗する
-      // ※ EASビルド + UIBackgroundModes: ["location"] が必要
-      const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
+    const startForegroundWatch = async () => {
+      // バックグラウンドタスクが先に登録されてしまっている場合は停止し、経路を1つに限定する
+      await stopBackgroundTask();
+      if (cancelled) return;
 
-      if (bgStatus === 'granted') {
-        // バックグラウンド追跡: EASカスタムビルドのみ動作
-        const isRegistered = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => false);
-        if (!isRegistered) {
-          await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
-            accuracy: Location.Accuracy.BestForNavigation,
-            timeInterval: 1000,
-            distanceInterval: 2,
-            showsBackgroundLocationIndicator: true,
-            foregroundService: {
-              notificationTitle: '記録中',
-              notificationBody: 'BattleRun がGPSを追跡しています',
-            },
-          });
-        }
-      } else {
-        // フォアグラウンドのみ: Expo Go でも動作
+      try {
         watchRef.current = await Location.watchPositionAsync(
           { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1000, distanceInterval: 2 },
           (loc) => {
@@ -79,7 +69,54 @@ export function useLocation({ enabled }: { enabled: boolean }) {
             });
           }
         );
-        if (cancelled) { watchRef.current?.remove(); watchRef.current = null; }
+        if (cancelled) { watchRef.current?.remove(); watchRef.current = null; return; }
+        useRecordStore.setState({ locationMode: 'foreground' });
+      } catch (e) {
+        console.warn('[useLocation] watchPositionAsync failed:', e);
+        useRecordStore.setState({ locationMode: 'denied' });
+      }
+    };
+
+    const start = async () => {
+      const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
+      if (cancelled) return;
+      if (fgStatus !== 'granted') {
+        useRecordStore.setState({ locationMode: 'denied' });
+        return;
+      }
+
+      // バックグラウンド権限を要求
+      // ※ Expo Go では取得できても startLocationUpdatesAsync は失敗する
+      // ※ EASビルド + UIBackgroundModes: ["location"] が必要
+      const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync().catch(() => ({ status: 'denied' as const }));
+      if (cancelled) return;
+
+      if (bgStatus === 'granted') {
+        // バックグラウンド追跡を試行。失敗時はフォアグラウンド監視へフォールバックする
+        try {
+          const isRegistered = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => false);
+          if (!isRegistered) {
+            await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
+              accuracy: Location.Accuracy.BestForNavigation,
+              timeInterval: 1000,
+              distanceInterval: 2,
+              showsBackgroundLocationIndicator: true,
+              foregroundService: {
+                notificationTitle: '記録中',
+                notificationBody: 'BattleRun がGPSを追跡しています',
+              },
+            });
+          }
+          if (cancelled) return;
+          useRecordStore.setState({ locationMode: 'background' });
+        } catch (e) {
+          console.warn('[useLocation] startLocationUpdatesAsync failed, falling back to foreground watch:', e);
+          if (cancelled) return;
+          await startForegroundWatch();
+        }
+      } else {
+        // bg権限なし: フォアグラウンド監視のみ
+        await startForegroundWatch();
       }
     };
 
@@ -89,10 +126,8 @@ export function useLocation({ enabled }: { enabled: boolean }) {
       cancelled = true;
       watchRef.current?.remove();
       watchRef.current = null;
-      // バックグラウンドタスクを停止
-      Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME)
-        .then((started) => { if (started) Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME); })
-        .catch(() => {});
+      stopBackgroundTask();
+      useRecordStore.setState({ locationMode: 'idle' });
     };
   }, [enabled, measurementType]);
 }
