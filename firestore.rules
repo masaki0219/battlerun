@@ -5,8 +5,11 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null && request.auth.uid == userId;
+      // titles（MVP/準MVP称号）はCloud Functions（Admin SDK、ルール適用外）のみが付与する。
+      // クライアントによる自己付与・改ざんを防ぐためupdateでの変更を禁止する。
       allow update: if request.auth != null && request.auth.uid == userId
-        && !('plan' in request.resource.data.diff(resource.data).affectedKeys());
+        && !('plan' in request.resource.data.diff(resource.data).affectedKeys())
+        && !('titles' in request.resource.data.diff(resource.data).affectedKeys());
 
       // 通知の作成はCloud Functions（Admin SDK、ルール適用外）のみ。
       // クライアントは既読化(update)・閲覧(read)のみ行う。

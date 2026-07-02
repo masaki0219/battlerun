@@ -1,17 +1,17 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, Share, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
-import { collection, getDocs, doc, getDoc, query, where, updateDoc, arrayUnion, Timestamp } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, query, where, Timestamp } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../../lib/firebase';
 import { useAuthStore } from '../../../stores/authStore';
 import { useBattleStore } from '../../../stores/battleStore';
 import { isPro } from '../../../lib/pro';
-import type { Battle, CategoryStats, UserTitle } from '../../../types';
+import type { Battle, CategoryStats } from '../../../types';
 
 const BR = {
   light:       '#F4F2EC',
@@ -58,7 +58,6 @@ function mapFirestoreToBattle(id: string, data: Record<string, unknown>): Battle
     seasonId: (data['seasonId'] as string | null) ?? null,
     title: (data['title'] as string) ?? '',
     description: (data['description'] as string) ?? '',
-    mode: (data['mode'] as 'team' | 'individual') ?? 'team',
     categories: (data['categories'] as Battle['categories']) ?? [],
     rankingType: (data['rankingType'] as 'average' | 'total') ?? 'total',
     startAt: (data['startAt'] as Timestamp)?.toDate?.()?.toISOString() ?? '',
@@ -82,7 +81,6 @@ export default function BattleResultScreen() {
   const [localBattle, setLocalBattle] = useState<Battle | null>(
     () => [...publicBattles, ...privateBattles].find((b) => b.id === id) ?? null
   );
-  const titleAwardedRef = useRef(false);
 
   const membership = myMemberships.find((m) => m.battleId === id);
   const myCatId = membership?.categoryId ?? null;
@@ -159,41 +157,6 @@ export default function BattleResultScreen() {
     load();
   }, [id, localBattle, user]);
 
-  // 称号をFirestoreに自動書き込み（バトル終了済み＆MVP/準MVP）
-  // TODO: 称号付与のサーバー移管（次スプリント）。現状はクライアントの結果画面初回表示時に書き込んでいる。
-  useEffect(() => {
-    if (loading || titleAwardedRef.current) return;
-    if (!user || !localBattle) return;
-    if (new Date(localBattle.endAt) > new Date()) return;
-
-    const rankType = localBattle.rankingType ?? 'total';
-    const sorted = [...stats].sort((a, b) =>
-      rankType === 'total' ? b.totalDistanceKm - a.totalDistanceKm : b.avgDistanceKm - a.avgDistanceKm
-    );
-    const myTeamIdx = sorted.findIndex((s) => s.categoryId === myCatId);
-    const myRankLocal = myTeamIdx >= 0 ? myTeamIdx + 1 : null;
-    const myTeamLocal = myTeamIdx >= 0 ? sorted[myTeamIdx] : null;
-
-    if (!myRankLocal || myRankLocal > 2 || !myTeamLocal) return;
-
-    const alreadyAwarded = user.titles?.some((t) => t.battleId === localBattle.id);
-    if (alreadyAwarded) return;
-
-    titleAwardedRef.current = true;
-
-    const newTitle: UserTitle = {
-      seasonId: localBattle.seasonId ?? '',
-      battleId: localBattle.id,
-      battleTitle: localBattle.title,
-      teamName: myTeamLocal.label,
-      rank: myRankLocal,
-      awardedAt: new Date().toISOString(),
-    };
-
-    // 称号獲得通知はCloud Functions（onUserTitlesUpdated）が作成する
-    updateDoc(doc(db, 'users', user.id), { titles: arrayUnion(newTitle) }).catch(() => {});
-  }, [loading, user, localBattle, stats, myCatId]);
-
   if (!localBattle) {
     return (
       <SafeAreaView style={s.root}>
@@ -234,10 +197,12 @@ export default function BattleResultScreen() {
     } catch {}
   }
 
+  // MVP/準MVP: バトル内の個人貢献距離（participants.totalDistanceKm）ランキングでの自分の順位
+  const myContributionRank = user ? participants.findIndex((p) => p.userId === user.id) + 1 : 0;
+
   function userTitle(): string | null {
-    if (!myRank || !myTeam) return null;
-    if (myRank === 1) return 'MVP';
-    if (myRank === 2) return '準MVP';
+    if (myContributionRank === 1) return 'MVP';
+    if (myContributionRank === 2) return '準MVP';
     return null;
   }
   const titleName = userTitle();
