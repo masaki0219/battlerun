@@ -14,6 +14,11 @@ function haversine(a: RoutePoint, b: RoutePoint): number {
   return R * 2 * Math.asin(Math.sqrt(sin2));
 }
 
+// バックグラウンド追跡が登録済みでも位置更新が届かなくなる「静かな停止」を検知するまでの猶予時間
+const WATCHDOG_TIMEOUT_MS = 20000;
+// ウォッチドッグの監視間隔
+const WATCHDOG_CHECK_INTERVAL_MS = 5000;
+
 /**
  * GPS追跡の動作条件:
  *
@@ -28,17 +33,31 @@ function haversine(a: RoutePoint, b: RoutePoint): number {
  *   - アプリをバックグラウンドに移動すると追跡が止まる可能性がある
  *     （記録画面の警告バナーで明示する）
  *
+ * ■ ウォッチドッグ（「静かな停止」対策）
+ *   - startLocationUpdatesAsync 自体は成功しても、OS側の事情で位置更新が
+ *     一切届かなくなるケースがある（例外を投げないため try/catch では検知できない）
+ *   - WATCHDOG_TIMEOUT_MS の間ルートに新しい点が追加されなければ、
+ *     フォアグラウンド監視へ自動切替し、記録画面に警告バナーを表示する
+ *
  * いずれの場合も、バックグラウンドタスクとフォアグラウンド監視が同時に
  * 有効化されないようガードし、距離の二重加算を防ぐ。
  */
 export function useLocation({ enabled }: { enabled: boolean }) {
   const measurementType = useRecordStore((s) => s.measurementType);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
+  const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (!enabled || measurementType !== 'gps') return;
 
     let cancelled = false;
+
+    const stopWatchdog = () => {
+      if (watchdogRef.current) {
+        clearInterval(watchdogRef.current);
+        watchdogRef.current = null;
+      }
+    };
 
     const stopBackgroundTask = async () => {
       const isRegistered = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => false);
@@ -48,6 +67,8 @@ export function useLocation({ enabled }: { enabled: boolean }) {
     };
 
     const startForegroundWatch = async () => {
+      // ウォッチドッグ経由の切替時に二重発火しないよう先に停止する
+      stopWatchdog();
       // バックグラウンドタスクが先に登録されてしまっている場合は停止し、経路を1つに限定する
       await stopBackgroundTask();
       if (cancelled) return;
@@ -75,6 +96,27 @@ export function useLocation({ enabled }: { enabled: boolean }) {
         console.warn('[useLocation] watchPositionAsync failed:', e);
         useRecordStore.setState({ locationMode: 'denied' });
       }
+    };
+
+    // バックグラウンド追跡中、WATCHDOG_TIMEOUT_MS の間ルートに新しい点が
+    // 追加されなければ「静かな停止」とみなし、フォアグラウンド監視へ切り替える
+    const startWatchdog = () => {
+      stopWatchdog();
+      let lastRouteLen = useRecordStore.getState().route.length;
+      let lastChangeAt = Date.now();
+      watchdogRef.current = setInterval(() => {
+        if (cancelled) return;
+        const currentLen = useRecordStore.getState().route.length;
+        if (currentLen !== lastRouteLen) {
+          lastRouteLen = currentLen;
+          lastChangeAt = Date.now();
+          return;
+        }
+        if (Date.now() - lastChangeAt >= WATCHDOG_TIMEOUT_MS) {
+          console.warn('[useLocation] watchdog: no location update received, falling back to foreground watch');
+          void startForegroundWatch();
+        }
+      }, WATCHDOG_CHECK_INTERVAL_MS);
     };
 
     const start = async () => {
@@ -109,6 +151,7 @@ export function useLocation({ enabled }: { enabled: boolean }) {
           }
           if (cancelled) return;
           useRecordStore.setState({ locationMode: 'background' });
+          startWatchdog();
         } catch (e) {
           console.warn('[useLocation] startLocationUpdatesAsync failed, falling back to foreground watch:', e);
           if (cancelled) return;
@@ -124,6 +167,7 @@ export function useLocation({ enabled }: { enabled: boolean }) {
 
     return () => {
       cancelled = true;
+      stopWatchdog();
       watchRef.current?.remove();
       watchRef.current = null;
       stopBackgroundTask();
