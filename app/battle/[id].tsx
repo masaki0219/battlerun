@@ -56,6 +56,7 @@ function MonoLabel({ children, color = Colors.textTertiary, size = 9 }: {
 
 // ─── activity feed item type (simplified) ─────────────────────
 interface RecentActivity {
+  id: string;
   userId: string;
   displayName: string;
   distanceKm: number;
@@ -135,7 +136,7 @@ export default function BattleDetailScreen() {
     if (!id || !user) return;
     const q = query(
       collection(db, 'activities'),
-      where('battleId', '==', id),
+      where('battleIds', 'array-contains', id),
       orderBy('startedAt', 'desc'),
       limit(10),
     );
@@ -155,6 +156,7 @@ export default function BattleDetailScreen() {
             ? `${Math.floor(diffMin / 60)}時間前`
             : `${Math.floor(diffMin / 1440)}日前`;
           return {
+            id: d.id,
             userId: data['userId'] as string,
             displayName: (data['displayName'] as string | undefined) ?? 'メンバー',
             distanceKm: (data['distanceKm'] as number) ?? 0,
@@ -164,7 +166,7 @@ export default function BattleDetailScreen() {
         });
         setRecentActivities(items);
       })
-      .catch(() => { /* activities may not have battleId index yet */ });
+      .catch(() => { /* activities may not have battleIds index yet */ });
   }, [id, user]);
 
   if (!battle) {
@@ -313,10 +315,15 @@ export default function BattleDetailScreen() {
             <MonoLabel color={Colors.textTertiary} size={9}>最近の活動</MonoLabel>
             <View style={{ height: 10 }} />
             {recentActivities.map((a, i) => (
-              <View key={i} style={[
-                s.actRow,
-                i < recentActivities.length - 1 && s.actRowBorder,
-              ]}>
+              <TouchableOpacity
+                key={a.id}
+                style={[
+                  s.actRow,
+                  i < recentActivities.length - 1 && s.actRowBorder,
+                ]}
+                onPress={() => router.push(`/activity/${a.id}` as any)}
+                activeOpacity={0.7}
+              >
                 <View style={[s.actAvatar, a.isMe && s.actAvatarMe]}>
                   <Ionicons name="walk-outline" size={16} color={a.isMe ? Colors.primary : Colors.textTertiary} />
                 </View>
@@ -326,7 +333,8 @@ export default function BattleDetailScreen() {
                   </Text>
                   <Text style={s.actMeta}>{a.distanceKm.toFixed(1)}km走った · {a.ago}</Text>
                 </View>
-              </View>
+                <Ionicons name="chevron-forward" size={14} color={Colors.textTertiary} />
+              </TouchableOpacity>
             ))}
           </View>
         )}

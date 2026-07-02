@@ -66,7 +66,7 @@ interface ActivityData {
   id: string;
   userId: string;
   displayName: string;
-  battleId: string | null;
+  battleIds: string[];
   distanceKm: number;
   steps: number | null;
   durationSeconds: number;
@@ -74,6 +74,11 @@ interface ActivityData {
   route: RoutePoint[];
   startedAt: string;
   endedAt: string;
+}
+
+interface BattleContribution {
+  battleId: string;
+  battleTitle: string;
 }
 
 interface ReactionCount {
@@ -87,7 +92,7 @@ export default function ActivityDetailScreen() {
   const { user } = useAuthStore();
   const [activity, setActivity] = useState<ActivityData | null>(null);
   const [reactions, setReactions] = useState<ReactionCount[]>([]);
-  const [battleTitle, setBattleTitle] = useState<string | null>(null);
+  const [battleContributions, setBattleContributions] = useState<BattleContribution[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -108,11 +113,13 @@ export default function ActivityDetailScreen() {
           timestamp: p['timestamp'] as number,
         }));
 
+        const battleIds = ((d['battleIds'] as string[] | undefined) ?? []);
+
         setActivity({
           id: snap.id,
           userId: d['userId'] as string,
           displayName: (d['displayName'] as string) ?? 'メンバー',
-          battleId: (d['battleId'] as string | null) ?? null,
+          battleIds,
           distanceKm: (d['distanceKm'] as number) ?? 0,
           steps: (d['steps'] as number | null) ?? null,
           durationSeconds: (d['durationSeconds'] as number) ?? 0,
@@ -122,12 +129,14 @@ export default function ActivityDetailScreen() {
           endedAt: new Date(endMs).toISOString(),
         });
 
-        // バトル名取得
-        const bid = d['battleId'] as string | null;
-        if (bid) {
-          const bSnap = await getDoc(doc(db, 'battles', bid));
-          if (bSnap.exists()) setBattleTitle(bSnap.data()['title'] as string);
-        }
+        // 反映先バトル名を全件取得（複数バトル参加中の場合すべて表示する）
+        const contributions = await Promise.all(
+          battleIds.map(async (bid) => {
+            const bSnap = await getDoc(doc(db, 'battles', bid));
+            return bSnap.exists() ? { battleId: bid, battleTitle: bSnap.data()['title'] as string } : null;
+          })
+        );
+        setBattleContributions(contributions.filter((c): c is BattleContribution => c !== null));
 
         // リアクション取得
         const rSnap = await getDocs(collection(db, 'activities', id, 'reactions'));
@@ -276,19 +285,24 @@ export default function ActivityDetailScreen() {
         )}
 
         {/* ── Battle contribution ── */}
-        {battleTitle && (
+        {battleContributions.length > 0 && (
           <View style={s.section}>
             <Tac color={BR.ink3} size={9}>バトル貢献</Tac>
-            <View style={s.battleCard}>
-              <Ionicons name="flash" size={18} color={BR.accent} />
-              <View style={{ flex: 1 }}>
-                <Text style={s.battleTitle}>{battleTitle}</Text>
-                <Text style={s.battleContrib}>+{activity.distanceKm.toFixed(2)}km 貢献</Text>
-              </View>
-              <TouchableOpacity onPress={() => router.push(`/battle/${activity.battleId}` as any)}>
+            {battleContributions.map((c) => (
+              <TouchableOpacity
+                key={c.battleId}
+                style={s.battleCard}
+                onPress={() => router.push(`/battle/${c.battleId}` as any)}
+                activeOpacity={0.75}
+              >
+                <Ionicons name="flash" size={18} color={BR.accent} />
+                <View style={{ flex: 1 }}>
+                  <Text style={s.battleTitle}>{c.battleTitle}</Text>
+                  <Text style={s.battleContrib}>+{activity.distanceKm.toFixed(2)}km 貢献</Text>
+                </View>
                 <Ionicons name="chevron-forward" size={16} color={BR.ink3} />
               </TouchableOpacity>
-            </View>
+            ))}
           </View>
         )}
 

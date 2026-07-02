@@ -36,7 +36,7 @@
       "collectionGroup": "activities",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "battleId", "order": "ASCENDING" },
+        { "fieldPath": "battleIds", "arrayConfig": "CONTAINS" },
         { "fieldPath": "startedAt", "order": "DESCENDING" }
       ]
     }

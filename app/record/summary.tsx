@@ -63,12 +63,14 @@ interface BattleImpact {
 
 export default function RecordingSummaryScreen() {
   const params = useLocalSearchParams<{
+    activityId: string;
     distanceKm: string;
     durationSeconds: string;
     steps: string;
     pace: string;
   }>();
 
+  const activityId = params.activityId ?? '';
   const distanceKm = parseFloat(params.distanceKm ?? '0');
   const durationSeconds = parseInt(params.durationSeconds ?? '0', 10);
   const steps = parseInt(params.steps ?? '0', 10);
@@ -82,8 +84,9 @@ export default function RecordingSummaryScreen() {
   const [earnedBadge, setEarnedBadge] = useState<string | null>(null);
 
   // バトルへの影響を実データから計算
+  // 反映先バトルは保存済み activity の battleIds[] を正とする（store の myMemberships からの推定はしない）
   useEffect(() => {
-    if (!user || myMemberships.length === 0) {
+    if (!user || !activityId) {
       setLoadingImpact(false);
       return;
     }
@@ -92,15 +95,21 @@ export default function RecordingSummaryScreen() {
     const load = async () => {
       setLoadingImpact(true);
       try {
+        const actSnap = await getDoc(doc(db, 'activities', activityId));
+        const battleIds: string[] = actSnap.exists()
+          ? ((actSnap.data()['battleIds'] as string[] | undefined) ?? [])
+          : [];
+
         const results: BattleImpact[] = [];
 
-        for (const mem of myMemberships) {
-          const battle = allBattles.find((b) => b.id === mem.battleId);
-          if (!battle || !mem.categoryId) continue;
+        for (const battleId of battleIds) {
+          const membership = myMemberships.find((m) => m.battleId === battleId);
+          const battle = allBattles.find((b) => b.id === battleId);
+          if (!battle || !membership?.categoryId) continue;
 
           // category_stats を取得して現在の順位を確認
           const statsSnap = await getDocs(
-            collection(db, 'battles', mem.battleId, 'category_stats')
+            collection(db, 'battles', battleId, 'category_stats')
           );
           const stats: CategoryStats[] = statsSnap.docs.map((d) => ({
             categoryId: d.id,
@@ -115,17 +124,18 @@ export default function RecordingSummaryScreen() {
               ? b.totalDistanceKm - a.totalDistanceKm
               : b.avgDistanceKm - a.avgDistanceKm
           );
-          const rankBefore = sorted.findIndex((s) => s.categoryId === mem.categoryId) + 1;
-          const myTeam = sorted.find((s) => s.categoryId === mem.categoryId);
+          const rankBefore = sorted.findIndex((s) => s.categoryId === membership.categoryId) + 1;
+          const myTeam = sorted.find((s) => s.categoryId === membership.categoryId);
 
           if (!myTeam) continue;
 
           // Cloud Functionsによる集計はまだ反映されていないため、
           // この記録の距離をローカルで加算した「加算後」の状態をシミュレーションする
           const newTotalDistanceKm = myTeam.totalDistanceKm + distanceKm;
-          const newAvgDistanceKm = newTotalDistanceKm / Math.max(myTeam.participantCount, 1);
+          const newParticipantCount = Math.max(myTeam.participantCount, 1);
+          const newAvgDistanceKm = newTotalDistanceKm / newParticipantCount;
           const simAfter = sorted.map((s) =>
-            s.categoryId === mem.categoryId
+            s.categoryId === membership.categoryId
               ? { ...s, totalDistanceKm: newTotalDistanceKm, avgDistanceKm: newAvgDistanceKm }
               : s
           ).sort((a, b) =>
@@ -133,7 +143,7 @@ export default function RecordingSummaryScreen() {
               ? b.totalDistanceKm - a.totalDistanceKm
               : b.avgDistanceKm - a.avgDistanceKm
           );
-          const rankAfter = simAfter.findIndex((s) => s.categoryId === mem.categoryId) + 1;
+          const rankAfter = simAfter.findIndex((s) => s.categoryId === membership.categoryId) + 1;
 
           results.push({
             battleId: battle.id,
@@ -146,9 +156,9 @@ export default function RecordingSummaryScreen() {
         setImpacts(results);
 
         // バッジ判定（陣営累計10km達成）
-        if (user) {
+        if (user && battleIds.length > 0) {
           const partSnap = await getDoc(
-            doc(db, 'battles', myMemberships[0]?.battleId ?? 'x', 'participants', user.id)
+            doc(db, 'battles', battleIds[0], 'participants', user.id)
           ).catch(() => null);
           const myContrib = (partSnap?.data()?.['totalDistanceKm'] as number) ?? 0;
           if (myContrib < 10 && myContrib + distanceKm >= 10) {
@@ -160,10 +170,11 @@ export default function RecordingSummaryScreen() {
       }
     };
     load();
-  }, [user, myMemberships, publicBattles, privateBattles, distanceKm]);
+  }, [user, activityId, myMemberships, publicBattles, privateBattles, distanceKm]);
 
   const primaryImpact = impacts[0] ?? null;
   const rankChanged = primaryImpact && primaryImpact.rankBefore !== primaryImpact.rankAfter;
+  const hasMultipleImpacts = impacts.length > 1;
 
   return (
     <SafeAreaView style={s.root} edges={['top', 'bottom']}>
@@ -242,12 +253,14 @@ export default function RecordingSummaryScreen() {
                 <View>
                   <Text style={s.impactBattleLabel}>{primaryImpact.battleTitle}</Text>
                   <Text style={s.impactTeamText}>
-                    {rankChanged && primaryImpact.rankBefore > primaryImpact.rankAfter
-                      ? <>陣営が{' '}<Text style={{ color: BR.primaryDeep, fontWeight: '900' }}>{primaryImpact.rankAfter}位</Text>{' '}に上昇！</>
-                      : rankChanged
-                      ? <>順位が変動しました</>
-                      : <>陣営に距離を加算しました</>}
+                    あなたの出撃で陣営が{' '}
+                    <Text style={{ color: rankChanged ? BR.primaryDeep : BR.ink, fontWeight: '900' }}>
+                      {primaryImpact.rankBefore}位→{primaryImpact.rankAfter}位
+                    </Text>
                   </Text>
+                  {hasMultipleImpacts && (
+                    <Text style={s.impactMoreText}>ほか{impacts.length - 1}件のバトルにも反映されました</Text>
+                  )}
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
                   <Text style={s.impactAddLabel}>陣営加算</Text>
@@ -289,7 +302,7 @@ export default function RecordingSummaryScreen() {
           <TouchableOpacity
             style={s.ctaBtn}
             onPress={() => {
-              if (primaryImpact) {
+              if (primaryImpact && !hasMultipleImpacts) {
                 router.replace(`/battle/${primaryImpact.battleId}` as any);
               } else {
                 router.replace('/(tabs)/battle' as any);
@@ -376,6 +389,7 @@ const s = StyleSheet.create({
   },
   impactBattleLabel: { fontSize: 11, color: BR.ink3, fontWeight: '700', letterSpacing: 1 },
   impactTeamText: { fontSize: 14, fontWeight: '800', color: BR.ink, marginTop: 2 },
+  impactMoreText: { fontSize: 10, color: BR.ink3, fontWeight: '600', marginTop: 4 },
   impactAddLabel: { fontSize: 10, color: BR.ink3, fontWeight: '700', letterSpacing: 1 },
   impactAddVal: { fontSize: 24, color: BR.accent, fontWeight: '800', lineHeight: 28 },
   impactAddUnit: { fontSize: 11, color: BR.ink3 },

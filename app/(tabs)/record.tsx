@@ -158,7 +158,7 @@ export default function RecordScreen() {
                 { language: 'ja-JP', rate: 1.0 },
               );
             }
-            await saveActivityToFirestore({
+            const activityId = await saveActivityToFirestore({
               userId: user.id,
               displayName: user.name,
               activity,
@@ -171,6 +171,7 @@ export default function RecordScreen() {
             router.push({
               pathname: '/record/summary' as any,
               params: {
+                activityId: activityId ?? '',
                 distanceKm: activity.distanceKm.toFixed(2),
                 durationSeconds: String(activity.durationSeconds),
                 steps: String(activity.steps ?? 0),

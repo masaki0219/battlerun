@@ -121,7 +121,7 @@ export default function BattleResultScreen() {
 
         // バトル期間内のアクティビティを一括取得してカウント
         const actSnap = await getDocs(
-          query(collection(db, 'activities'), where('battleId', '==', id))
+          query(collection(db, 'activities'), where('battleIds', 'array-contains', id))
         );
         const actCountMap: Record<string, number> = {};
         actSnap.docs.forEach((d) => {
