@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
-import { collection, getDocs, doc, getDoc, query, where, Timestamp } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, Timestamp } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../../lib/firebase';
 import { useAuthStore } from '../../../stores/authStore';
@@ -48,7 +48,7 @@ interface ParticipantInfo {
   userId: string;
   displayName: string;
   totalDistanceKm: number;
-  activityCount: number;
+  activityCount: number | null; // サーバー未集計（0回)ならnull。'—'表示に使う
 }
 
 function mapFirestoreToBattle(id: string, data: Record<string, unknown>): Battle {
@@ -76,7 +76,7 @@ export default function BattleResultScreen() {
 
   const [stats, setStats] = useState<CategoryStats[]>([]);
   const [participants, setParticipants] = useState<ParticipantInfo[]>([]);
-  const [myStats, setMyStats] = useState<{ totalKm: number; actCount: number }>({ totalKm: 0, actCount: 0 });
+  const [myStats, setMyStats] = useState<{ totalKm: number; actCount: number | null }>({ totalKm: 0, actCount: null });
   const [loading, setLoading] = useState(true);
   const [localBattle, setLocalBattle] = useState<Battle | null>(
     () => [...publicBattles, ...privateBattles].find((b) => b.id === id) ?? null
@@ -116,27 +116,20 @@ export default function BattleResultScreen() {
         }));
         setStats(s);
 
-        // participants (top 20) + 個人記録回数をactivitiesから集計
+        // participants (top 20)
+        // 記録回数は aggregateActivity がサーバー側で participants.activityCount に
+        // 加算済みのため、activities への個別クエリはせずそのまま読む
         const partSnap = await getDocs(collection(db, 'battles', id, 'participants'));
-
-        // バトル期間内のアクティビティを一括取得してカウント
-        const actSnap = await getDocs(
-          query(collection(db, 'activities'), where('battleIds', 'array-contains', id))
-        );
-        const actCountMap: Record<string, number> = {};
-        actSnap.docs.forEach((d) => {
-          const uid = d.data()['userId'] as string;
-          actCountMap[uid] = (actCountMap[uid] ?? 0) + 1;
-        });
 
         const parts: ParticipantInfo[] = [];
         await Promise.all(
           partSnap.docs.slice(0, 20).map(async (d) => {
             const uid = d.id;
             const km = (d.data()['totalDistanceKm'] as number) ?? 0;
+            const activityCount = (d.data()['activityCount'] as number | undefined) ?? null;
             const userSnap = await getDoc(doc(db, 'users', uid));
             const name = (userSnap.data()?.['name'] as string) ?? 'メンバー';
-            parts.push({ userId: uid, displayName: name, totalDistanceKm: km, activityCount: actCountMap[uid] ?? 0 });
+            parts.push({ userId: uid, displayName: name, totalDistanceKm: km, activityCount });
           })
         );
         parts.sort((a, b) => b.totalDistanceKm - a.totalDistanceKm);
@@ -147,7 +140,8 @@ export default function BattleResultScreen() {
           const meSnap = await getDoc(doc(db, 'battles', id, 'participants', user.id));
           if (meSnap.exists()) {
             const km = (meSnap.data()['totalDistanceKm'] as number) ?? 0;
-            setMyStats({ totalKm: km, actCount: actCountMap[user.id] ?? 0 });
+            const actCount = (meSnap.data()['activityCount'] as number | undefined) ?? null;
+            setMyStats({ totalKm: km, actCount });
           }
         }
       } finally {
@@ -197,15 +191,10 @@ export default function BattleResultScreen() {
     } catch {}
   }
 
-  // MVP/準MVP: バトル内の個人貢献距離（participants.totalDistanceKm）ランキングでの自分の順位
-  const myContributionRank = user ? participants.findIndex((p) => p.userId === user.id) + 1 : 0;
-
-  function userTitle(): string | null {
-    if (myContributionRank === 1) return 'MVP';
-    if (myContributionRank === 2) return '準MVP';
-    return null;
-  }
-  const titleName = userTitle();
+  // 称号（優勝/準優勝陣営の一員）はサーバー（battleStatusScheduler）が付与したuser.titlesを正とする。
+  // 結果画面を開いたクライアントでは計算しない。
+  const myTitle = user?.titles?.find((t) => t.battleId === localBattle.id) ?? null;
+  const titleName = myTitle ? (myTitle.rank === 1 ? '優勝陣営の一員' : '準優勝陣営の一員') : null;
 
   return (
     <SafeAreaView style={s.root} edges={['top']}>
@@ -254,7 +243,7 @@ export default function BattleResultScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={s.titleName}>{titleName}</Text>
                 <Text style={s.titleDesc}>
-                  {titleName === 'MVP' ? 'バトル内個人貢献距離1位' : 'バトル内個人貢献距離2位'}
+                  {myTitle?.teamName ? `「${myTitle.teamName}」として出撃した仲間に贈られる称号` : '陣営として勝ち取った称号'}
                 </Text>
               </View>
               <Text style={s.titleNew}>NEW</Text>
@@ -274,7 +263,7 @@ export default function BattleResultScreen() {
               <View style={s.statDivider} />
               <View style={s.statItem}>
                 <Tac color={BR.ink3} size={8}>記録回数</Tac>
-                <Text style={s.statVal}>{myStats.actCount}<Text style={s.statUnit}> 回</Text></Text>
+                <Text style={s.statVal}>{myStats.actCount ?? '—'}<Text style={s.statUnit}> 回</Text></Text>
               </View>
               <View style={s.statDivider} />
               <View style={s.statItem}>

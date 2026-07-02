@@ -67,6 +67,13 @@ async function seed() {
       startedAt: Timestamp.now(),
       endedAt: Timestamp.now(),
     });
+
+    // alice のユーザードキュメント（plan/titles自己変更拒否確認用）
+    await setDoc(doc(db, 'users/alice'), {
+      name: 'Alice',
+      plan: 'free',
+      titles: [],
+    });
   });
 }
 
@@ -159,6 +166,25 @@ async function run() {
     'activities: 既存ドキュメントのdeleteは拒否',
     deleteDoc(doc(aliceDb, 'activities/act1')),
     'fail',
+  );
+
+  // ── users/{uid} ──────────────────────────────────────────────────
+  await check(
+    'users/{uid}: titlesの自己更新は拒否（Cloud Functionsのみ付与可）',
+    updateDoc(doc(aliceDb, 'users/alice'), {
+      titles: [{ seasonId: '', battleId: 'battle1', battleTitle: 't', teamName: 'teamA', rank: 1, awardedAt: '' }],
+    }),
+    'fail',
+  );
+  await check(
+    'users/{uid}: planの自己更新は拒否',
+    updateDoc(doc(aliceDb, 'users/alice'), { plan: 'pro' }),
+    'fail',
+  );
+  await check(
+    'users/{uid}: titles/plan以外のフィールド更新は許可',
+    updateDoc(doc(aliceDb, 'users/alice'), { name: 'Alice2' }),
+    'succeed',
   );
 
   // ── users/{uid}/notifications ─────────────────────────────────────

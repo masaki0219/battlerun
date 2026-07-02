@@ -74,11 +74,12 @@ export const onUserTitlesUpdated = onDocumentUpdated('users/{userId}', async (ev
 
   await Promise.all(
     newTitles.map((title) => {
-      const titleLabel = title.rank === 1 ? 'MVP' : '準MVP';
+      const titleLabel = title.rank === 1 ? '優勝陣営の一員' : '準優勝陣営の一員';
+      const teamText = title.teamName ? `「${title.teamName}」として` : '';
       return db.collection(`users/${userId}/notifications`).add({
         type: 'title_earned',
         title: `称号「${titleLabel}」を獲得しました！`,
-        body: `「${title.battleTitle}」での貢献が認められました`,
+        body: `「${title.battleTitle}」で${teamText}走った成果が認められました`,
         isRead: false,
         relatedBattleId: title.battleId,
         relatedActivityId: null,
