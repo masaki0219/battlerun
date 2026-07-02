@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import { useBattleStore } from '../../stores/battleStore';
+import { useUnreadNotifications } from '../../hooks/useUnreadNotifications';
 import { isPro } from '../../lib/pro';
 import { scheduleBattleEndNotification, scheduleBattleEnd1hNotification } from '../../lib/notifications';
 import { Card } from '../../components/ui/Card';
@@ -96,6 +97,7 @@ function CategorySelectModal({
 export default function BattleScreen() {
   const { user, proEntitlement } = useAuthStore();
   const userIsPro = isPro(user?.plan, proEntitlement);
+  const unreadNotifications = useUnreadNotifications();
   const {
     publicBattles, privateBattles, myMemberships, seasons, isLoading,
     fetchPublicBattles, fetchMyMemberships, fetchMyPrivateBattles, fetchSeason,
@@ -926,8 +928,16 @@ export default function BattleScreen() {
         <TouchableOpacity
           onPress={() => router.push('/notifications' as any)}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={styles.notifBtn}
         >
           <Ionicons name="notifications-outline" size={22} color={Colors.textPrimary} />
+          {unreadNotifications > 0 && (
+            <View style={styles.notifBadge}>
+              <Text style={styles.notifBadgeText}>
+                {unreadNotifications > 9 ? '9+' : unreadNotifications}
+              </Text>
+            </View>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -967,6 +977,16 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border,
   },
   headerTitle: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.semibold, color: Colors.textPrimary },
+  notifBtn: { position: 'relative' },
+  notifBadge: {
+    position: 'absolute', top: -4, right: -6,
+    minWidth: 16, height: 16, borderRadius: 8,
+    paddingHorizontal: 3,
+    backgroundColor: Colors.accent,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5, borderColor: Colors.surface,
+  },
+  notifBadgeText: { fontSize: 9, fontWeight: '800', color: '#fff' },
   scroll: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing['3xl'], gap: Spacing.lg },
 
   // Active Challenge Card

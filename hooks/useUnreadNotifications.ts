@@ -1,0 +1,25 @@
+import { useEffect, useState } from 'react';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { useAuthStore } from '../stores/authStore';
+
+/** 未読通知の件数をリアルタイムで購読する。通知ベルの未読バッジ表示用。 */
+export function useUnreadNotifications(): number {
+  const user = useAuthStore((s) => s.user);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    if (!user) {
+      setUnreadCount(0);
+      return;
+    }
+    const q = query(
+      collection(db, 'users', user.id, 'notifications'),
+      where('isRead', '==', false),
+    );
+    const unsub = onSnapshot(q, (snap) => setUnreadCount(snap.size), () => setUnreadCount(0));
+    return unsub;
+  }, [user]);
+
+  return unreadCount;
+}
