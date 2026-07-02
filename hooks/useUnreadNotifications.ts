@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, limit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuthStore } from '../stores/authStore';
 
@@ -13,9 +13,11 @@ export function useUnreadNotifications(): number {
       setUnreadCount(0);
       return;
     }
+    // バッジ表示は9+で頭打ちにするため、購読自体もlimit(20)に絞りコストを抑える
     const q = query(
       collection(db, 'users', user.id, 'notifications'),
       where('isRead', '==', false),
+      limit(20),
     );
     const unsub = onSnapshot(q, (snap) => setUnreadCount(snap.size), () => setUnreadCount(0));
     return unsub;
