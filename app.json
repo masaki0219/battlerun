@@ -17,8 +17,8 @@
       "bundleIdentifier": "com.battlerun.app",
       "usesAppleSignIn": true,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "ランニングのルートを記録するために位置情報を使用します。",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "バックグラウンドでもGPSを追跡するために位置情報を使用します。",
+        "NSLocationWhenInUseUsageDescription": "ランニング・ウォーキングの走行距離を計測し、参加中のバトルに貢献距離として反映するために位置情報を使用します。",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "アプリを閉じている間も走行距離の計測を続けるために使用します。計測は記録中のみ行われます。",
         "NSHealthShareUsageDescription": "歩数データを読み取るためにHealthKitを使用します。",
         "NSHealthUpdateUsageDescription": "運動データを記録するためにHealthKitを使用します。",
         "ITSAppUsesNonExemptEncryption": false,
@@ -56,7 +56,7 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "バックグラウンドでもGPSを追跡するために位置情報を使用します。"
+          "locationAlwaysAndWhenInUsePermission": "アプリを閉じている間も走行距離の計測を続けるために使用します。計測は記録中のみ行われます。"
         }
       ],
       "expo-task-manager",

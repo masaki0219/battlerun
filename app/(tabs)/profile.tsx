@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
-  ScrollView, ActivityIndicator, Modal, FlatList, Pressable, Platform,
+  ScrollView, ActivityIndicator, Modal, FlatList, Pressable, Platform, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -15,8 +15,9 @@ import {
 } from 'firebase/auth';
 import { auth, db, storage } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
-import { purchasePro, restorePurchases } from '../../lib/revenuecat';
+import { purchasePro, restorePurchases, getProPackageInfo, type ProPackageInfo } from '../../lib/revenuecat';
 import { isPro } from '../../lib/pro';
+import { LEGAL_URLS, SUBSCRIPTION_DISCLAIMER } from '../../lib/legal';
 import { Avatar } from '../../components/ui/Avatar';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -55,6 +56,13 @@ export default function ProfileScreen() {
   const [purchasing, setPurchasing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [proPackageInfo, setProPackageInfo] = useState<ProPackageInfo | null>(null);
+
+  useEffect(() => {
+    if (!isPro(user?.plan, proEntitlement)) {
+      getProPackageInfo().then(setProPackageInfo);
+    }
+  }, [user?.plan, proEntitlement]);
 
   function handleAvatarOptions() {
     Alert.alert('アイコンを変更', undefined, [
@@ -292,6 +300,11 @@ export default function ProfileScreen() {
               <Text style={styles.freeDesc}>
                 Proプランにアップグレードすると、プライベートチャレンジの作成が無制限になります。
               </Text>
+              {proPackageInfo && (
+                <Text style={styles.priceText}>
+                  {proPackageInfo.periodLabel} {proPackageInfo.priceString}（自動更新）
+                </Text>
+              )}
               <Button
                 label={purchasing ? '処理中...' : 'Proにアップグレード'}
                 onPress={handlePurchasePro}
@@ -301,9 +314,21 @@ export default function ProfileScreen() {
               <TouchableOpacity onPress={handleRestore} style={{ alignSelf: 'center', marginTop: Spacing.sm }}>
                 <Text style={{ fontSize: Typography.fontSize.xs, color: Colors.textTertiary }}>購入を復元する</Text>
               </TouchableOpacity>
+              <Text style={styles.subscriptionDisclaimer}>{SUBSCRIPTION_DISCLAIMER}</Text>
             </>
           )}
         </Card>
+
+        {/* 利用規約・プライバシーポリシー */}
+        <View style={styles.legalRow}>
+          <TouchableOpacity onPress={() => Linking.openURL(LEGAL_URLS.termsOfService)}>
+            <Text style={styles.legalLink}>利用規約</Text>
+          </TouchableOpacity>
+          <Text style={styles.legalSeparator}>・</Text>
+          <TouchableOpacity onPress={() => Linking.openURL(LEGAL_URLS.privacyPolicy)}>
+            <Text style={styles.legalLink}>プライバシーポリシー</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* バッジ・称号リンク */}
         <TouchableOpacity
@@ -464,6 +489,11 @@ const styles = StyleSheet.create({
   proLabel: { fontSize: Typography.fontSize.md, color: Colors.primary, fontWeight: Typography.fontWeight.semibold },
   manageLink: { fontSize: Typography.fontSize.sm, color: Colors.primary },
   freeDesc: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary, lineHeight: 20 },
+  priceText: { fontSize: Typography.fontSize.sm, color: Colors.textPrimary, fontWeight: Typography.fontWeight.semibold, marginTop: Spacing.sm },
+  subscriptionDisclaimer: { fontSize: 10, color: Colors.textTertiary, lineHeight: 15, marginTop: Spacing.sm },
+  legalRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: Spacing.sm },
+  legalLink: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, textDecorationLine: 'underline' },
+  legalSeparator: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, marginHorizontal: Spacing.xs },
   emptyText: { fontSize: Typography.fontSize.sm, color: Colors.textTertiary, textAlign: 'center', paddingVertical: Spacing.md },
   titleList: { gap: Spacing.sm },
   titleBadge: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.sm, borderBottomWidth: 1, borderBottomColor: Colors.borderLight },

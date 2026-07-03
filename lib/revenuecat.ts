@@ -50,6 +50,42 @@ export function initRevenueCat(userId: string): void {
   }
 }
 
+export interface ProPackageInfo {
+  /** ストアがローカライズ済みの価格表記（例: "¥480"） */
+  priceString: string;
+  /** 課金周期の日本語ラベル（例: "月額"）。パースできない場合は空文字 */
+  periodLabel: string;
+}
+
+function periodLabelFromIso(period: string | null | undefined): string {
+  if (!period) return '';
+  if (period.includes('Y')) return '年額';
+  if (period.includes('M')) return '月額';
+  if (period.includes('W')) return '週額';
+  return '';
+}
+
+/**
+ * Pro単一プランの価格・課金周期を取得する（購入ボタン周辺の表示用）。
+ * Apple審査ガイドライン3.1.2で、購入前に価格・期間の明示が求められるため。
+ */
+export async function getProPackageInfo(): Promise<ProPackageInfo | null> {
+  if (!API_KEY) return null;
+  const Purchases = getPurchases();
+  if (!Purchases) return null;
+  try {
+    const offerings = await Purchases.getOfferings();
+    const proPackage = offerings.current?.availablePackages[0];
+    if (!proPackage) return null;
+    return {
+      priceString: proPackage.product.priceString,
+      periodLabel: periodLabelFromIso(proPackage.product.subscriptionPeriod),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function checkProEntitlement(): Promise<boolean> {
   if (!API_KEY) return false;
   const Purchases = getPurchases();
