@@ -96,9 +96,9 @@ async function run() {
     'fail',
   );
   await check(
-    'category_stats: participantCountのみの更新は許可',
+    'category_stats: participantCountのみの更新も拒否（人数水増しによる平均改ざん防止）',
     updateDoc(doc(aliceDb, 'battles/battle1/category_stats/teamA'), { participantCount: 3 }),
-    'succeed',
+    'fail',
   );
   await check(
     'category_stats: ゼロ値での新規作成は許可',
@@ -114,19 +114,33 @@ async function run() {
     }),
     'fail',
   );
+  await check(
+    'category_stats: participantCount非ゼロでの新規作成は拒否',
+    setDoc(doc(aliceDb, 'battles/battle1/category_stats/teamD'), {
+      label: 'チームD', totalDistanceKm: 0, avgDistanceKm: 0, participantCount: 1,
+    }),
+    'fail',
+  );
 
   // ── participants ───────────────────────────────────────────────────
   await check(
     'participants: totalDistanceKm!=0での新規参加は拒否',
     setDoc(doc(aliceDb, 'battles/battle2/participants/alice'), {
-      categoryId: 'teamA', totalDistanceKm: 5, activityCount: 0,
+      userId: 'alice', categoryId: 'teamA', totalDistanceKm: 5, activityCount: 0,
+    }),
+    'fail',
+  );
+  await check(
+    'participants: userIdを他人のuidに詐称した新規参加は拒否',
+    setDoc(doc(aliceDb, 'battles/battle2/participants/alice'), {
+      userId: 'bob', categoryId: 'teamA', totalDistanceKm: 0, activityCount: 0,
     }),
     'fail',
   );
   await check(
     'participants: totalDistanceKm:0での新規参加は許可',
     setDoc(doc(aliceDb, 'battles/battle2/participants/alice'), {
-      categoryId: 'teamA', totalDistanceKm: 0, activityCount: 0,
+      userId: 'alice', categoryId: 'teamA', totalDistanceKm: 0, activityCount: 0,
     }),
     'succeed',
   );

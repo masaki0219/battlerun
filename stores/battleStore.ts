@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import {
   collection, query, where, getDocs, getDoc,
-  doc, setDoc, updateDoc, increment, serverTimestamp, addDoc, Timestamp, arrayUnion, runTransaction,
+  doc, setDoc, updateDoc, serverTimestamp, addDoc, Timestamp, arrayUnion, runTransaction,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuthStore } from './authStore';
@@ -181,12 +181,15 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
     await runTransaction(db, async (transaction) => {
       const participantSnap = await transaction.get(participantRef);
       const isNew = !participantSnap.exists();
-      const oldCategoryId = isNew ? null : (participantSnap.data()['categoryId'] as string | null);
-      const categoryChanged = !isNew && oldCategoryId !== categoryId;
+      const categoryChanged =
+        !isNew && (participantSnap.data()['categoryId'] as string | null) !== categoryId;
 
       // 参加者ドキュメントを作成、またはカテゴリのみ更新（既存距離はリセットしない）
+      // userId はアカウント削除時に collectionGroup('participants') で
+      // 該当ユーザーの参加データを横断検索するために保存する（onUserDeleted 参照）
       if (isNew) {
         transaction.set(participantRef, {
+          userId,
           categoryId: categoryId ?? null,
           totalDistanceKm: 0,
           joinedAt: serverTimestamp(),
@@ -195,27 +198,9 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
         transaction.update(participantRef, { categoryId: categoryId ?? null });
       }
 
-      // category_stats の participantCount を更新
-      if (isNew && categoryId) {
-        transaction.update(
-          doc(db, 'battles', battleId, 'category_stats', categoryId),
-          { participantCount: increment(1) },
-        );
-      } else if (categoryChanged) {
-        // カテゴリ変更: 旧カテゴリをデクリメント、新カテゴリをインクリメント
-        if (oldCategoryId) {
-          transaction.update(
-            doc(db, 'battles', battleId, 'category_stats', oldCategoryId),
-            { participantCount: increment(-1) },
-          );
-        }
-        if (categoryId) {
-          transaction.update(
-            doc(db, 'battles', battleId, 'category_stats', categoryId),
-            { participantCount: increment(1) },
-          );
-        }
-      }
+      // category_stats.participantCount / avgDistanceKm は Cloud Functions
+      // (participantCounter) が participants ドキュメントの書き込みをトリガーに
+      // サーバー側で再計算する。クライアントからは一切更新しない。
 
       // arrayUnion は Firestore が重複を自動除外するため再参加時も安全
       transaction.update(userRef, { battleIds: arrayUnion(battleId) });

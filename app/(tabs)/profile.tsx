@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { doc, updateDoc } from 'firebase/firestore';
 import {
   EmailAuthProvider,
   reauthenticateWithCredential,
@@ -159,10 +159,7 @@ export default function ProfileScreen() {
       const credential = EmailAuthProvider.credential(currentUser.email, password);
       await reauthenticateWithCredential(currentUser, credential);
 
-      // Firestore のユーザーデータ削除
-      await deleteDoc(doc(db, 'users', user.id));
-
-      // アバター画像を Storage から削除
+      // アバター画像を Storage から削除（認証が有効なうちに行う必要がある）
       if (user.avatarUrl) {
         try {
           await deleteObject(ref(storage, `avatars/${user.id}`));
@@ -171,7 +168,9 @@ export default function ProfileScreen() {
         }
       }
 
-      // Firebase Auth ユーザー削除（onAuthStateChanged が user: null をセットする）
+      // Firebase Auth ユーザー削除（onAuthStateChanged が user: null をセットする）。
+      // Firestore側のデータ（users/{uid}本体・activities・participants・通知・バッジ）は
+      // Cloud Functions（onUserDeleted）がAuthユーザー削除をトリガーに一括削除する。
       await deleteUser(currentUser);
 
       router.replace('/auth/login');

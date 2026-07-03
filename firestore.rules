@@ -46,16 +46,21 @@ service cloud.firestore {
       );
 
       // 参加者情報（participants/{uid}）
-      // - create: 本人のみ。totalDistanceKm は必ず 0 で作成すること（距離はCloud Functionsのみが加算）
-      // - update: 本人のみ。totalDistanceKm / activityCount は変更不可（カテゴリ変更等は許可）
+      // - create: 本人のみ。totalDistanceKm は必ず 0 で作成すること（距離はCloud Functionsのみが加算）。
+      //           userId フィールドはドキュメントパスのuidと一致必須
+      //           （アカウント削除時の collectionGroup('participants') 検索に使うため、
+      //           他人のuidを詐称されるとその人の参加データが誤って削除されうる）
+      // - update: 本人のみ。totalDistanceKm / activityCount / userId は変更不可（カテゴリ変更等は許可）
       // - delete: 本人またはadmin
       match /participants/{userId} {
         allow read: if request.auth != null;
         allow create: if request.auth != null && request.auth.uid == userId
-          && request.resource.data.totalDistanceKm == 0;
+          && request.resource.data.totalDistanceKm == 0
+          && request.resource.data.userId == userId;
         allow update: if request.auth != null && request.auth.uid == userId
           && request.resource.data.get('totalDistanceKm', null) == resource.data.get('totalDistanceKm', null)
-          && request.resource.data.get('activityCount', null) == resource.data.get('activityCount', null);
+          && request.resource.data.get('activityCount', null) == resource.data.get('activityCount', null)
+          && request.resource.data.get('userId', null) == resource.data.get('userId', null);
         allow delete: if request.auth != null && (
           request.auth.uid == userId ||
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
@@ -64,18 +69,20 @@ service cloud.firestore {
 
       // 区分ごとの集計（category_stats/{categoryId}）
       // - read: 認証済みユーザー
-      // - create: バトル作成時のゼロ初期化のみ許可（totalDistanceKm/avgDistanceKmが0）
-      // - update: totalDistanceKm/avgDistanceKmの変更は不可（Cloud Functionsのみ）。
-      //           participantCountの増減（参加/カテゴリ変更時）のみクライアントから許可
+      // - create: バトル作成時のゼロ初期化のみ許可（totalDistanceKm/avgDistanceKm/participantCountが0）
+      // - update: 全面禁止。totalDistanceKm/avgDistanceKmはCloud Functions(aggregateActivity)、
+      //           participantCount/avgDistanceKmはCloud Functions(participantCounter)のみが更新する。
+      //           以前はparticipantCountのみクライアント更新を許可していたが、
+      //           平均ランキング(avgDistanceKm = totalDistanceKm / participantCount)は
+      //           他陣営の参加人数を水増しして不正に下げられる改ざん経路だったため塞いだ。
       // - delete: 不可
       match /category_stats/{categoryId} {
         allow read: if request.auth != null;
         allow create: if request.auth != null
           && request.resource.data.totalDistanceKm == 0
-          && request.resource.data.avgDistanceKm == 0;
-        allow update: if request.auth != null
-          && request.resource.data.totalDistanceKm == resource.data.totalDistanceKm
-          && request.resource.data.avgDistanceKm == resource.data.avgDistanceKm;
+          && request.resource.data.avgDistanceKm == 0
+          && request.resource.data.participantCount == 0;
+        allow update: if false;
         allow delete: if false;
       }
     }
