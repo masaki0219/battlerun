@@ -37,6 +37,8 @@ export type LocationMode = 'background' | 'foreground' | 'denied' | 'idle';
 interface RecordState extends RecordStore {
   startedAt: string | null;
   locationMode: LocationMode;
+  // GPSウォッチドッグが「静かな停止」を検知している間 true。位置更新が再開すると false に戻る
+  gpsWarning: boolean;
 }
 
 export const useRecordStore = create<RecordState>((set, get) => ({
@@ -48,6 +50,7 @@ export const useRecordStore = create<RecordState>((set, get) => ({
   route: [],
   startedAt: null,
   locationMode: 'idle',
+  gpsWarning: false,
 
   startRecording: (type: MeasurementType) => {
     set({
@@ -59,6 +62,7 @@ export const useRecordStore = create<RecordState>((set, get) => ({
       route: [],
       startedAt: new Date().toISOString(),
       locationMode: 'idle',
+      gpsWarning: false,
     });
   },
 
@@ -107,6 +111,7 @@ export const useRecordStore = create<RecordState>((set, get) => ({
       route: [],
       startedAt: null,
       locationMode: 'idle',
+      gpsWarning: false,
     }),
 }));
 

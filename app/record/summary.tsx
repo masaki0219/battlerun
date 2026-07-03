@@ -1,14 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, ActivityIndicator,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, ActivityIndicator, Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
+import { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
 import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import { useBattleStore } from '../../stores/battleStore';
+import { isPro } from '../../lib/pro';
 import type { CategoryStats } from '../../types';
 
 const BR = {
@@ -76,12 +79,14 @@ export default function RecordingSummaryScreen() {
   const steps = parseInt(params.steps ?? '0', 10);
   const pace = params.pace ?? "--'--\"";
 
-  const { user } = useAuthStore();
+  const { user, proEntitlement } = useAuthStore();
+  const userIsPro = isPro(user?.plan, proEntitlement);
   const { publicBattles, privateBattles, myMemberships } = useBattleStore();
 
   const [impacts, setImpacts] = useState<BattleImpact[]>([]);
   const [loadingImpact, setLoadingImpact] = useState(true);
   const [earnedBadge, setEarnedBadge] = useState<string | null>(null);
+  const shareCardRef = useRef<View>(null);
 
   // バトルへの影響を実データから計算
   // 反映先バトルは保存済み activity の battleIds[] を正とする（store の myMemberships からの推定はしない）
@@ -175,6 +180,26 @@ export default function RecordingSummaryScreen() {
   const primaryImpact = impacts[0] ?? null;
   const rankChanged = primaryImpact && primaryImpact.rankBefore !== primaryImpact.rankAfter;
   const hasMultipleImpacts = impacts.length > 1;
+
+  async function handleShareRun() {
+    const message = primaryImpact
+      ? `今日の出撃: ${distanceKm.toFixed(1)}km\n「${primaryImpact.battleTitle}」陣営が${primaryImpact.rankBefore}位→${primaryImpact.rankAfter}位\n#BattleRun`
+      : `今日の出撃: ${distanceKm.toFixed(1)}km\n#BattleRun`;
+
+    try {
+      if (shareCardRef.current && (await Sharing.isAvailableAsync())) {
+        const uri = await captureRef(shareCardRef, { format: 'png', quality: 0.92 });
+        await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: '今日の出撃をシェア' });
+        return;
+      }
+    } catch (e) {
+      console.warn('[RecordingSummary] image share failed, falling back to text share:', e);
+    }
+
+    try {
+      await Share.share({ message });
+    } catch {}
+  }
 
   return (
     <SafeAreaView style={s.root} edges={['top', 'bottom']}>
@@ -297,6 +322,31 @@ export default function RecordingSummaryScreen() {
           </View>
         )}
 
+        {/* ── Share ─────────────────────────────────────── */}
+        <View style={s.section}>
+          <Tac color={BR.ink3} size={9}>今日の出撃をシェア / SHARE RUN</Tac>
+          <View ref={shareCardRef} collapsable={false} style={s.shareCard}>
+            <View style={{ gap: 4 }}>
+              <Text style={s.shareCardKm}>{distanceKm.toFixed(1)}<Text style={s.shareCardKmUnit}> km</Text></Text>
+              {primaryImpact ? (
+                <Text style={s.shareCardImpact}>
+                  「{primaryImpact.battleTitle}」陣営 {primaryImpact.rankBefore}位→{primaryImpact.rankAfter}位
+                </Text>
+              ) : null}
+              <Text style={s.shareCardTag}>#BattleRun</Text>
+            </View>
+            {!userIsPro && (
+              <View style={s.shareWatermarkBadge}>
+                <Text style={s.shareWatermarkText}>BattleRun</Text>
+              </View>
+            )}
+          </View>
+          <TouchableOpacity style={s.shareBtn} onPress={handleShareRun} activeOpacity={0.85}>
+            <Ionicons name="share-outline" size={18} color="#fff" />
+            <Text style={s.shareBtnText}>今日の出撃をシェア</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* ── CTA ───────────────────────────────────────── */}
         <View style={s.ctaSection}>
           <TouchableOpacity
@@ -410,6 +460,27 @@ const s = StyleSheet.create({
   badgeTitle: { fontSize: 15, fontWeight: '900', color: BR.ink, marginTop: 1 },
   badgeSub: { fontSize: 11, color: BR.ink3, marginTop: 1 },
   badgeNew: { fontSize: 11, color: BR.gold, fontWeight: '800' },
+
+  // Share
+  shareCard: {
+    marginTop: 8, padding: 16, borderRadius: 14,
+    backgroundColor: BR.dark, overflow: 'hidden', position: 'relative',
+  },
+  shareCardKm: { fontSize: 32, fontWeight: '900', color: '#fff', letterSpacing: -1 },
+  shareCardKmUnit: { fontSize: 14, fontWeight: '700', color: BR.paper3 },
+  shareCardImpact: { fontSize: 13, color: 'rgba(255,255,255,0.85)', fontWeight: '700' },
+  shareCardTag: { fontSize: 12, color: BR.primary, fontWeight: '700', marginTop: 2 },
+  shareWatermarkBadge: {
+    position: 'absolute', bottom: 10, right: 10,
+    backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 6,
+    paddingHorizontal: 8, paddingVertical: 3,
+  },
+  shareWatermarkText: { fontSize: 10, color: 'rgba(255,255,255,0.5)', fontWeight: '700' },
+  shareBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: BR.dark, borderRadius: 12, paddingVertical: 14, marginTop: 12,
+  },
+  shareBtnText: { fontSize: 14, fontWeight: '800', color: '#fff' },
 
   ctaSection: { paddingHorizontal: 16, marginTop: 16, gap: 10 },
   ctaBtn: {

@@ -68,10 +68,11 @@ async function seed() {
       endedAt: Timestamp.now(),
     });
 
-    // alice のユーザードキュメント（plan/titles自己変更拒否確認用）
+    // alice のユーザードキュメント（plan/role/titles自己変更拒否確認用）
     await setDoc(doc(db, 'users/alice'), {
       name: 'Alice',
       plan: 'free',
+      role: 'user',
       titles: [],
     });
   });
@@ -182,7 +183,12 @@ async function run() {
     'fail',
   );
   await check(
-    'users/{uid}: titles/plan以外のフィールド更新は許可',
+    'users/{uid}: roleの自己更新は拒否（admin自称防止）',
+    updateDoc(doc(aliceDb, 'users/alice'), { role: 'admin' }),
+    'fail',
+  );
+  await check(
+    'users/{uid}: titles/plan/role以外のフィールド更新は許可',
     updateDoc(doc(aliceDb, 'users/alice'), { name: 'Alice2' }),
     'succeed',
   );

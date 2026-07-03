@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, Share, Platform,
@@ -7,6 +7,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { collection, getDocs, doc, getDoc, Timestamp } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
+import { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
 import { db } from '../../../lib/firebase';
 import { useAuthStore } from '../../../stores/authStore';
 import { useBattleStore } from '../../../stores/battleStore';
@@ -81,6 +83,7 @@ export default function BattleResultScreen() {
   const [localBattle, setLocalBattle] = useState<Battle | null>(
     () => [...publicBattles, ...privateBattles].find((b) => b.id === id) ?? null
   );
+  const shareCardRef = useRef<View>(null);
 
   const membership = myMemberships.find((m) => m.battleId === id);
   const myCatId = membership?.categoryId ?? null;
@@ -184,10 +187,20 @@ export default function BattleResultScreen() {
   async function handleShare() {
     const rankText = myRank ? `${myRank}位` : '参加';
     const kmText = myStats.totalKm.toFixed(1);
+    const message = `「${localBattle?.title ?? 'バトル'}」で${rankText}！\n自分の貢献: ${kmText}km\n#BattleRun で走ろう`;
+
     try {
-      await Share.share({
-        message: `「${localBattle?.title ?? 'バトル'}」で${rankText}！\n自分の貢献: ${kmText}km\n#BattleRun で走ろう`,
-      });
+      if (shareCardRef.current && (await Sharing.isAvailableAsync())) {
+        const uri = await captureRef(shareCardRef, { format: 'png', quality: 0.92 });
+        await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: '結果をシェア' });
+        return;
+      }
+    } catch (e) {
+      console.warn('[BattleResult] image share failed, falling back to text share:', e);
+    }
+
+    try {
+      await Share.share({ message });
     } catch {}
   }
 
@@ -332,12 +345,15 @@ export default function BattleResultScreen() {
         {/* ── 共有 ── */}
         <View style={s.section}>
           <Tac color={BR.ink3} size={9}>結果をシェア / SHARE RESULT</Tac>
-          <View style={s.sharePreview}>
+          <View ref={shareCardRef} collapsable={false} style={s.sharePreview}>
             <View style={s.sharePreviewContent}>
               <Text style={s.sharePreviewTitle}>{localBattle.title}</Text>
               <Text style={s.sharePreviewRank}>
                 {myRank ? `${myRank}位` : '参加'} · {myStats.totalKm.toFixed(1)}km
               </Text>
+              {myTeam?.label ? (
+                <Text style={s.sharePreviewTeam}>{myTeam.label}</Text>
+              ) : null}
               <Text style={s.sharePreviewTag}>#BattleRun</Text>
             </View>
             {!userIsPro && (
@@ -505,6 +521,7 @@ const s = StyleSheet.create({
   sharePreviewContent: { gap: 4 },
   sharePreviewTitle: { fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: '700' },
   sharePreviewRank: { fontSize: 28, fontWeight: '900', color: '#fff', letterSpacing: -1 },
+  sharePreviewTeam: { fontSize: 13, color: 'rgba(255,255,255,0.85)', fontWeight: '700', marginTop: 2 },
   sharePreviewTag: { fontSize: 12, color: BR.primary, fontWeight: '700', marginTop: 4 },
   watermarkBadge: {
     position: 'absolute', bottom: 10, right: 10,

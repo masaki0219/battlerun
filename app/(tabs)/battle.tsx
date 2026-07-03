@@ -172,6 +172,19 @@ export default function BattleScreen() {
     : null;
   const primaryCategoryId = primaryMembership?.categoryId ?? null;
 
+  // Day-0アクティベーション: 未参加ユーザーに開催中のパブリックランを1件だけ強く提示する
+  const recommendedBattle = publicBattles.find(
+    (b) => b.status === 'active' && !myMemberships.some((m) => m.battleId === b.id),
+  ) ?? null;
+  const recommendedStats = recommendedBattle ? (categoryStatsMap[recommendedBattle.id] ?? []) : [];
+  const recommendedShortageCategory = recommendedBattle
+    ? recommendedBattle.categories.reduce<Category | null>((min, cat) => {
+        const count = recommendedStats.find((s) => s.categoryId === cat.id)?.participantCount ?? 0;
+        const minCount = min ? (recommendedStats.find((s) => s.categoryId === min.id)?.participantCount ?? 0) : Infinity;
+        return count < minCount ? cat : min;
+      }, null)
+    : null;
+
   // ── パブリックランの category_stats をリアルタイム購読 ──────
   useEffect(() => {
     if (!user || publicBattles.length === 0) return;
@@ -294,7 +307,14 @@ export default function BattleScreen() {
       void scheduleBattleEndNotification(battle);
       void scheduleBattleEnd1hNotification(battle);
       setCategoryModalBattle(null);
-      Alert.alert('参加完了', `「${battle.categories.find((c) => c.id === categoryId)?.label}」で参加しました！`);
+      Alert.alert(
+        '参加完了',
+        `「${battle.categories.find((c) => c.id === categoryId)?.label}」として参加しました。最初の出撃で陣営に貢献しよう`,
+        [
+          { text: 'あとで', style: 'cancel' },
+          { text: '出撃する', onPress: () => router.push('/(tabs)/record' as any) },
+        ],
+      );
     } catch (e: any) {
       Alert.alert('エラー', e.message ?? '参加に失敗しました');
     } finally {
@@ -858,17 +878,51 @@ export default function BattleScreen() {
   }
 
   // ────────────────────────────────────────────────────────────────
+  // Day-0アクティベーション: 開催中の作戦に参加しようカード
+  // ────────────────────────────────────────────────────────────────
+  function renderJoinRecommendationCard() {
+    if (!recommendedBattle) return null;
+    return (
+      <TouchableOpacity
+        activeOpacity={0.88}
+        onPress={() => setCategoryModalBattle(recommendedBattle)}
+        style={styles.recommendCard}
+      >
+        <View style={styles.recommendHeader}>
+          <Ionicons name="flash" size={16} color="#fff" />
+          <Text style={styles.recommendHeaderText}>開催中の作戦に参加しよう</Text>
+        </View>
+        <Text style={styles.recommendTitle} numberOfLines={1}>{recommendedBattle.title}</Text>
+        {recommendedShortageCategory && (
+          <View style={styles.recommendShortageRow}>
+            <Text style={styles.recommendShortageText}>
+              「{recommendedShortageCategory.label}」は援軍募集中！
+            </Text>
+          </View>
+        )}
+        <View style={styles.recommendCta}>
+          <Text style={styles.recommendCtaText}>区分を選んで参加する</Text>
+          <Ionicons name="chevron-forward" size={16} color={Colors.primary} />
+        </View>
+      </TouchableOpacity>
+    );
+  }
+
+  // ────────────────────────────────────────────────────────────────
   // State B: 未参加レイアウト
   // ────────────────────────────────────────────────────────────────
   function renderNotParticipatingView() {
     return (
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        {/* エンプティ状態 */}
-        <View style={styles.emptyStateCard}>
-          <Ionicons name="trophy-outline" size={40} color={Colors.textTertiary} />
-          <Text style={styles.emptyStateTitle}>参加中のチャレンジはありません</Text>
-          <Text style={styles.emptyStateHint}>下のバトルに参加して距離を競おう！</Text>
-        </View>
+        {recommendedBattle ? (
+          renderJoinRecommendationCard()
+        ) : (
+          <View style={styles.emptyStateCard}>
+            <Ionicons name="trophy-outline" size={40} color={Colors.textTertiary} />
+            <Text style={styles.emptyStateTitle}>参加中のチャレンジはありません</Text>
+            <Text style={styles.emptyStateHint}>下のバトルに参加して距離を競おう！</Text>
+          </View>
+        )}
 
         {/* パブリックバトル一覧 */}
         {publicBattles.length > 0 && (
@@ -1130,6 +1184,38 @@ const styles = StyleSheet.create({
   emptyStateTitle: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.semibold, color: Colors.textSecondary },
   emptyStateHint: { fontSize: Typography.fontSize.sm, color: Colors.textTertiary, textAlign: 'center' },
   sectionLabel: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
+
+  // Day-0アクティベーション: 参加おすすめカード
+  recommendCard: {
+    backgroundColor: Colors.textPrimary,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+    gap: Spacing.xs,
+    ...Shadow.md,
+  },
+  recommendHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  recommendHeaderText: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: '#fff' },
+  recommendTitle: { fontSize: Typography.fontSize.xl, fontWeight: Typography.fontWeight.bold, color: '#fff', marginTop: Spacing.xs },
+  recommendShortageRow: {
+    alignSelf: 'flex-start',
+    backgroundColor: `${Colors.primary}30`,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    marginTop: Spacing.xs,
+  },
+  recommendShortageText: { fontSize: Typography.fontSize.xs, fontWeight: Typography.fontWeight.bold, color: Colors.primary },
+  recommendCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: BorderRadius.md,
+    paddingVertical: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  recommendCtaText: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.primary },
 
   // Forms
   formTitle: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.lg },

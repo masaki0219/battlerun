@@ -37,7 +37,11 @@ const WATCHDOG_CHECK_INTERVAL_MS = 5000;
  *   - startLocationUpdatesAsync 自体は成功しても、OS側の事情で位置更新が
  *     一切届かなくなるケースがある（例外を投げないため try/catch では検知できない）
  *   - WATCHDOG_TIMEOUT_MS の間ルートに新しい点が追加されなければ、
- *     フォアグラウンド監視へ自動切替し、記録画面に警告バナーを表示する
+ *     recordStore.gpsWarning を true にして記録画面に警告バナーを表示する。
+ *     バックグラウンドタスク稼働中ならフォアグラウンド監視へ自動切替もする
+ *   - 位置更新が再開すると gpsWarning は自動的に false に戻る
+ *   - フォアグラウンド監視に切り替わった後も監視は続行する（そこでも
+ *     途絶しうるため）。記録停止時にのみ監視を止める
  *
  * いずれの場合も、バックグラウンドタスクとフォアグラウンド監視が同時に
  * 有効化されないようガードし、距離の二重加算を防ぐ。
@@ -67,9 +71,8 @@ export function useLocation({ enabled }: { enabled: boolean }) {
     };
 
     const startForegroundWatch = async () => {
-      // ウォッチドッグ経由の切替時に二重発火しないよう先に停止する
-      stopWatchdog();
       // バックグラウンドタスクが先に登録されてしまっている場合は停止し、経路を1つに限定する
+      // （ウォッチドッグ自体はフォアグラウンド監視中も継続して途絶を検知し続ける）
       await stopBackgroundTask();
       if (cancelled) return;
 
@@ -92,29 +95,39 @@ export function useLocation({ enabled }: { enabled: boolean }) {
         );
         if (cancelled) { watchRef.current?.remove(); watchRef.current = null; return; }
         useRecordStore.setState({ locationMode: 'foreground' });
+        startWatchdog();
       } catch (e) {
         console.warn('[useLocation] watchPositionAsync failed:', e);
-        useRecordStore.setState({ locationMode: 'denied' });
+        stopWatchdog();
+        useRecordStore.setState({ locationMode: 'denied', gpsWarning: false });
       }
     };
 
-    // バックグラウンド追跡中、WATCHDOG_TIMEOUT_MS の間ルートに新しい点が
-    // 追加されなければ「静かな停止」とみなし、フォアグラウンド監視へ切り替える
+    // WATCHDOG_TIMEOUT_MS の間ルートに新しい点が追加されなければ「静かな停止」とみなし、
+    // gpsWarning を立てる（バックグラウンド追跡中ならフォアグラウンド監視へも切り替える）。
+    // 記録停止までモードを問わず監視を継続し、更新が再開すれば gpsWarning を自動的に戻す。
     const startWatchdog = () => {
       stopWatchdog();
       let lastRouteLen = useRecordStore.getState().route.length;
       let lastChangeAt = Date.now();
       watchdogRef.current = setInterval(() => {
         if (cancelled) return;
-        const currentLen = useRecordStore.getState().route.length;
+        const state = useRecordStore.getState();
+        const currentLen = state.route.length;
         if (currentLen !== lastRouteLen) {
           lastRouteLen = currentLen;
           lastChangeAt = Date.now();
+          if (state.gpsWarning) useRecordStore.setState({ gpsWarning: false });
           return;
         }
         if (Date.now() - lastChangeAt >= WATCHDOG_TIMEOUT_MS) {
-          console.warn('[useLocation] watchdog: no location update received, falling back to foreground watch');
-          void startForegroundWatch();
+          console.warn('[useLocation] watchdog: no location update received for', WATCHDOG_TIMEOUT_MS, 'ms');
+          if (!state.gpsWarning) useRecordStore.setState({ gpsWarning: true });
+          if (state.locationMode === 'background') {
+            void startForegroundWatch();
+          }
+          // 次のチェックまでは再トリガーせず、更新再開の検知に専念する
+          lastChangeAt = Date.now();
         }
       }, WATCHDOG_CHECK_INTERVAL_MS);
     };
@@ -171,7 +184,7 @@ export function useLocation({ enabled }: { enabled: boolean }) {
       watchRef.current?.remove();
       watchRef.current = null;
       stopBackgroundTask();
-      useRecordStore.setState({ locationMode: 'idle' });
+      useRecordStore.setState({ locationMode: 'idle', gpsWarning: false });
     };
   }, [enabled, measurementType]);
 }

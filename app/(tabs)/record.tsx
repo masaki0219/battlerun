@@ -86,7 +86,7 @@ export default function RecordScreen() {
     getActiveBattleIds, fetchMyMemberships, fetchMyPrivateBattles, fetchPublicBattles,
   } = useBattleStore();
   const {
-    isRecording, measurementType, distanceKm, steps, route, locationMode,
+    isRecording, measurementType, distanceKm, steps, route, locationMode, gpsWarning,
     startRecording, stopRecording, reset,
   } = useRecordStore();
   const elapsed = useElapsedTime();
@@ -339,7 +339,13 @@ export default function RecordScreen() {
       )}
 
       {/* GPS追跡状態の警告バナー */}
-      {measurementType === 'gps' && locationMode === 'foreground' && (
+      {measurementType === 'gps' && gpsWarning && (
+        <View style={s.warnBanner}>
+          <Ionicons name="warning-outline" size={14} color={BR.accent} />
+          <Text style={s.warnBannerText}>⚠ GPS信号が不安定です。画面を開いたまま走ってください</Text>
+        </View>
+      )}
+      {measurementType === 'gps' && !gpsWarning && locationMode === 'foreground' && (
         <View style={s.warnBanner}>
           <Ionicons name="warning-outline" size={14} color={BR.accent} />
           <Text style={s.warnBannerText}>アプリを閉じると記録が止まる可能性があります</Text>
