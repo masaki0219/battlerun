@@ -59,6 +59,14 @@ record/summary / battle/result）。値はほぼ統一されており、多数�
 `Tac` は 8 ファイルにローカル定義。等幅・太字・大文字・字間広めの小ラベル。
 `MonoLabel`（`TextStyles.tacLabel` ベース、`color` / `size` props）へ統合する。
 
+## 意図的な例外（トークン化しない）
+
+- `app/battle/theme.tsx` の `THEMES` 配列（各テーマの `primary` / `bg` 6桁 hex）は、
+  「テーマ選択肢そのものを定義するデータ」であり UI chrome ではないため design_tokens には
+  移さず現状維持とする（`lib/battleTheme.ts` のランタイムテーマトークンと役割が異なる）。
+  受け入れチェックの「6桁 hex 排除」対象からは除外する。UI の枠・文字などの chrome は
+  すべてトークン化済み。
+
 ## 形状・影の統一
 
 - カード角丸 → `BorderRadius.lg (16)` / モーダル・ボトムシート → `BorderRadius.xl (20)`
