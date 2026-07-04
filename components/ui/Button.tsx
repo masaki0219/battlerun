@@ -1,8 +1,8 @@
 import React from 'react';
-import { TouchableOpacity, Text, ActivityIndicator, StyleSheet, ViewStyle } from 'react-native';
+import { Pressable, Text, ActivityIndicator, StyleSheet, ViewStyle } from 'react-native';
 import { Colors, Typography, BorderRadius, ComponentSize } from '../../design_tokens';
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'accent';
 type Size = 'sm' | 'md' | 'lg';
 
 interface Props {
@@ -15,37 +15,51 @@ interface Props {
   style?: ViewStyle;
 }
 
+const BG: Record<Variant, string> = {
+  primary: Colors.primary,
+  secondary: Colors.primaryLight,
+  ghost: 'transparent',
+  danger: Colors.error,
+  accent: Colors.accent,
+};
+
+const FG: Record<Variant, string> = {
+  primary: Colors.textOnPrimary,
+  secondary: Colors.primaryDark,
+  ghost: Colors.textSecondary,
+  danger: Colors.textOnPrimary,
+  accent: Colors.textOnPrimary,
+};
+
+const FONT: Record<Size, number> = {
+  sm: Typography.fontSize.sm,
+  md: Typography.fontSize.md,
+  lg: Typography.fontSize.lg,
+};
+
 export function Button({ label, onPress, variant = 'primary', size = 'md', disabled, loading, style }: Props) {
   const height = ComponentSize.buttonHeight[size];
-  const bg = {
-    primary: Colors.primary,
-    secondary: Colors.primaryLight,
-    ghost: 'transparent',
-    danger: Colors.error,
-  }[variant];
-  const color = {
-    primary: Colors.textOnPrimary,
-    secondary: Colors.primary,
-    ghost: Colors.textSecondary,
-    danger: Colors.textOnPrimary,
-  }[variant];
-  const border = variant === 'ghost' ? { borderWidth: 1, borderColor: Colors.border } : {};
+  const bg = BG[variant];
+  const color = FG[variant];
+  const border = variant === 'ghost' ? { borderWidth: 1, borderColor: Colors.border } : null;
 
   return (
-    <TouchableOpacity
+    <Pressable
       onPress={onPress}
       disabled={disabled || loading}
-      style={[styles.base, { height, backgroundColor: bg, opacity: disabled ? 0.5 : 1 }, border, style]}
-      activeOpacity={0.7}
+      style={({ pressed }) => [
+        styles.base,
+        { height, backgroundColor: bg, opacity: disabled ? 0.5 : pressed ? 0.85 : 1 },
+        border,
+        style,
+      ]}
     >
       {loading ? (
         <ActivityIndicator color={color} />
       ) : (
-        <Text style={[styles.label, { color, fontSize: size === 'sm' ? Typography.fontSize.sm : Typography.fontSize.md }]}>
-          {label}
-        </Text>
+        <Text style={[styles.label, { color, fontSize: FONT[size] }]}>{label}</Text>
       )}
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 

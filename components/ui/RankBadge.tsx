@@ -1,24 +1,50 @@
 import React from 'react';
-import { Text, StyleSheet } from 'react-native';
-import { Colors, Typography } from '../../design_tokens';
+import { View, Text, StyleSheet } from 'react-native';
+import { Colors } from '../../design_tokens';
 
 interface Props {
   rank: number;
+  size?: number;
 }
 
-export function RankBadge({ rank }: Props) {
-  if (rank === 1) {
-    return <Text style={[styles.base, { color: Colors.rank1 }]}>👑</Text>;
+/**
+ * 順位数字の丸バッジ。1〜3位は淡色背景＋濃色数字、4位以下はグレー。
+ * battle 一覧・詳細・結果で共用。
+ */
+export function RankBadge({ rank, size = 28 }: Props) {
+  const palette = rankPalette(rank);
+  return (
+    <View
+      style={[
+        styles.badge,
+        { width: size, height: size, borderRadius: size / 2, backgroundColor: palette.bg },
+      ]}
+    >
+      <Text style={[styles.num, { color: palette.fg, fontSize: size * 0.46 }]}>{rank}</Text>
+    </View>
+  );
+}
+
+function rankPalette(rank: number): { bg: string; fg: string } {
+  switch (rank) {
+    case 1:
+      return { bg: Colors.rank1 + '26', fg: '#B7860B' };
+    case 2:
+      return { bg: Colors.rank2 + '26', fg: '#6B7280' };
+    case 3:
+      return { bg: Colors.rank3 + '26', fg: '#A05A22' };
+    default:
+      return { bg: Colors.surfaceGray, fg: Colors.textSecondary };
   }
-  const color = rank === 2 ? Colors.rank2 : rank === 3 ? Colors.rank3 : Colors.textSecondary;
-  return <Text style={[styles.base, { color }]}>{rank}</Text>;
 }
 
 const styles = StyleSheet.create({
-  base: {
-    fontSize: Typography.fontSize.lg,
-    fontWeight: Typography.fontWeight.bold,
-    width: 28,
-    textAlign: 'center',
+  badge: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  num: {
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
   },
 });

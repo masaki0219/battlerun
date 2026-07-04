@@ -4,7 +4,7 @@
  * UIコンポーネントはすべてこのファイルの定数を使うこと。
  * ハードコードされた色・サイズは禁止。
  */
-import { Platform } from 'react-native';
+import { Platform, TextStyle } from 'react-native';
 
 // ============================================================
 // カラーパレット
@@ -130,22 +130,22 @@ export const TextStyles = {
   tacLabel: {
     fontFamily: Typography.fontFamily.mono,
     fontSize: 10,
-    fontWeight: '700' as const,
+    fontWeight: '700',
     letterSpacing: 1.5,
-    textTransform: 'uppercase' as const,
-  },
+    textTransform: 'uppercase',
+  } as TextStyle,
   // 距離などの大きな数値。桁が揃うよう tabular-nums を必ず付ける
   heroNumber: {
     fontSize: 64,
-    fontWeight: '900' as const,
+    fontWeight: '900',
     letterSpacing: -2,
-    fontVariant: ['tabular-nums'] as const,
-  },
+    fontVariant: ['tabular-nums'],
+  } as TextStyle,
   statNumber: {
     fontSize: 24,
-    fontWeight: '800' as const,
-    fontVariant: ['tabular-nums'] as const,
-  },
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  } as TextStyle,
 } as const;
 
 // ============================================================
