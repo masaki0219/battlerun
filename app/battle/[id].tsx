@@ -10,19 +10,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import { useBattleStore } from '../../stores/battleStore';
-import { Colors, Spacing, Shadow } from '../../design_tokens';
+import { Colors, DarkColors, Spacing, Shadow, BorderRadius } from '../../design_tokens';
+import { MonoLabel } from '../../components/ui/MonoLabel';
 import { getThemeTokens } from '../../lib/battleTheme';
 import type { CategoryStats, BattleTheme, Battle, Category } from '../../types';
 
 // ─── team colour palette ───────────────────────────────────────
-const TEAM_COLORS = ['#3A86FF', '#FF4757', '#FFC23C', '#9B5CFF', '#00D9A3', '#FF6B35'];
-const GOLD   = '#FFB800';
-const SILVER = '#9CA3AF';
-const BRONZE = '#CD7F32';
-
-function teamColor(i: number) { return TEAM_COLORS[i % TEAM_COLORS.length]; }
+function teamColor(i: number) { return Colors.teamPalette[i % Colors.teamPalette.length]; }
 function rankColor(rank: number) {
-  return rank === 1 ? GOLD : rank === 2 ? SILVER : rank === 3 ? BRONZE : Colors.textTertiary;
+  return rank === 1 ? Colors.rank1 : rank === 2 ? Colors.rank2 : rank === 3 ? Colors.rank3 : Colors.textTertiary;
 }
 
 // ─── countdown helpers ─────────────────────────────────────────
@@ -37,22 +33,6 @@ function timeLeft(endAt: string): { d: number; h: number; m: number } {
 }
 
 function pad(n: number) { return String(n).padStart(2, '0'); }
-
-// ─── small shared atoms ────────────────────────────────────────
-function MonoLabel({ children, color = Colors.textTertiary, size = 9 }: {
-  children: string; color?: string; size?: number;
-}) {
-  return (
-    <Text style={{
-      fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
-      fontSize: size,
-      fontWeight: '700',
-      letterSpacing: 2,
-      color,
-      textTransform: 'uppercase',
-    }}>{children}</Text>
-  );
-}
 
 // ─── activity feed item type (simplified) ─────────────────────
 interface RecentActivity {
@@ -292,7 +272,7 @@ export default function BattleDetailScreen() {
                   backgroundColor: i < 3 ? rc : Colors.surfaceGray,
                 }]}>
                   <Text style={[s.memberRankText, {
-                    color: i < 3 ? (i === 0 ? '#1A1A2E' : '#fff') : Colors.textTertiary,
+                    color: i < 3 ? (i === 0 ? Colors.textPrimary : Colors.textOnPrimary) : Colors.textTertiary,
                   }]}>{i + 1}</Text>
                 </View>
                 <Text style={[s.memberName, isMe && { color: Colors.primary, fontWeight: '700' }]} numberOfLines={1}>
@@ -355,7 +335,7 @@ function TwoTeamBlock({
   rankType: 'average' | 'total';
   themeTokens?: import('../../lib/battleTheme').ThemeTokens;
 }) {
-  const tk = themeTokens ?? { primary: '#00D9A3', accent: '#FF5C2B' } as any;
+  const tk = themeTokens ?? { primary: DarkColors.primary, accent: Colors.accent } as any;
   function val(s: CategoryStats) {
     return rankType === 'total' ? s.totalDistanceKm : s.avgDistanceKm;
   }
@@ -455,7 +435,7 @@ function TwoTeamBlock({
 
 const t2 = StyleSheet.create({
   block: {
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: Colors.border,
@@ -467,7 +447,7 @@ const t2 = StyleSheet.create({
   teamSide: { flex: 1, padding: 16, borderRightWidth: 1, borderRightColor: Colors.border },
   teamRight: { borderRightWidth: 0, borderLeftWidth: 1, borderLeftColor: Colors.border },
   teamName: { fontSize: 13, fontWeight: '900', color: Colors.textPrimary, marginTop: 4 },
-  teamKm: { fontSize: 32, fontWeight: '700', color: Colors.textPrimary, lineHeight: 38, marginTop: 6, letterSpacing: -1 },
+  teamKm: { fontSize: 32, fontWeight: '700', color: Colors.textPrimary, lineHeight: 38, marginTop: 6, letterSpacing: -1, fontVariant: ['tabular-nums'] },
   kmUnit: { fontSize: 11, color: Colors.textTertiary, letterSpacing: 0 },
   contrib: { fontSize: 11, color: Colors.textTertiary, marginTop: 3 },
   vsBadge: {
@@ -523,7 +503,7 @@ const t2 = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
-  deployText: { fontSize: 12, fontWeight: '900', color: '#fff' },
+  deployText: { fontSize: 12, fontWeight: '900', color: Colors.textOnPrimary },
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -540,7 +520,7 @@ function MultiTeamBlock({
   myContrib?: number;
   themeTokens?: import('../../lib/battleTheme').ThemeTokens;
 }) {
-  const tk = themeTokens ?? { primary: '#00D9A3', accent: '#FF5C2B', primaryDeep: '#06B189' } as any;
+  const tk = themeTokens ?? { primary: DarkColors.primary, accent: Colors.accent, primaryDeep: Colors.primaryDark } as any;
   const maxVal = Math.max(
     ...teams.map((t) => rankType === 'total' ? t.totalDistanceKm : t.avgDistanceKm),
     0.01,
@@ -602,7 +582,7 @@ function MultiTeamBlock({
                       backgroundColor: i < 3 ? rc : Colors.surfaceGray,
                     }]}>
                       <Text style={[mt.rankDotText, {
-                        color: i < 3 ? (i === 0 ? '#1A1A2E' : '#fff') : Colors.textTertiary,
+                        color: i < 3 ? (i === 0 ? Colors.textPrimary : Colors.textOnPrimary) : Colors.textTertiary,
                       }]}>{i + 1}</Text>
                     </View>
                     <Text style={[mt.barName, isUs && { color: tc, fontWeight: '900' }]} numberOfLines={1}>
@@ -652,7 +632,7 @@ const mt = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderRadius: 12,
     padding: 14,
     marginBottom: Spacing.md,
@@ -668,15 +648,15 @@ const mt = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  myRankNum: { fontSize: 20, fontWeight: '800', letterSpacing: -0.5 },
+  myRankNum: { fontSize: 20, fontWeight: '800', letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
   myTeamLabel: { fontSize: 11, color: Colors.textTertiary },
   myTeamName: { fontSize: 14, fontWeight: '900', color: Colors.textPrimary, marginTop: 1 },
   myContribLabel: { fontSize: 10, color: Colors.textTertiary },
-  myContribVal: { fontSize: 20, color: Colors.primary, fontWeight: '700', lineHeight: 24 },
+  myContribVal: { fontSize: 20, color: Colors.primary, fontWeight: '700', lineHeight: 24, fontVariant: ['tabular-nums'] },
   myContribUnit: { fontSize: 10, color: Colors.textTertiary },
 
   chartBlock: {
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: Colors.border,
@@ -711,7 +691,7 @@ const mt = StyleSheet.create({
   rankDotText: { fontSize: 10, fontWeight: '700' },
   barName: { flex: 1, fontSize: 12, fontWeight: '500', color: Colors.textPrimary },
   youLabel: { fontWeight: '400', fontSize: 10 },
-  barKm: { fontSize: 15, fontWeight: '700', color: Colors.textSecondary, letterSpacing: -0.5 },
+  barKm: { fontSize: 15, fontWeight: '700', color: Colors.textSecondary, letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
   barKmUnit: { fontSize: 9, fontWeight: '400', color: Colors.textTertiary, letterSpacing: 0 },
   track: {
     height: 6,
@@ -743,7 +723,7 @@ const mt = StyleSheet.create({
     margin: 10,
     padding: 8,
     borderRadius: 6,
-    backgroundColor: '#FFF9EC',
+    backgroundColor: `${Colors.accentYellow}14`,
     borderWidth: 1,
     borderColor: `${Colors.warning}40`,
     borderStyle: 'dashed',
@@ -814,6 +794,7 @@ const s = StyleSheet.create({
     fontWeight: '700',
     color: Colors.textPrimary,
     letterSpacing: 0.5,
+    fontVariant: ['tabular-nums'],
   },
   countdownUnit: { fontSize: 10, color: Colors.textSecondary },
 
@@ -823,8 +804,8 @@ const s = StyleSheet.create({
   },
 
   sectionCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
     borderWidth: 1,
     borderColor: Colors.border,
     padding: 14,
@@ -856,7 +837,7 @@ const s = StyleSheet.create({
   },
   memberRankText: { fontSize: 12, fontWeight: '700' },
   memberName: { flex: 1, fontSize: 12, color: Colors.textPrimary, fontWeight: '500' },
-  memberKm: { fontSize: 16, fontWeight: '700', color: Colors.textSecondary, letterSpacing: -0.5 },
+  memberKm: { fontSize: 16, fontWeight: '700', color: Colors.textSecondary, letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
   memberKmUnit: { fontSize: 9, fontWeight: '400', color: Colors.textTertiary },
 
   actRow: {
