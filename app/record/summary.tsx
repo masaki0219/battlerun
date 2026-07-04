@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, ActivityIndicator, Share,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -13,40 +13,8 @@ import { useAuthStore } from '../../stores/authStore';
 import { useBattleStore } from '../../stores/battleStore';
 import { isPro } from '../../lib/pro';
 import type { CategoryStats } from '../../types';
-
-const BR = {
-  dark:        '#0A0E1A',
-  darkCard:    '#161D33',
-  darkPanel:   '#11172A',
-  darkLine:    'rgba(255,255,255,0.08)',
-  darkLine2:   'rgba(255,255,255,0.14)',
-  light:       '#F4F2EC',
-  lightSurf2:  '#EDEAE2',
-  lightLine:   'rgba(10,14,26,0.08)',
-  ink:         '#0A0E1A',
-  ink2:        '#5A6477',
-  ink3:        '#9AA4B5',
-  primary:     '#00D9A3',
-  primaryDeep: '#06B189',
-  accent:      '#FF5C2B',
-  gold:        '#FFC23C',
-  paper:       '#FFFFFF',
-  paper2:      'rgba(255,255,255,0.68)',
-  paper3:      'rgba(255,255,255,0.40)',
-};
-
-function Tac({ children, color = BR.paper3, size = 9 }: {
-  children: string; color?: string; size?: number;
-}) {
-  return (
-    <Text style={{
-      fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
-      fontSize: size, fontWeight: '700',
-      letterSpacing: size * 0.2, color,
-      textTransform: 'uppercase',
-    }}>{children}</Text>
-  );
-}
+import { Colors, DarkColors, BorderRadius } from '../../design_tokens';
+import { MonoLabel } from '../../components/ui/MonoLabel';
 
 function formatTime(sec: number): string {
   const h = Math.floor(sec / 3600);
@@ -208,9 +176,9 @@ export default function RecordingSummaryScreen() {
         {/* ── Hero dark card ─────────────────────────────── */}
         <View style={s.heroCard}>
           <View style={s.heroTop}>
-            <Tac color={BR.primary} size={9}>記録完了 / RUN COMPLETE</Tac>
+            <MonoLabel color={DarkColors.primary} size={9}>記録完了 / RUN COMPLETE</MonoLabel>
             <TouchableOpacity onPress={() => router.replace('/(tabs)' as any)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="close" size={18} color={BR.paper3} />
+              <Ionicons name="close" size={18} color={DarkColors.textTertiary} />
             </TouchableOpacity>
           </View>
 
@@ -221,17 +189,17 @@ export default function RecordingSummaryScreen() {
 
           <View style={s.heroStats}>
             <View style={s.heroStat}>
-              <Tac color={BR.paper3} size={8.5}>時間</Tac>
+              <MonoLabel color={DarkColors.textTertiary} size={8.5}>時間</MonoLabel>
               <Text style={s.heroStatVal}>{formatTime(durationSeconds)}</Text>
             </View>
             <View style={s.heroStatDivider} />
             <View style={s.heroStat}>
-              <Tac color={BR.paper3} size={8.5}>ペース</Tac>
+              <MonoLabel color={DarkColors.textTertiary} size={8.5}>ペース</MonoLabel>
               <Text style={s.heroStatVal}>{pace}<Text style={s.heroStatUnit}>/km</Text></Text>
             </View>
             <View style={s.heroStatDivider} />
             <View style={s.heroStat}>
-              <Tac color={BR.paper3} size={8.5}>歩数</Tac>
+              <MonoLabel color={DarkColors.textTertiary} size={8.5}>歩数</MonoLabel>
               <Text style={s.heroStatVal}>{steps > 0 ? steps.toLocaleString() : '---'}</Text>
             </View>
           </View>
@@ -239,10 +207,10 @@ export default function RecordingSummaryScreen() {
 
         {/* ── Battle impact ─────────────────────────────── */}
         <View style={s.section}>
-          <Tac color={BR.ink3} size={9}>RUN IMPACT / ランへの反映</Tac>
+          <MonoLabel color={Colors.textTertiary} size={9}>RUN IMPACT / ランへの反映</MonoLabel>
           {loadingImpact ? (
             <View style={[s.impactCard, { alignItems: 'center', paddingVertical: 24 }]}>
-              <ActivityIndicator color={BR.primary} />
+              <ActivityIndicator color={Colors.primary} />
             </View>
           ) : primaryImpact ? (
             <View style={s.impactCard}>
@@ -264,11 +232,11 @@ export default function RecordingSummaryScreen() {
                       </Text>
                     </View>
                   )}
-                  <Ionicons name="chevron-forward" size={14} color={BR.primaryDeep} />
+                  <Ionicons name="chevron-forward" size={14} color={Colors.primaryDark} />
                 </View>
                 <View style={s.rankAfter}>
                   <Text style={s.rankAfterLabel}>AFTER</Text>
-                  <View style={[s.rankBoxAfter, !rankChanged && { backgroundColor: BR.ink2 }]}>
+                  <View style={[s.rankBoxAfter, !rankChanged && { backgroundColor: Colors.textSecondary }]}>
                     <Text style={s.rankBoxAfterNum}>{primaryImpact.rankAfter}</Text>
                   </View>
                 </View>
@@ -279,7 +247,7 @@ export default function RecordingSummaryScreen() {
                   <Text style={s.impactBattleLabel}>{primaryImpact.battleTitle}</Text>
                   <Text style={s.impactTeamText}>
                     あなたの出撃で陣営が{' '}
-                    <Text style={{ color: rankChanged ? BR.primaryDeep : BR.ink, fontWeight: '900' }}>
+                    <Text style={{ color: rankChanged ? Colors.primaryDark : Colors.textPrimary, fontWeight: '900' }}>
                       {primaryImpact.rankBefore}位→{primaryImpact.rankAfter}位
                     </Text>
                   </Text>
@@ -298,9 +266,9 @@ export default function RecordingSummaryScreen() {
             </View>
           ) : (
             <View style={[s.impactCard, { alignItems: 'center', paddingVertical: 20 }]}>
-              <Ionicons name="walk-outline" size={32} color={BR.ink3} />
-              <Text style={{ color: BR.ink3, marginTop: 8, fontSize: 13 }}>バトル未参加</Text>
-              <Text style={{ color: BR.ink3, fontSize: 11, marginTop: 2 }}>バトルに参加して記録を競おう</Text>
+              <Ionicons name="walk-outline" size={32} color={Colors.textTertiary} />
+              <Text style={{ color: Colors.textTertiary, marginTop: 8, fontSize: 13 }}>バトル未参加</Text>
+              <Text style={{ color: Colors.textTertiary, fontSize: 11, marginTop: 2 }}>バトルに参加して記録を競おう</Text>
             </View>
           )}
         </View>
@@ -310,10 +278,10 @@ export default function RecordingSummaryScreen() {
           <View style={s.section}>
             <View style={s.badgeCard}>
               <View style={s.badgeIcon}>
-                <Ionicons name="shield" size={24} color="#fff" />
+                <Ionicons name="shield" size={24} color={Colors.textOnPrimary} />
               </View>
               <View style={{ flex: 1 }}>
-                <Tac color={BR.gold} size={9}>バッジ獲得</Tac>
+                <MonoLabel color={Colors.accentYellow} size={9}>バッジ獲得</MonoLabel>
                 <Text style={s.badgeTitle}>{earnedBadge}</Text>
                 <Text style={s.badgeSub}>累計10km 陣営に貢献達成</Text>
               </View>
@@ -324,7 +292,7 @@ export default function RecordingSummaryScreen() {
 
         {/* ── Share ─────────────────────────────────────── */}
         <View style={s.section}>
-          <Tac color={BR.ink3} size={9}>今日の出撃をシェア / SHARE RUN</Tac>
+          <MonoLabel color={Colors.textTertiary} size={9}>今日の出撃をシェア / SHARE RUN</MonoLabel>
           <View ref={shareCardRef} collapsable={false} style={s.shareCard}>
             <View style={{ gap: 4 }}>
               <Text style={s.shareCardKm}>{distanceKm.toFixed(1)}<Text style={s.shareCardKmUnit}> km</Text></Text>
@@ -342,7 +310,7 @@ export default function RecordingSummaryScreen() {
             )}
           </View>
           <TouchableOpacity style={s.shareBtn} onPress={handleShareRun} activeOpacity={0.85}>
-            <Ionicons name="share-outline" size={18} color="#fff" />
+            <Ionicons name="share-outline" size={18} color={Colors.textOnPrimary} />
             <Text style={s.shareBtnText}>今日の出撃をシェア</Text>
           </TouchableOpacity>
         </View>
@@ -361,7 +329,7 @@ export default function RecordingSummaryScreen() {
             activeOpacity={0.85}
           >
             <Text style={s.ctaBtnText}>チャレンジ詳細を見る</Text>
-            <Ionicons name="chevron-forward" size={16} color="#fff" />
+            <Ionicons name="chevron-forward" size={16} color={Colors.textOnPrimary} />
           </TouchableOpacity>
           <Text style={s.ctaHint}>最近の記録に表示されました</Text>
         </View>
@@ -372,124 +340,124 @@ export default function RecordingSummaryScreen() {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: BR.light },
+  root: { flex: 1, backgroundColor: Colors.background },
   scroll: { paddingBottom: 40 },
 
   heroCard: {
-    margin: 16, marginTop: 8, padding: 22, borderRadius: 24,
-    backgroundColor: BR.dark, overflow: 'hidden',
-    shadowColor: BR.dark, shadowOffset: { width: 0, height: 16 },
+    margin: 16, marginTop: 8, padding: 22, borderRadius: BorderRadius.lg,
+    backgroundColor: DarkColors.background, overflow: 'hidden',
+    shadowColor: DarkColors.background, shadowOffset: { width: 0, height: 16 },
     shadowOpacity: 0.18, shadowRadius: 32, elevation: 10,
   },
   heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   heroBigNum: {
-    fontSize: 80, fontWeight: '900', color: BR.paper,
-    letterSpacing: -3, lineHeight: 80,
+    fontSize: 80, fontWeight: '900', color: DarkColors.textPrimary,
+    letterSpacing: -3, lineHeight: 80, fontVariant: ['tabular-nums'],
   },
-  heroUnit: { fontSize: 28, fontWeight: '700', color: BR.paper3, letterSpacing: 1 },
+  heroUnit: { fontSize: 28, fontWeight: '700', color: DarkColors.textTertiary, letterSpacing: 1 },
   heroStats: {
     flexDirection: 'row', marginTop: 16, paddingTop: 16,
-    borderTopWidth: 1, borderTopColor: BR.darkLine2,
+    borderTopWidth: 1, borderTopColor: DarkColors.lineStrong,
   },
   heroStat: { flex: 1, paddingHorizontal: 14, gap: 4 },
-  heroStatVal: { fontSize: 17, fontWeight: '600', color: BR.paper, letterSpacing: -0.5 },
-  heroStatUnit: { fontSize: 10, color: BR.paper3 },
-  heroStatDivider: { width: 1, backgroundColor: BR.darkLine2 },
+  heroStatVal: { fontSize: 17, fontWeight: '600', color: DarkColors.textPrimary, letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
+  heroStatUnit: { fontSize: 10, color: DarkColors.textTertiary },
+  heroStatDivider: { width: 1, backgroundColor: DarkColors.lineStrong },
 
   section: { paddingHorizontal: 16, marginBottom: 4 },
 
   impactCard: {
-    marginTop: 8, padding: 16, borderRadius: 18, backgroundColor: '#fff',
-    shadowColor: BR.ink, shadowOffset: { width: 0, height: 6 },
+    marginTop: 8, padding: 16, borderRadius: BorderRadius.lg, backgroundColor: Colors.surface,
+    shadowColor: Colors.textPrimary, shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.06, shadowRadius: 14, elevation: 3,
   },
   rankRise: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   rankBefore: { alignItems: 'center' },
-  rankBeforeLabel: { fontSize: 9, color: BR.ink3, fontWeight: '700', letterSpacing: 1, marginBottom: 4 },
+  rankBeforeLabel: { fontSize: 9, color: Colors.textTertiary, fontWeight: '700', letterSpacing: 1, marginBottom: 4 },
   rankBox: {
-    width: 54, height: 54, borderRadius: 14,
-    backgroundColor: BR.lightSurf2,
+    width: 54, height: 54, borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceAlt,
     alignItems: 'center', justifyContent: 'center',
   },
-  rankBoxNum: { fontSize: 32, fontWeight: '800', color: BR.ink2, lineHeight: 36 },
+  rankBoxNum: { fontSize: 32, fontWeight: '800', color: Colors.textSecondary, lineHeight: 36, fontVariant: ['tabular-nums'] },
   rankArrowWrap: {
     flex: 1, alignItems: 'center', position: 'relative',
   },
-  rankArrowLine: { height: 1, width: '100%', backgroundColor: BR.ink3 },
+  rankArrowLine: { height: 1, width: '100%', backgroundColor: Colors.textTertiary },
   rankArrowBadge: {
     position: 'absolute', top: -14,
-    backgroundColor: BR.primary, borderRadius: 99,
+    backgroundColor: Colors.primary, borderRadius: BorderRadius.full,
     paddingHorizontal: 8, paddingVertical: 2,
   },
-  rankArrowText: { fontSize: 10, fontWeight: '900', color: BR.dark, letterSpacing: 0.5 },
+  rankArrowText: { fontSize: 10, fontWeight: '900', color: DarkColors.background, letterSpacing: 0.5 },
   rankAfter: { alignItems: 'center' },
-  rankAfterLabel: { fontSize: 9, color: BR.primaryDeep, fontWeight: '700', letterSpacing: 1, marginBottom: 4 },
+  rankAfterLabel: { fontSize: 9, color: Colors.primaryDark, fontWeight: '700', letterSpacing: 1, marginBottom: 4 },
   rankBoxAfter: {
-    width: 54, height: 54, borderRadius: 14,
-    backgroundColor: BR.primary,
+    width: 54, height: 54, borderRadius: BorderRadius.md,
+    backgroundColor: Colors.primary,
     alignItems: 'center', justifyContent: 'center',
-    shadowColor: BR.primary, shadowOffset: { width: 0, height: 6 },
+    shadowColor: Colors.primary, shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35, shadowRadius: 12, elevation: 6,
   },
-  rankBoxAfterNum: { fontSize: 32, fontWeight: '800', color: '#fff', lineHeight: 36 },
+  rankBoxAfterNum: { fontSize: 32, fontWeight: '800', color: Colors.textOnPrimary, lineHeight: 36, fontVariant: ['tabular-nums'] },
   impactBottom: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginTop: 14, paddingTop: 14,
-    borderTopWidth: 1, borderTopColor: BR.lightLine, borderStyle: 'dashed' as const,
+    borderTopWidth: 1, borderTopColor: Colors.border, borderStyle: 'dashed' as const,
   },
-  impactBattleLabel: { fontSize: 11, color: BR.ink3, fontWeight: '700', letterSpacing: 1 },
-  impactTeamText: { fontSize: 14, fontWeight: '800', color: BR.ink, marginTop: 2 },
-  impactMoreText: { fontSize: 10, color: BR.ink3, fontWeight: '600', marginTop: 4 },
-  impactAddLabel: { fontSize: 10, color: BR.ink3, fontWeight: '700', letterSpacing: 1 },
-  impactAddVal: { fontSize: 24, color: BR.accent, fontWeight: '800', lineHeight: 28 },
-  impactAddUnit: { fontSize: 11, color: BR.ink3 },
+  impactBattleLabel: { fontSize: 11, color: Colors.textTertiary, fontWeight: '700', letterSpacing: 1 },
+  impactTeamText: { fontSize: 14, fontWeight: '800', color: Colors.textPrimary, marginTop: 2 },
+  impactMoreText: { fontSize: 10, color: Colors.textTertiary, fontWeight: '600', marginTop: 4 },
+  impactAddLabel: { fontSize: 10, color: Colors.textTertiary, fontWeight: '700', letterSpacing: 1 },
+  impactAddVal: { fontSize: 24, color: Colors.accent, fontWeight: '800', lineHeight: 28, fontVariant: ['tabular-nums'] },
+  impactAddUnit: { fontSize: 11, color: Colors.textTertiary },
 
   badgeCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    padding: 14, borderRadius: 16,
-    backgroundColor: `${BR.gold}1c`,
-    borderWidth: 1.5, borderColor: `${BR.gold}66`,
+    padding: 14, borderRadius: BorderRadius.lg,
+    backgroundColor: `${Colors.accentYellow}1c`,
+    borderWidth: 1.5, borderColor: `${Colors.accentYellow}66`,
   },
   badgeIcon: {
-    width: 48, height: 48, borderRadius: 14,
-    backgroundColor: BR.gold,
+    width: 48, height: 48, borderRadius: BorderRadius.md,
+    backgroundColor: Colors.accentYellow,
     alignItems: 'center', justifyContent: 'center',
-    shadowColor: BR.gold, shadowOffset: { width: 0, height: 6 },
+    shadowColor: Colors.accentYellow, shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.4, shadowRadius: 12, elevation: 6,
   },
-  badgeTitle: { fontSize: 15, fontWeight: '900', color: BR.ink, marginTop: 1 },
-  badgeSub: { fontSize: 11, color: BR.ink3, marginTop: 1 },
-  badgeNew: { fontSize: 11, color: BR.gold, fontWeight: '800' },
+  badgeTitle: { fontSize: 15, fontWeight: '900', color: Colors.textPrimary, marginTop: 1 },
+  badgeSub: { fontSize: 11, color: Colors.textTertiary, marginTop: 1 },
+  badgeNew: { fontSize: 11, color: Colors.accentYellow, fontWeight: '800' },
 
   // Share
   shareCard: {
-    marginTop: 8, padding: 16, borderRadius: 14,
-    backgroundColor: BR.dark, overflow: 'hidden', position: 'relative',
+    marginTop: 8, padding: 16, borderRadius: BorderRadius.md,
+    backgroundColor: DarkColors.background, overflow: 'hidden', position: 'relative',
   },
-  shareCardKm: { fontSize: 32, fontWeight: '900', color: '#fff', letterSpacing: -1 },
-  shareCardKmUnit: { fontSize: 14, fontWeight: '700', color: BR.paper3 },
-  shareCardImpact: { fontSize: 13, color: 'rgba(255,255,255,0.85)', fontWeight: '700' },
-  shareCardTag: { fontSize: 12, color: BR.primary, fontWeight: '700', marginTop: 2 },
+  shareCardKm: { fontSize: 32, fontWeight: '900', color: Colors.textOnPrimary, letterSpacing: -1, fontVariant: ['tabular-nums'] },
+  shareCardKmUnit: { fontSize: 14, fontWeight: '700', color: DarkColors.textTertiary },
+  shareCardImpact: { fontSize: 13, color: DarkColors.textSecondary, fontWeight: '700' },
+  shareCardTag: { fontSize: 12, color: DarkColors.primary, fontWeight: '700', marginTop: 2 },
   shareWatermarkBadge: {
     position: 'absolute', bottom: 10, right: 10,
-    backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 6,
+    backgroundColor: DarkColors.lineStrong, borderRadius: BorderRadius.sm,
     paddingHorizontal: 8, paddingVertical: 3,
   },
-  shareWatermarkText: { fontSize: 10, color: 'rgba(255,255,255,0.5)', fontWeight: '700' },
+  shareWatermarkText: { fontSize: 10, color: DarkColors.textTertiary, fontWeight: '700' },
   shareBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: BR.dark, borderRadius: 12, paddingVertical: 14, marginTop: 12,
+    backgroundColor: DarkColors.background, borderRadius: BorderRadius.md, paddingVertical: 14, marginTop: 12,
   },
-  shareBtnText: { fontSize: 14, fontWeight: '800', color: '#fff' },
+  shareBtnText: { fontSize: 14, fontWeight: '800', color: Colors.textOnPrimary },
 
   ctaSection: { paddingHorizontal: 16, marginTop: 16, gap: 10 },
   ctaBtn: {
-    backgroundColor: BR.dark, borderRadius: 14, paddingVertical: 16,
+    backgroundColor: DarkColors.background, borderRadius: BorderRadius.md, paddingVertical: 16,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    shadowColor: BR.dark, shadowOffset: { width: 0, height: 8 },
+    shadowColor: DarkColors.background, shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.18, shadowRadius: 20, elevation: 6,
   },
-  ctaBtnText: { fontSize: 14, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
-  ctaHint: { textAlign: 'center', fontSize: 11, color: BR.ink3, fontWeight: '600' },
+  ctaBtnText: { fontSize: 14, fontWeight: '800', color: Colors.textOnPrimary, letterSpacing: 0.5 },
+  ctaHint: { textAlign: 'center', fontSize: 11, color: Colors.textTertiary, fontWeight: '600' },
 
 });
