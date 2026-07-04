@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -13,31 +13,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { db } from '../lib/firebase';
 import { useAuthStore } from '../stores/authStore';
 import type { UserActivityStats, EarnedBadge, UserTitle } from '../types';
-
-const BR = {
-  light:   '#F4F2EC',
-  lightSurf2: '#EDEAE2',
-  lightLine:  'rgba(10,14,26,0.08)',
-  ink:     '#0A0E1A',
-  ink2:    '#5A6477',
-  ink3:    '#9AA4B5',
-  primary: '#00D9A3',
-  accent:  '#FF5C2B',
-  gold:    '#FFC23C',
-  paper:   '#FFFFFF',
-};
-
-function Tac({ children, color = BR.ink3, size = 9 }: {
-  children: string; color?: string; size?: number;
-}) {
-  return (
-    <Text style={{
-      fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
-      fontSize: size, fontWeight: '700',
-      letterSpacing: size * 0.2, color, textTransform: 'uppercase',
-    }}>{children}</Text>
-  );
-}
+import { Colors, BorderRadius } from '../design_tokens';
+import { MonoLabel } from '../components/ui/MonoLabel';
+import { ProgressBar } from '../components/ui/ProgressBar';
 
 // ── バッジ定義 ─────────────────────────────────────────────────
 interface BadgeDef {
@@ -56,7 +34,7 @@ const BADGE_DEFS: BadgeDef[] = [
     name: '初陣ランナー',
     desc: '初めて記録した',
     icon: 'flag',
-    color: BR.primary,
+    color: Colors.primary,
     check: (s) => s.activityCount >= 1,
   },
   {
@@ -64,7 +42,7 @@ const BADGE_DEFS: BadgeDef[] = [
     name: '朝活兵',
     desc: '朝7時前に記録した',
     icon: 'sunny',
-    color: BR.gold,
+    color: Colors.accentYellow,
     check: (s) => s.earlyMorningCount >= 1,
   },
   {
@@ -72,7 +50,7 @@ const BADGE_DEFS: BadgeDef[] = [
     name: '3日連続出撃',
     desc: '3日連続で記録した',
     icon: 'flame',
-    color: BR.accent,
+    color: Colors.accent,
     check: (s) => s.consecutiveDays >= 3,
     progress: (s) => ({ current: Math.min(s.consecutiveDays, 3), target: 3, unit: '日' }),
   },
@@ -81,7 +59,7 @@ const BADGE_DEFS: BadgeDef[] = [
     name: '7日連続出撃',
     desc: '7日連続で記録した',
     icon: 'flash',
-    color: '#9B5CFF',
+    color: Colors.pro,
     check: (s) => s.consecutiveDays >= 7,
     progress: (s) => ({ current: Math.min(s.consecutiveDays, 7), target: 7, unit: '日' }),
   },
@@ -90,7 +68,7 @@ const BADGE_DEFS: BadgeDef[] = [
     name: '月間10km',
     desc: '月に10km記録した',
     icon: 'medal',
-    color: BR.primary,
+    color: Colors.primary,
     check: (s) => s.monthlyDistanceKm >= 10,
     progress: (s) => ({ current: Math.min(s.monthlyDistanceKm, 10), target: 10, unit: 'km' }),
   },
@@ -99,7 +77,7 @@ const BADGE_DEFS: BadgeDef[] = [
     name: '月間30km',
     desc: '月に30km記録した',
     icon: 'trophy',
-    color: BR.gold,
+    color: Colors.accentYellow,
     check: (s) => s.monthlyDistanceKm >= 30,
     progress: (s) => ({ current: Math.min(s.monthlyDistanceKm, 30), target: 30, unit: 'km' }),
   },
@@ -108,7 +86,7 @@ const BADGE_DEFS: BadgeDef[] = [
     name: '歩兵隊長',
     desc: '歩数モードで10回記録した',
     icon: 'footsteps',
-    color: BR.accent,
+    color: Colors.accent,
     check: (s) => s.stepsModeCount >= 10,
     progress: (s) => ({ current: Math.min(s.stepsModeCount, 10), target: 10, unit: '回' }),
   },
@@ -117,7 +95,7 @@ const BADGE_DEFS: BadgeDef[] = [
     name: '百里の旅人',
     desc: '累計100km記録した',
     icon: 'earth',
-    color: BR.gold,
+    color: Colors.accentYellow,
     check: (s) => s.totalDistanceKm >= 100,
     progress: (s) => ({ current: Math.min(s.totalDistanceKm, 100), target: 100, unit: 'km' }),
   },
@@ -244,22 +222,22 @@ export default function BadgesScreen() {
       {/* Header */}
       <View style={s.header}>
         <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="chevron-back" size={20} color={BR.ink2} />
+          <Ionicons name="chevron-back" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Tac color={BR.ink3} size={9}>BATTLERUN / コレクション</Tac>
+          <MonoLabel color={Colors.textTertiary} size={9}>BATTLERUN / コレクション</MonoLabel>
           <Text style={s.headerTitle}>バッジ・称号</Text>
         </View>
       </View>
 
       {loading ? (
-        <View style={s.center}><ActivityIndicator color={BR.primary} /></View>
+        <View style={s.center}><ActivityIndicator color={Colors.primary} /></View>
       ) : (
         <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
 
           {/* 獲得済みバッジ */}
           <View style={s.section}>
-            <Tac color={BR.ink3} size={9}>{`獲得済みバッジ · ${earned.length}/${BADGE_DEFS.length}`}</Tac>
+            <MonoLabel color={Colors.textTertiary} size={9}>{`獲得済みバッジ · ${earned.length}/${BADGE_DEFS.length}`}</MonoLabel>
             {earned.length === 0 ? (
               <Text style={s.emptyText}>まだバッジがありません。走って獲得しよう！</Text>
             ) : (
@@ -279,7 +257,7 @@ export default function BadgesScreen() {
           {/* 次に取れそうなバッジ */}
           {upcoming.length > 0 && (
             <View style={s.section}>
-              <Tac color={BR.ink3} size={9}>次に取れそうなバッジ</Tac>
+              <MonoLabel color={Colors.textTertiary} size={9}>次に取れそうなバッジ</MonoLabel>
               {upcoming.map(({ badge, prog }) => {
                 const pct = Math.min(prog.current / prog.target, 1);
                 const left = (prog.target - prog.current).toFixed(1);
@@ -295,12 +273,7 @@ export default function BadgesScreen() {
                           あと {left}{prog.unit}
                         </Text>
                       </View>
-                      <View style={s.progressTrack}>
-                        <View style={[s.progressFill, {
-                          width: `${pct * 100}%`,
-                          backgroundColor: badge.color,
-                        }]} />
-                      </View>
+                      <ProgressBar value={pct} color={badge.color} trackColor={Colors.surfaceAlt} height={6} />
                       <Text style={s.upcomingDesc}>{badge.desc}</Text>
                     </View>
                   </View>
@@ -312,14 +285,14 @@ export default function BadgesScreen() {
           {/* 未獲得バッジ */}
           {unearned.length > 0 && (
             <View style={s.section}>
-              <Tac color={BR.ink3} size={9}>未獲得バッジ</Tac>
+              <MonoLabel color={Colors.textTertiary} size={9}>未獲得バッジ</MonoLabel>
               <View style={s.badgeGrid}>
                 {unearned.map((b) => (
                   <View key={b.id} style={[s.badgeItem, s.badgeItemGray]}>
-                    <View style={[s.badgeIcon, { backgroundColor: BR.lightSurf2 }]}>
-                      <Ionicons name={b.icon as any} size={28} color={BR.ink3} />
+                    <View style={[s.badgeIcon, { backgroundColor: Colors.surfaceAlt }]}>
+                      <Ionicons name={b.icon as any} size={28} color={Colors.textTertiary} />
                     </View>
-                    <Text style={[s.badgeName, { color: BR.ink3 }]} numberOfLines={2}>{b.name}</Text>
+                    <Text style={[s.badgeName, { color: Colors.textTertiary }]} numberOfLines={2}>{b.name}</Text>
                   </View>
                 ))}
               </View>
@@ -328,7 +301,7 @@ export default function BadgesScreen() {
 
           {/* 獲得称号 */}
           <View style={s.section}>
-            <Tac color={BR.ink3} size={9}>獲得称号一覧</Tac>
+            <MonoLabel color={Colors.textTertiary} size={9}>獲得称号一覧</MonoLabel>
             {titles.length === 0 ? (
               <Text style={s.emptyText}>まだ称号がありません。バトルで活躍しよう！</Text>
             ) : (
@@ -336,7 +309,7 @@ export default function BadgesScreen() {
                 {titles.map((t, i) => (
                   <View key={i} style={s.titleCard}>
                     <View style={s.titleIconWrap}>
-                      <Ionicons name="ribbon" size={20} color={BR.gold} />
+                      <Ionicons name="ribbon" size={20} color={Colors.accentYellow} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={s.titleBattleName} numberOfLines={1}>
@@ -359,22 +332,22 @@ export default function BadgesScreen() {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: BR.light },
+  root: { flex: 1, backgroundColor: Colors.background },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: BR.paper,
+    backgroundColor: Colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: BR.lightLine,
+    borderBottomColor: Colors.border,
   },
-  headerTitle: { fontSize: 18, fontWeight: '900', color: BR.ink, marginTop: 2 },
+  headerTitle: { fontSize: 18, fontWeight: '900', color: Colors.textPrimary, marginTop: 2 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   scroll: { paddingBottom: 48 },
   section: { paddingHorizontal: 16, marginTop: 20, gap: 10 },
-  emptyText: { fontSize: 13, color: BR.ink3, paddingVertical: 12, textAlign: 'center' },
+  emptyText: { fontSize: 13, color: Colors.textTertiary, paddingVertical: 12, textAlign: 'center' },
 
   badgeGrid: {
     flexDirection: 'row',
@@ -388,11 +361,11 @@ const s = StyleSheet.create({
   },
   badgeItemGray: { opacity: 0.5 },
   badgeIcon: {
-    width: 56, height: 56, borderRadius: 16,
+    width: 56, height: 56, borderRadius: BorderRadius.lg,
     alignItems: 'center', justifyContent: 'center',
   },
   badgeName: {
-    fontSize: 10, fontWeight: '700', color: BR.ink, textAlign: 'center', lineHeight: 13,
+    fontSize: 10, fontWeight: '700', color: Colors.textPrimary, textAlign: 'center', lineHeight: 13,
   },
 
   upcomingCard: {
@@ -400,41 +373,36 @@ const s = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 12,
     padding: 12,
-    backgroundColor: BR.paper,
-    borderRadius: 12,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
     borderWidth: 1,
-    borderColor: BR.lightLine,
+    borderColor: Colors.border,
   },
   upcomingIcon: {
-    width: 44, height: 44, borderRadius: 12,
+    width: 44, height: 44, borderRadius: BorderRadius.md,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   upcomingTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  upcomingName: { fontSize: 13, fontWeight: '800', color: BR.ink },
+  upcomingName: { fontSize: 13, fontWeight: '800', color: Colors.textPrimary },
   upcomingLeft: { fontSize: 12, fontWeight: '700' },
-  progressTrack: {
-    height: 6, borderRadius: 3,
-    backgroundColor: BR.lightSurf2, overflow: 'hidden',
-  },
-  progressFill: { height: '100%', borderRadius: 3 },
-  upcomingDesc: { fontSize: 11, color: BR.ink3 },
+  upcomingDesc: { fontSize: 11, color: Colors.textTertiary },
 
   titleCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     padding: 12,
-    backgroundColor: `${BR.gold}12`,
-    borderRadius: 12,
+    backgroundColor: `${Colors.accentYellow}12`,
+    borderRadius: BorderRadius.md,
     borderWidth: 1,
-    borderColor: `${BR.gold}40`,
+    borderColor: `${Colors.accentYellow}40`,
   },
   titleIconWrap: {
-    width: 36, height: 36, borderRadius: 10,
-    backgroundColor: `${BR.gold}30`,
+    width: 36, height: 36, borderRadius: BorderRadius.sm,
+    backgroundColor: `${Colors.accentYellow}30`,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
-  titleBattleName: { fontSize: 13, fontWeight: '800', color: BR.ink },
-  titleMeta: { fontSize: 11, color: BR.ink3, marginTop: 2 },
+  titleBattleName: { fontSize: 13, fontWeight: '800', color: Colors.textPrimary },
+  titleMeta: { fontSize: 11, color: Colors.textTertiary, marginTop: 2 },
 
 });

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Alert, Platform,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -11,32 +11,8 @@ import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import { isPro } from '../../lib/pro';
 import type { BattleTheme } from '../../types';
-
-const BR = {
-  light:   '#F4F2EC',
-  lightSurf2: '#EDEAE2',
-  lightLine:  'rgba(10,14,26,0.08)',
-  ink:     '#0A0E1A',
-  ink2:    '#5A6477',
-  ink3:    '#9AA4B5',
-  primary: '#00D9A3',
-  accent:  '#FF5C2B',
-  gold:    '#FFC23C',
-  paper:   '#FFFFFF',
-  pro:     '#7C3AED',
-};
-
-function Tac({ children, color = BR.ink3, size = 9 }: {
-  children: string; color?: string; size?: number;
-}) {
-  return (
-    <Text style={{
-      fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
-      fontSize: size, fontWeight: '700',
-      letterSpacing: size * 0.2, color, textTransform: 'uppercase',
-    }}>{children}</Text>
-  );
-}
+import { Colors, BorderRadius } from '../../design_tokens';
+import { MonoLabel } from '../../components/ui/MonoLabel';
 
 interface ThemeDef {
   id: BattleTheme;
@@ -139,10 +115,10 @@ export default function BattleThemeScreen() {
       {/* Header */}
       <View style={s.header}>
         <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="chevron-back" size={20} color={BR.ink2} />
+          <Ionicons name="chevron-back" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Tac color={BR.ink3} size={9}>BATTLERUN / Pro機能</Tac>
+          <MonoLabel color={Colors.textTertiary} size={9}>BATTLERUN / Pro機能</MonoLabel>
           <Text style={s.headerTitle}>テーマを選ぶ</Text>
         </View>
         <TouchableOpacity
@@ -156,7 +132,7 @@ export default function BattleThemeScreen() {
 
       {!userIsPro && (
         <View style={s.proBanner}>
-          <Ionicons name="sparkles" size={16} color={BR.pro} />
+          <Ionicons name="sparkles" size={16} color={Colors.pro} />
           <Text style={s.proBannerText}>Proプランで全テーマを選択できます</Text>
           <TouchableOpacity onPress={() => router.push('/(tabs)/profile' as any)}>
             <Text style={s.proBannerLink}>詳細 →</Text>
@@ -190,7 +166,7 @@ export default function BattleThemeScreen() {
               <Text style={s.themeEmoji}>{theme.emoji}</Text>
               <View style={{ flex: 1 }}>
                 <View style={s.themeNameRow}>
-                  <Text style={[s.themeName, locked && { color: BR.ink3 }]}>{theme.name}</Text>
+                  <Text style={[s.themeName, locked && { color: Colors.textTertiary }]}>{theme.name}</Text>
                   {theme.proOnly && (
                     <View style={s.proTag}>
                       <Text style={s.proTagText}>Pro</Text>
@@ -202,11 +178,11 @@ export default function BattleThemeScreen() {
               </View>
               {isSelected && !locked && (
                 <View style={[s.checkmark, { backgroundColor: theme.colors.primary }]}>
-                  <Ionicons name="checkmark" size={14} color="#fff" />
+                  <Ionicons name="checkmark" size={14} color={Colors.textOnPrimary} />
                 </View>
               )}
               {locked && (
-                <Ionicons name="lock-closed-outline" size={18} color={BR.ink3} />
+                <Ionicons name="lock-closed-outline" size={18} color={Colors.textTertiary} />
               )}
             </TouchableOpacity>
           );
@@ -217,50 +193,50 @@ export default function BattleThemeScreen() {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: BR.light },
+  root: { flex: 1, backgroundColor: Colors.background },
   header: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingHorizontal: 16, paddingVertical: 12,
-    backgroundColor: BR.paper, borderBottomWidth: 1, borderBottomColor: BR.lightLine,
+    backgroundColor: Colors.surface, borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
-  headerTitle: { fontSize: 18, fontWeight: '900', color: BR.ink, marginTop: 2 },
+  headerTitle: { fontSize: 18, fontWeight: '900', color: Colors.textPrimary, marginTop: 2 },
   saveBtn: {
-    backgroundColor: BR.primary, borderRadius: 8,
+    backgroundColor: Colors.primary, borderRadius: BorderRadius.sm,
     paddingHorizontal: 14, paddingVertical: 7,
   },
-  saveBtnText: { fontSize: 13, fontWeight: '800', color: BR.ink },
+  saveBtnText: { fontSize: 13, fontWeight: '800', color: Colors.textPrimary },
 
   proBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingHorizontal: 16, paddingVertical: 10,
-    backgroundColor: `${BR.pro}12`,
-    borderBottomWidth: 1, borderBottomColor: `${BR.pro}20`,
+    backgroundColor: `${Colors.pro}12`,
+    borderBottomWidth: 1, borderBottomColor: `${Colors.pro}20`,
   },
-  proBannerText: { flex: 1, fontSize: 12, color: BR.pro, fontWeight: '600' },
-  proBannerLink: { fontSize: 12, color: BR.pro, fontWeight: '800' },
+  proBannerText: { flex: 1, fontSize: 12, color: Colors.pro, fontWeight: '600' },
+  proBannerLink: { fontSize: 12, color: Colors.pro, fontWeight: '800' },
 
   scroll: { padding: 16, gap: 10 },
-  subtitle: { fontSize: 12, color: BR.ink3, marginBottom: 4, lineHeight: 17 },
+  subtitle: { fontSize: 12, color: Colors.textTertiary, marginBottom: 4, lineHeight: 17 },
 
   themeCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    padding: 14, borderRadius: 14,
-    backgroundColor: BR.paper,
-    borderWidth: 1, borderColor: BR.lightLine,
+    padding: 14, borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surface,
+    borderWidth: 1, borderColor: Colors.border,
   },
   themeCardLocked: { opacity: 0.6 },
   themeEmoji: { fontSize: 32, width: 44, textAlign: 'center' },
   themeNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
-  themeName: { fontSize: 15, fontWeight: '800', color: BR.ink },
-  themeDesc: { fontSize: 12, color: BR.ink3, marginBottom: 6 },
+  themeName: { fontSize: 15, fontWeight: '800', color: Colors.textPrimary },
+  themeDesc: { fontSize: 12, color: Colors.textTertiary, marginBottom: 6 },
   themePreviewBar: { height: 4, borderRadius: 2, width: 60 },
   proTag: {
-    backgroundColor: `${BR.pro}20`, borderRadius: 4,
+    backgroundColor: `${Colors.pro}20`, borderRadius: 4,
     paddingHorizontal: 5, paddingVertical: 1,
   },
-  proTagText: { fontSize: 10, fontWeight: '800', color: BR.pro },
+  proTagText: { fontSize: 10, fontWeight: '800', color: Colors.pro },
   checkmark: {
-    width: 24, height: 24, borderRadius: 12,
+    width: 24, height: 24, borderRadius: BorderRadius.full,
     alignItems: 'center', justifyContent: 'center',
   },
 });

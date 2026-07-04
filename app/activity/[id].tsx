@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -11,32 +11,8 @@ import MapView, { Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import type { RoutePoint, ReactionType } from '../../types';
-
-const BR = {
-  light:   '#F4F2EC',
-  lightSurf2: '#EDEAE2',
-  lightLine:  'rgba(10,14,26,0.08)',
-  dark:    '#0A0E1A',
-  ink:     '#0A0E1A',
-  ink2:    '#5A6477',
-  ink3:    '#9AA4B5',
-  primary: '#00D9A3',
-  accent:  '#FF5C2B',
-  gold:    '#FFC23C',
-  paper:   '#FFFFFF',
-};
-
-function Tac({ children, color = BR.ink3, size = 9 }: {
-  children: string; color?: string; size?: number;
-}) {
-  return (
-    <Text style={{
-      fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
-      fontSize: size, fontWeight: '700',
-      letterSpacing: size * 0.2, color, textTransform: 'uppercase',
-    }}>{children}</Text>
-  );
-}
+import { Colors, DarkColors, BorderRadius } from '../../design_tokens';
+import { MonoLabel } from '../../components/ui/MonoLabel';
 
 function formatTime(sec: number): string {
   const h = Math.floor(sec / 3600);
@@ -183,7 +159,7 @@ export default function ActivityDetailScreen() {
   if (loading) {
     return (
       <SafeAreaView style={s.root}>
-        <View style={s.center}><ActivityIndicator color={BR.primary} /></View>
+        <View style={s.center}><ActivityIndicator color={Colors.primary} /></View>
       </SafeAreaView>
     );
   }
@@ -191,7 +167,7 @@ export default function ActivityDetailScreen() {
   if (!activity) {
     return (
       <SafeAreaView style={s.root}>
-        <View style={s.center}><Text style={{ color: BR.ink3 }}>記録が見つかりませんでした</Text></View>
+        <View style={s.center}><Text style={{ color: Colors.textTertiary }}>記録が見つかりませんでした</Text></View>
       </SafeAreaView>
     );
   }
@@ -220,10 +196,10 @@ export default function ActivityDetailScreen() {
       {/* Header */}
       <View style={s.header}>
         <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="chevron-back" size={20} color={BR.ink2} />
+          <Ionicons name="chevron-back" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Tac color={BR.ink3} size={9}>ACTIVITY / 記録詳細</Tac>
+          <MonoLabel color={Colors.textTertiary} size={9}>ACTIVITY / 記録詳細</MonoLabel>
           <Text style={s.headerTitle}>{dateStr}</Text>
         </View>
       </View>
@@ -237,14 +213,14 @@ export default function ActivityDetailScreen() {
           </View>
           <View style={s.statRow}>
             <View style={s.statItem}>
-              <Tac color={BR.ink3} size={8}>時間</Tac>
+              <MonoLabel color={Colors.textTertiary} size={8}>時間</MonoLabel>
               <Text style={s.statVal}>{formatTime(activity.durationSeconds)}</Text>
             </View>
             {activity.measurementType === 'gps' && (
               <>
                 <View style={s.statDivider} />
                 <View style={s.statItem}>
-                  <Tac color={BR.ink3} size={8}>ペース</Tac>
+                  <MonoLabel color={Colors.textTertiary} size={8}>ペース</MonoLabel>
                   <Text style={s.statVal}>{formatPace(activity.distanceKm, activity.durationSeconds)}<Text style={s.statUnit}>/km</Text></Text>
                 </View>
               </>
@@ -253,14 +229,14 @@ export default function ActivityDetailScreen() {
               <>
                 <View style={s.statDivider} />
                 <View style={s.statItem}>
-                  <Tac color={BR.ink3} size={8}>歩数</Tac>
+                  <MonoLabel color={Colors.textTertiary} size={8}>歩数</MonoLabel>
                   <Text style={s.statVal}>{activity.steps.toLocaleString()}</Text>
                 </View>
               </>
             )}
           </View>
           <View style={s.timeRow}>
-            <Ionicons name="time-outline" size={12} color={BR.ink3} />
+            <Ionicons name="time-outline" size={12} color={Colors.textTertiary} />
             <Text style={s.timeText}>{startTimeStr} 〜 {endTimeStr}</Text>
           </View>
         </View>
@@ -277,7 +253,7 @@ export default function ActivityDetailScreen() {
             >
               <Polyline
                 coordinates={activity.route.map((p) => ({ latitude: p.lat, longitude: p.lng }))}
-                strokeColor={BR.primary}
+                strokeColor={Colors.primary}
                 strokeWidth={3}
               />
             </MapView>
@@ -287,7 +263,7 @@ export default function ActivityDetailScreen() {
         {/* ── Battle contribution ── */}
         {battleContributions.length > 0 && (
           <View style={s.section}>
-            <Tac color={BR.ink3} size={9}>バトル貢献</Tac>
+            <MonoLabel color={Colors.textTertiary} size={9}>バトル貢献</MonoLabel>
             {battleContributions.map((c) => (
               <TouchableOpacity
                 key={c.battleId}
@@ -295,12 +271,12 @@ export default function ActivityDetailScreen() {
                 onPress={() => router.push(`/battle/${c.battleId}` as any)}
                 activeOpacity={0.75}
               >
-                <Ionicons name="flash" size={18} color={BR.accent} />
+                <Ionicons name="flash" size={18} color={Colors.accent} />
                 <View style={{ flex: 1 }}>
                   <Text style={s.battleTitle}>{c.battleTitle}</Text>
                   <Text style={s.battleContrib}>+{activity.distanceKm.toFixed(2)}km 貢献</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={16} color={BR.ink3} />
+                <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
               </TouchableOpacity>
             ))}
           </View>
@@ -308,7 +284,7 @@ export default function ActivityDetailScreen() {
 
         {/* ── Reactions ── */}
         <View style={s.section}>
-          <Tac color={BR.ink3} size={9}>リアクション</Tac>
+          <MonoLabel color={Colors.textTertiary} size={9}>リアクション</MonoLabel>
           <View style={s.reactionsRow}>
             {reactions.map((r) => (
               <TouchableOpacity
@@ -319,7 +295,7 @@ export default function ActivityDetailScreen() {
               >
                 <Text style={s.reactionEmoji}>{r.type}</Text>
                 {r.count > 0 && (
-                  <Text style={[s.reactionCount, r.isMine && { color: BR.primary }]}>{r.count}</Text>
+                  <Text style={[s.reactionCount, r.isMine && { color: Colors.primary }]}>{r.count}</Text>
                 )}
               </TouchableOpacity>
             ))}
@@ -331,41 +307,41 @@ export default function ActivityDetailScreen() {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: BR.light },
+  root: { flex: 1, backgroundColor: Colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   header: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingHorizontal: 16, paddingVertical: 12,
-    backgroundColor: BR.paper, borderBottomWidth: 1, borderBottomColor: BR.lightLine,
+    backgroundColor: Colors.surface, borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
-  headerTitle: { fontSize: 14, fontWeight: '700', color: BR.ink, marginTop: 2 },
+  headerTitle: { fontSize: 14, fontWeight: '700', color: Colors.textPrimary, marginTop: 2 },
   scroll: { paddingBottom: 48 },
 
   heroCard: {
-    backgroundColor: BR.dark,
+    backgroundColor: DarkColors.background,
     padding: 20,
     gap: 16,
   },
-  heroBig: { fontSize: 72, fontWeight: '900', color: '#fff', letterSpacing: -3, lineHeight: 72 },
-  heroUnit: { fontSize: 24, fontWeight: '700', color: 'rgba(255,255,255,0.4)', letterSpacing: 1 },
+  heroBig: { fontSize: 72, fontWeight: '900', color: DarkColors.textPrimary, letterSpacing: -3, lineHeight: 72, fontVariant: ['tabular-nums'] },
+  heroUnit: { fontSize: 24, fontWeight: '700', color: DarkColors.textTertiary, letterSpacing: 1 },
   statRow: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 12,
+    backgroundColor: DarkColors.line,
+    borderRadius: BorderRadius.md,
     overflow: 'hidden',
   },
   statItem: { flex: 1, alignItems: 'center', paddingVertical: 12, gap: 3 },
-  statDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.08)' },
-  statVal: { fontSize: 17, fontWeight: '600', color: '#fff', letterSpacing: -0.3 },
-  statUnit: { fontSize: 10, color: 'rgba(255,255,255,0.4)' },
+  statDivider: { width: 1, backgroundColor: DarkColors.line },
+  statVal: { fontSize: 17, fontWeight: '600', color: DarkColors.textPrimary, letterSpacing: -0.3, fontVariant: ['tabular-nums'] },
+  statUnit: { fontSize: 10, color: DarkColors.textTertiary },
   timeRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  timeText: { fontSize: 12, color: 'rgba(255,255,255,0.5)', fontWeight: '600' },
+  timeText: { fontSize: 12, color: DarkColors.textSecondary, fontWeight: '600' },
 
   mapCard: {
     height: 200,
     marginHorizontal: 16, marginTop: 12,
-    borderRadius: 14, overflow: 'hidden',
-    borderWidth: 1, borderColor: BR.lightLine,
+    borderRadius: BorderRadius.md, overflow: 'hidden',
+    borderWidth: 1, borderColor: Colors.border,
   },
   map: { flex: 1 },
 
@@ -373,23 +349,23 @@ const s = StyleSheet.create({
 
   battleCard: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    padding: 14, borderRadius: 12,
-    backgroundColor: `${BR.accent}12`,
-    borderWidth: 1, borderColor: `${BR.accent}30`,
+    padding: 14, borderRadius: BorderRadius.md,
+    backgroundColor: `${Colors.accent}12`,
+    borderWidth: 1, borderColor: `${Colors.accent}30`,
   },
-  battleTitle: { fontSize: 13, fontWeight: '800', color: BR.ink },
-  battleContrib: { fontSize: 12, color: BR.accent, fontWeight: '700', marginTop: 1 },
+  battleTitle: { fontSize: 13, fontWeight: '800', color: Colors.textPrimary },
+  battleContrib: { fontSize: 12, color: Colors.accent, fontWeight: '700', marginTop: 1, fontVariant: ['tabular-nums'] },
 
   reactionsRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   reactionBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 14, paddingVertical: 8,
-    borderRadius: 99, borderWidth: 1, borderColor: BR.lightLine,
-    backgroundColor: BR.paper,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+    paddingHorizontal: 16, minHeight: 44,
+    borderRadius: BorderRadius.full, borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: Colors.surface,
   },
   reactionBtnActive: {
-    borderColor: `${BR.primary}60`, backgroundColor: `${BR.primary}12`,
+    borderColor: `${Colors.primary}60`, backgroundColor: `${Colors.primary}12`,
   },
   reactionEmoji: { fontSize: 20 },
-  reactionCount: { fontSize: 14, fontWeight: '700', color: BR.ink2 },
+  reactionCount: { fontSize: 14, fontWeight: '700', color: Colors.textSecondary },
 });

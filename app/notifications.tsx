@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -13,41 +13,18 @@ import { Ionicons } from '@expo/vector-icons';
 import { db } from '../lib/firebase';
 import { useAuthStore } from '../stores/authStore';
 import type { AppNotification, NotificationType } from '../types';
-
-const BR = {
-  light:       '#F4F2EC',
-  lightSurf2:  '#EDEAE2',
-  ink:         '#0A0E1A',
-  ink2:        '#5A6477',
-  ink3:        '#9AA4B5',
-  primary:     '#00D9A3',
-  accent:      '#FF5C2B',
-  gold:        '#FFC23C',
-  paper:       '#FFFFFF',
-  border:      'rgba(10,14,26,0.08)',
-};
-
-function Tac({ children, color = BR.ink3, size = 9 }: {
-  children: string; color?: string; size?: number;
-}) {
-  return (
-    <Text style={{
-      fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
-      fontSize: size, fontWeight: '700',
-      letterSpacing: size * 0.2, color,
-      textTransform: 'uppercase',
-    }}>{children}</Text>
-  );
-}
+import { Colors, BorderRadius } from '../design_tokens';
+import { MonoLabel } from '../components/ui/MonoLabel';
+import { EmptyState } from '../components/ui/EmptyState';
 
 function notificationIcon(type: NotificationType): { name: any; color: string } {
   switch (type) {
-    case 'rank_change':     return { name: 'trending-up-outline', color: '#3A86FF' };
-    case 'battle_end_soon': return { name: 'timer-outline', color: BR.accent };
-    case 'title_earned':    return { name: 'ribbon-outline', color: BR.gold };
-    case 'battle_ended':    return { name: 'flag-outline', color: BR.ink2 };
-    case 'reaction':        return { name: 'heart-outline', color: '#FF4757' };
-    default:                return { name: 'notifications-outline', color: BR.ink3 };
+    case 'rank_change':     return { name: 'trending-up-outline', color: Colors.info };
+    case 'battle_end_soon': return { name: 'timer-outline', color: Colors.accent };
+    case 'title_earned':    return { name: 'ribbon-outline', color: Colors.accentYellow };
+    case 'battle_ended':    return { name: 'flag-outline', color: Colors.textSecondary };
+    case 'reaction':        return { name: 'heart-outline', color: Colors.error };
+    default:                return { name: 'notifications-outline', color: Colors.textTertiary };
   }
 }
 
@@ -120,10 +97,10 @@ export default function NotificationsScreen() {
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           style={s.backBtn}
         >
-          <Ionicons name="chevron-back" size={20} color={BR.ink2} />
+          <Ionicons name="chevron-back" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Tac color={BR.ink3} size={9}>BATTLERUN / 通知</Tac>
+          <MonoLabel color={Colors.textTertiary} size={10}>BATTLERUN / 通知</MonoLabel>
           <Text style={s.headerTitle}>通知センター</Text>
         </View>
         {unreadCount > 0 && (
@@ -135,14 +112,14 @@ export default function NotificationsScreen() {
 
       {loading ? (
         <View style={s.center}>
-          <ActivityIndicator color={BR.primary} />
+          <ActivityIndicator color={Colors.primary} />
         </View>
       ) : notifications.length === 0 ? (
-        <View style={s.center}>
-          <Ionicons name="notifications-off-outline" size={48} color={BR.ink3} />
-          <Text style={s.emptyText}>通知はありません</Text>
-          <Text style={s.emptySubText}>バトルに参加すると通知が届きます</Text>
-        </View>
+        <EmptyState
+          icon="notifications-off-outline"
+          title="通知はありません"
+          hint="バトルに参加すると通知が届きます"
+        />
       ) : (
         <FlatList
           data={notifications}
@@ -173,7 +150,7 @@ export default function NotificationsScreen() {
                   <Text style={s.itemTime}>{agoLabel(item.createdAt)}</Text>
                 </View>
                 {isLinkable && (
-                  <Ionicons name="chevron-forward" size={14} color={BR.ink3} />
+                  <Ionicons name="chevron-forward" size={14} color={Colors.textTertiary} />
                 )}
               </TouchableOpacity>
             );
@@ -207,33 +184,31 @@ export async function createNotification(params: {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: BR.light },
+  root: { flex: 1, backgroundColor: Colors.background },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: BR.paper,
+    backgroundColor: Colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: BR.border,
+    borderBottomColor: Colors.border,
   },
   backBtn: { padding: 4 },
-  headerTitle: { fontSize: 18, fontWeight: '900', color: BR.ink, marginTop: 2 },
+  headerTitle: { fontSize: 18, fontWeight: '900', color: Colors.textPrimary, marginTop: 2 },
   unreadBadge: {
-    backgroundColor: BR.accent,
-    borderRadius: 99,
+    backgroundColor: Colors.accent,
+    borderRadius: BorderRadius.full,
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
-  unreadBadgeText: { fontSize: 11, color: '#fff', fontWeight: '700' },
+  unreadBadgeText: { fontSize: 11, color: Colors.textOnPrimary, fontWeight: '700' },
 
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  emptyText: { fontSize: 15, fontWeight: '700', color: BR.ink2, marginTop: 4 },
-  emptySubText: { fontSize: 12, color: BR.ink3 },
 
   list: { paddingVertical: 8 },
-  separator: { height: 1, backgroundColor: BR.border, marginLeft: 70 },
+  separator: { height: 1, backgroundColor: Colors.border, marginLeft: 70 },
 
   item: {
     flexDirection: 'row',
@@ -241,28 +216,28 @@ const s = StyleSheet.create({
     gap: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    backgroundColor: BR.paper,
+    backgroundColor: Colors.surface,
   },
-  itemUnread: { backgroundColor: '#F0FBF8' },
+  itemUnread: { backgroundColor: Colors.primaryLight },
   iconWrap: {
     width: 40,
     height: 40,
-    borderRadius: 12,
+    borderRadius: BorderRadius.md,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
   itemBody: { flex: 1, gap: 2 },
   itemTopRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  itemTitle: { flex: 1, fontSize: 13, fontWeight: '600', color: BR.ink2 },
-  itemTitleUnread: { color: BR.ink, fontWeight: '800' },
+  itemTitle: { flex: 1, fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
+  itemTitleUnread: { color: Colors.textPrimary, fontWeight: '800' },
   dot: {
     width: 7,
     height: 7,
-    borderRadius: 99,
-    backgroundColor: BR.accent,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.accent,
     flexShrink: 0,
   },
-  itemText: { fontSize: 12, color: BR.ink3, lineHeight: 17 },
-  itemTime: { fontSize: 10, color: BR.ink3, marginTop: 2, fontWeight: '600' },
+  itemText: { fontSize: 12, color: Colors.textTertiary, lineHeight: 17 },
+  itemTime: { fontSize: 10, color: Colors.textTertiary, marginTop: 2, fontWeight: '600' },
 });
