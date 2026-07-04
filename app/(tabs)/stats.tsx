@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, ActivityIndicator, Platform, TouchableOpacity,
+  View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -8,37 +8,9 @@ import { collection, query, where, getDocs, orderBy, limit } from 'firebase/fire
 import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
-
-const BR = {
-  light:       '#F4F2EC',
-  lightSurf2:  '#EDEAE2',
-  lightLine:   'rgba(10,14,26,0.08)',
-  dark:        '#0A0E1A',
-  darkCard:    '#161D33',
-  ink:         '#0A0E1A',
-  ink2:        '#5A6477',
-  ink3:        '#9AA4B5',
-  primary:     '#00D9A3',
-  primaryDeep: '#06B189',
-  accent:      '#FF5C2B',
-  gold:        '#FFC23C',
-  silver:      '#C2CBD6',
-  bronze:      '#CB7B3A',
-  paper:       '#FFFFFF',
-};
-
-function Tac({ children, color = BR.ink3, size = 9 }: {
-  children: string; color?: string; size?: number;
-}) {
-  return (
-    <Text style={{
-      fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
-      fontSize: size, fontWeight: '700',
-      letterSpacing: size * 0.2, color,
-      textTransform: 'uppercase',
-    }}>{children}</Text>
-  );
-}
+import { Colors, DarkColors, Spacing, BorderRadius, Shadow } from '../../design_tokens';
+import { MonoLabel } from '../../components/ui/MonoLabel';
+import { EmptyState } from '../../components/ui/EmptyState';
 
 function formatTime(s: number): string {
   const h = Math.floor(s / 3600);
@@ -117,19 +89,19 @@ export default function StatsScreen() {
     <SafeAreaView style={s.root} edges={['top']}>
       {/* Header */}
       <View style={s.header}>
-        <Tac color={BR.ink3} size={9}>BATTLERUN / 記録</Tac>
+        <MonoLabel color={Colors.textTertiary} size={10}>BATTLERUN / 記録</MonoLabel>
         <Text style={s.headerTitle}>記録</Text>
       </View>
 
       {loading ? (
-        <ActivityIndicator color={BR.primary} style={{ flex: 1 }} />
+        <ActivityIndicator color={Colors.primary} style={{ flex: 1 }} />
       ) : (
         <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
 
           {/* ── Summary cards ─────────────────────────────── */}
           <View style={s.summaryGrid}>
-            <View style={[s.summaryCard, { backgroundColor: BR.dark }]}>
-              <Tac color={BR.primary} size={8.5}>累計距離</Tac>
+            <View style={[s.summaryCard, { backgroundColor: DarkColors.background }]}>
+              <MonoLabel color={Colors.primaryBright} size={9}>累計距離</MonoLabel>
               <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 3, marginTop: 6 }}>
                 <Text style={s.summaryBigNum}>{totalKm.toFixed(1)}</Text>
                 <Text style={s.summaryUnit}>KM</Text>
@@ -137,32 +109,32 @@ export default function StatsScreen() {
               <Text style={s.summarySub}>{totalActivities} 回ラン</Text>
             </View>
             <View style={s.summaryCardLight}>
-              <Tac color={BR.ink3} size={8.5}>今週</Tac>
+              <MonoLabel color={Colors.textTertiary} size={9}>今週</MonoLabel>
               <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 3, marginTop: 6 }}>
-                <Text style={[s.summaryBigNum, { color: BR.primaryDeep }]}>{weekKm.toFixed(1)}</Text>
-                <Text style={[s.summaryUnit, { color: BR.ink3 }]}>KM</Text>
+                <Text style={[s.summaryBigNum, { color: Colors.primaryDark }]}>{weekKm.toFixed(1)}</Text>
+                <Text style={[s.summaryUnit, { color: Colors.textTertiary }]}>KM</Text>
               </View>
-              <Text style={[s.summarySub, { color: BR.ink3 }]}>過去 7日間</Text>
+              <Text style={[s.summarySub, { color: Colors.textTertiary }]}>過去 7日間</Text>
             </View>
           </View>
 
           <View style={s.summaryGrid}>
             <View style={s.summaryCardLight}>
-              <Tac color={BR.ink3} size={8.5}>最長ラン</Tac>
+              <MonoLabel color={Colors.textTertiary} size={9}>最長ラン</MonoLabel>
               <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 3, marginTop: 6 }}>
-                <Text style={[s.summaryBigNum, { color: BR.accent, fontSize: 32 }]}>
+                <Text style={[s.summaryBigNum, { color: Colors.accent, fontSize: 32 }]}>
                   {longestRun.toFixed(1)}
                 </Text>
-                <Text style={[s.summaryUnit, { color: BR.ink3 }]}>KM</Text>
+                <Text style={[s.summaryUnit, { color: Colors.textTertiary }]}>KM</Text>
               </View>
-              <Text style={[s.summarySub, { color: BR.ink3 }]}>自己ベスト</Text>
+              <Text style={[s.summarySub, { color: Colors.textTertiary }]}>自己ベスト</Text>
             </View>
-            <View style={[s.summaryCardLight, { backgroundColor: `${BR.gold}1c`, borderColor: `${BR.gold}44` }]}>
-              <Tac color={BR.gold} size={8.5}>称号</Tac>
+            <View style={[s.summaryCardLight, { backgroundColor: `${Colors.accentYellow}1c`, borderColor: `${Colors.accentYellow}44` }]}>
+              <MonoLabel color={Colors.accentYellow} size={9}>称号</MonoLabel>
               <Text style={{ fontSize: 32, marginTop: 6 }}>
                 {totalKm >= 100 ? '🏆' : totalKm >= 50 ? '🥈' : totalKm >= 10 ? '🥉' : '🎖️'}
               </Text>
-              <Text style={[s.summarySub, { color: BR.ink3, marginTop: 4 }]}>
+              <Text style={[s.summarySub, { color: Colors.textTertiary, marginTop: 4 }]}>
                 {totalKm >= 100 ? 'ベテラン' : totalKm >= 50 ? '上級ランナー' : totalKm >= 10 ? 'ランナー' : 'ビギナー'}
               </Text>
             </View>
@@ -170,22 +142,22 @@ export default function StatsScreen() {
 
           {/* ── Activity history ──────────────────────────── */}
           <View style={s.sectionHeader}>
-            <Tac color={BR.ink3} size={9}>ラン履歴</Tac>
+            <MonoLabel color={Colors.textTertiary} size={10}>ラン履歴</MonoLabel>
           </View>
 
           {activities.length === 0 ? (
-            <View style={s.emptyCard}>
-              <Ionicons name="walk-outline" size={36} color={BR.ink3} />
-              <Text style={s.emptyText}>まだラン履歴がありません</Text>
-              <Text style={s.emptyHint}>「ラン」タブから記録を開始してください</Text>
-            </View>
+            <EmptyState
+              icon="walk-outline"
+              title="まだラン履歴がありません"
+              hint="「ラン」タブから記録を開始してください"
+            />
           ) : (
             <View style={s.actList}>
               {activities.map((a) => {
                 const rankColor =
-                  a.distanceKm >= 10 ? BR.gold
-                  : a.distanceKm >= 5 ? BR.silver
-                  : BR.bronze;
+                  a.distanceKm >= 10 ? Colors.accentYellow
+                  : a.distanceKm >= 5 ? Colors.rank2
+                  : Colors.rank3;
                 return (
                   <TouchableOpacity
                     key={a.id}
@@ -224,55 +196,45 @@ export default function StatsScreen() {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: BR.light },
+  root: { flex: 1, backgroundColor: Colors.background },
   header: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4, gap: 4 },
-  headerTitle: { fontSize: 22, fontWeight: '900', color: BR.ink, marginTop: 2 },
+  headerTitle: { fontSize: 22, fontWeight: '900', color: Colors.textPrimary, marginTop: 2 },
   scroll: { padding: 16, paddingBottom: 110, gap: 10 },
 
   summaryGrid: { flexDirection: 'row', gap: 10 },
   summaryCard: {
-    flex: 1, padding: 18, borderRadius: 18,
-    shadowColor: BR.dark, shadowOffset: { width: 0, height: 8 },
+    flex: 1, padding: 18, borderRadius: BorderRadius.lg,
+    shadowColor: DarkColors.background, shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.18, shadowRadius: 20, elevation: 6,
   },
   summaryCardLight: {
-    flex: 1, padding: 18, borderRadius: 18,
-    backgroundColor: '#fff',
-    borderWidth: 1, borderColor: BR.lightLine,
-    shadowColor: BR.ink, shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06, shadowRadius: 12, elevation: 3,
+    flex: 1, padding: 18, borderRadius: BorderRadius.lg,
+    backgroundColor: Colors.surface,
+    borderWidth: 1, borderColor: Colors.border,
+    ...Shadow.sm,
   },
   summaryBigNum: {
-    fontSize: 38, fontWeight: '900', color: BR.paper,
-    letterSpacing: -1.5, lineHeight: 40,
+    fontSize: 38, fontWeight: '900', color: DarkColors.textPrimary,
+    letterSpacing: -1.5, lineHeight: 40, fontVariant: ['tabular-nums'],
   },
-  summaryUnit: { fontSize: 14, fontWeight: '700', color: BR.paper, opacity: 0.7 },
-  summarySub: { fontSize: 11, color: BR.paper, opacity: 0.6, marginTop: 4 },
+  summaryUnit: { fontSize: 14, fontWeight: '700', color: DarkColors.textPrimary, opacity: 0.7 },
+  summarySub: { fontSize: 11, color: DarkColors.textPrimary, opacity: 0.6, marginTop: 4 },
 
   sectionHeader: { paddingTop: 10, paddingBottom: 4 },
-
-  emptyCard: {
-    backgroundColor: '#fff', borderRadius: 16, padding: 32,
-    alignItems: 'center', gap: 10,
-    borderWidth: 1, borderColor: BR.lightLine,
-  },
-  emptyText: { fontSize: 14, fontWeight: '700', color: BR.ink2 },
-  emptyHint: { fontSize: 12, color: BR.ink3, textAlign: 'center' },
 
   actList: { gap: 8 },
   actRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    padding: 14, backgroundColor: '#fff', borderRadius: 14,
-    borderWidth: 1, borderColor: BR.lightLine,
-    shadowColor: BR.ink, shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04, shadowRadius: 6, elevation: 2,
+    padding: 14, backgroundColor: Colors.surface, borderRadius: BorderRadius.md,
+    borderWidth: 1, borderColor: Colors.border,
+    ...Shadow.sm,
   },
   actIcon: {
-    width: 42, height: 42, borderRadius: 12,
+    width: 42, height: 42, borderRadius: BorderRadius.md,
     alignItems: 'center', justifyContent: 'center',
   },
-  actDist: { fontSize: 20, fontWeight: '800', color: BR.ink, letterSpacing: -0.5 },
-  actDistUnit: { fontSize: 12, color: BR.ink3, fontWeight: '600' },
-  actMeta: { fontSize: 11, color: BR.ink3, marginTop: 2 },
-  actAgo: { fontSize: 11, color: BR.ink3 },
+  actDist: { fontSize: 20, fontWeight: '800', color: Colors.textPrimary, letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
+  actDistUnit: { fontSize: 12, color: Colors.textTertiary, fontWeight: '600' },
+  actMeta: { fontSize: 11, color: Colors.textTertiary, marginTop: 2, fontVariant: ['tabular-nums'] },
+  actAgo: { fontSize: 11, color: Colors.textTertiary },
 });
