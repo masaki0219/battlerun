@@ -18,10 +18,12 @@ import { useAuthStore } from '../../stores/authStore';
 import { purchasePro, restorePurchases, getProPackageInfo, type ProPackageInfo } from '../../lib/revenuecat';
 import { isPro } from '../../lib/pro';
 import { LEGAL_URLS, SUBSCRIPTION_DISCLAIMER } from '../../lib/legal';
+import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '../../components/ui/Avatar';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
-import { Colors, Typography, Spacing, BorderRadius } from '../../design_tokens';
+import { MonoLabel } from '../../components/ui/MonoLabel';
+import { Colors, DarkColors, Typography, Spacing, BorderRadius } from '../../design_tokens';
 import type { UserTitle } from '../../types';
 
 function TitleBadge({ title }: { title: UserTitle }) {
@@ -274,50 +276,57 @@ export default function ProfileScreen() {
             </TouchableOpacity>
             <View style={styles.userInfo}>
               <Text style={styles.userName}>{user.name}</Text>
-              <View style={[styles.planBadge, isPro(user.plan, proEntitlement) && styles.planBadgePro]}>
-                <Text style={[styles.planText, isPro(user.plan, proEntitlement) && styles.planTextPro]}>
-                  {isPro(user.plan, proEntitlement) ? '✨ Pro' : 'Free'}
-                </Text>
-              </View>
+              {isPro(user.plan, proEntitlement) && (
+                <View style={[styles.planBadge, styles.planBadgePro]}>
+                  <Ionicons name="sparkles" size={11} color={Colors.accentYellow} />
+                  <Text style={[styles.planText, styles.planTextPro]}>Pro</Text>
+                </View>
+              )}
             </View>
           </View>
         </Card>
 
         {/* サブスク管理 */}
-        <Card style={styles.card}>
-          <Text style={styles.sectionTitle}>サブスクリプション</Text>
-          {isPro(user.plan, proEntitlement) ? (
+        {isPro(user.plan, proEntitlement) ? (
+          <Card style={styles.card}>
+            <Text style={styles.sectionTitle}>サブスクリプション</Text>
             <View style={styles.proRow}>
-              <Text style={styles.proLabel}>✨ Proプラン 有効中</Text>
+              <View style={styles.proActiveRow}>
+                <Ionicons name="sparkles" size={16} color={Colors.accentYellow} />
+                <Text style={styles.proLabel}>Proプラン 有効中</Text>
+              </View>
               <TouchableOpacity
                 onPress={() => Alert.alert('サブスク管理', 'App Store の設定からサブスクリプションを管理してください。')}
               >
                 <Text style={styles.manageLink}>管理する</Text>
               </TouchableOpacity>
             </View>
-          ) : (
-            <>
-              <Text style={styles.freeDesc}>
-                Proプランにアップグレードすると、プライベートチャレンジの作成が無制限になります。
+          </Card>
+        ) : (
+          <Card variant="dark" style={styles.card}>
+            <MonoLabel color={Colors.accentYellow} size={10}>BATTLERUN PRO</MonoLabel>
+            <Text style={styles.proUpsellTitle}>Proにアップグレード</Text>
+            <Text style={styles.freeDescDark}>
+              プライベートチャレンジの作成が無制限になり、バトルテーマや透かしなし共有が使えます。
+            </Text>
+            {proPackageInfo && (
+              <Text style={styles.priceTextDark}>
+                {proPackageInfo.periodLabel} {proPackageInfo.priceString}（自動更新）
               </Text>
-              {proPackageInfo && (
-                <Text style={styles.priceText}>
-                  {proPackageInfo.periodLabel} {proPackageInfo.priceString}（自動更新）
-                </Text>
-              )}
-              <Button
-                label={purchasing ? '処理中...' : 'Proにアップグレード'}
-                onPress={handlePurchasePro}
-                loading={purchasing}
-                style={{ marginTop: Spacing.md }}
-              />
-              <TouchableOpacity onPress={handleRestore} style={{ alignSelf: 'center', marginTop: Spacing.sm }}>
-                <Text style={{ fontSize: Typography.fontSize.xs, color: Colors.textTertiary }}>購入を復元する</Text>
-              </TouchableOpacity>
-              <Text style={styles.subscriptionDisclaimer}>{SUBSCRIPTION_DISCLAIMER}</Text>
-            </>
-          )}
-        </Card>
+            )}
+            <Button
+              label={purchasing ? '処理中...' : 'Proにアップグレード'}
+              onPress={handlePurchasePro}
+              loading={purchasing}
+              variant="accent"
+              style={{ marginTop: Spacing.md }}
+            />
+            <TouchableOpacity onPress={handleRestore} style={{ alignSelf: 'center', marginTop: Spacing.sm }}>
+              <Text style={{ fontSize: Typography.fontSize.xs, color: DarkColors.textTertiary }}>購入を復元する</Text>
+            </TouchableOpacity>
+            <Text style={styles.subscriptionDisclaimerDark}>{SUBSCRIPTION_DISCLAIMER}</Text>
+          </Card>
+        )}
 
         {/* 利用規約・プライバシーポリシー */}
         <View style={styles.legalRow}>
@@ -338,7 +347,7 @@ export default function ProfileScreen() {
         >
           <View style={styles.badgeLinkLeft}>
             <View style={styles.badgeLinkIcon}>
-              <Text style={{ fontSize: 22 }}>🏅</Text>
+              <Ionicons name="ribbon" size={22} color={Colors.accentYellow} />
             </View>
             <View>
               <Text style={styles.badgeLinkTitle}>バッジ・称号</Text>
@@ -347,7 +356,7 @@ export default function ProfileScreen() {
               </Text>
             </View>
           </View>
-          <Text style={{ fontSize: 16, color: Colors.textTertiary }}>›</Text>
+          <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
         </TouchableOpacity>
 
         {/* 獲得称号 */}
@@ -372,7 +381,8 @@ export default function ProfileScreen() {
             style={styles.adminBtn}
             onPress={() => router.push('/admin')}
           >
-            <Text style={styles.adminBtnText}>⚙️ 管理画面</Text>
+            <Ionicons name="settings-outline" size={15} color={Colors.info} />
+            <Text style={styles.adminBtnText}>管理画面</Text>
           </TouchableOpacity>
         )}
 
@@ -477,20 +487,23 @@ const styles = StyleSheet.create({
   userInfo: { flex: 1 },
   userName: { fontSize: Typography.fontSize.xl, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
   planBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
     alignSelf: 'flex-start', marginTop: Spacing.xs,
     paddingHorizontal: Spacing.sm, paddingVertical: 2,
-    backgroundColor: Colors.surfaceGray, borderRadius: 99,
+    backgroundColor: Colors.surfaceGray, borderRadius: BorderRadius.full,
   },
   planBadgePro: { backgroundColor: Colors.accentYellow + '33' },
   planText: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary },
   planTextPro: { color: Colors.accentYellow, fontWeight: Typography.fontWeight.bold },
   sectionTitle: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.semibold, color: Colors.textSecondary, marginBottom: Spacing.md },
   proRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  proActiveRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   proLabel: { fontSize: Typography.fontSize.md, color: Colors.primary, fontWeight: Typography.fontWeight.semibold },
   manageLink: { fontSize: Typography.fontSize.sm, color: Colors.primary },
-  freeDesc: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary, lineHeight: 20 },
-  priceText: { fontSize: Typography.fontSize.sm, color: Colors.textPrimary, fontWeight: Typography.fontWeight.semibold, marginTop: Spacing.sm },
-  subscriptionDisclaimer: { fontSize: 10, color: Colors.textTertiary, lineHeight: 15, marginTop: Spacing.sm },
+  proUpsellTitle: { fontSize: Typography.fontSize.xl, fontWeight: Typography.fontWeight.bold, color: DarkColors.textPrimary, marginTop: 6 },
+  freeDescDark: { fontSize: Typography.fontSize.sm, color: DarkColors.textSecondary, lineHeight: 20, marginTop: Spacing.sm },
+  priceTextDark: { fontSize: Typography.fontSize.sm, color: DarkColors.textPrimary, fontWeight: Typography.fontWeight.semibold, marginTop: Spacing.sm },
+  subscriptionDisclaimerDark: { fontSize: 10, color: DarkColors.textTertiary, lineHeight: 15, marginTop: Spacing.sm },
   legalRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: Spacing.sm },
   legalLink: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, textDecorationLine: 'underline' },
   legalSeparator: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, marginHorizontal: Spacing.xs },
@@ -551,6 +564,7 @@ const styles = StyleSheet.create({
   },
   emojiText: { fontSize: 32 },
   adminBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
     alignSelf: 'center',
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.lg,
