@@ -19,6 +19,7 @@ import { isPro } from '../../lib/pro';
 import { scheduleBattleEndNotification, scheduleBattleEnd1hNotification } from '../../lib/notifications';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
+import { EmptyState } from '../../components/ui/EmptyState';
 import { Colors, Typography, Spacing, BorderRadius, Shadow } from '../../design_tokens';
 import type { Battle, CategoryStats, Category } from '../../types';
 
@@ -824,31 +825,45 @@ export default function BattleScreen() {
         </View>
 
         <View style={styles.segmentRow}>
-          {(['public', 'private'] as Tab[]).map((tab) => (
-            <TouchableOpacity
-              key={tab}
-              style={[styles.segment, activeTab === tab && styles.segmentActive]}
-              onPress={() => { setActiveTab(tab); setPrivateView('list'); }}
-            >
-              <Text style={[styles.segmentLabel, activeTab === tab && styles.segmentLabelActive]}>
-                {tab === 'public' ? '🏆 パブリックラン' : '🔒 友達チャレンジ'}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {(['public', 'private'] as Tab[]).map((tab) => {
+            const active = activeTab === tab;
+            return (
+              <TouchableOpacity
+                key={tab}
+                style={[styles.segment, active && styles.segmentActive]}
+                onPress={() => { setActiveTab(tab); setPrivateView('list'); }}
+              >
+                <Ionicons
+                  name={tab === 'public' ? 'trophy-outline' : 'lock-closed-outline'}
+                  size={14}
+                  color={active ? Colors.textPrimary : Colors.textTertiary}
+                />
+                <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]}>
+                  {tab === 'public' ? 'パブリックラン' : '友達チャレンジ'}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {activeTab === 'public' ? (
           publicBattles.length === 0
-            ? <Card style={styles.card}><Text style={styles.emptyText}>開催中のパブリックランはありません</Text></Card>
+            ? <EmptyState
+                icon="trophy-outline"
+                title="開催中のパブリックランがありません"
+                hint="友達チャレンジで仲間と競うこともできます"
+              />
             : publicBattles.map(renderPublicBattleCard)
         ) : (
           <>
             {privateView === 'list' && (
               <>
                 {privateBattles.length === 0 && (
-                  <Card style={styles.card}>
-                    <Text style={styles.emptyText}>参加中の友達チャレンジはありません</Text>
-                  </Card>
+                  <EmptyState
+                    icon="people-outline"
+                    title="参加中の友達チャレンジがありません"
+                    hint="招待コードで友達チャレンジに参加できます"
+                  />
                 )}
                 {privateBattles.map(renderPrivateBattleCard)}
                 <Button
@@ -927,7 +942,7 @@ export default function BattleScreen() {
         {/* パブリックバトル一覧 */}
         {publicBattles.length > 0 && (
           <>
-            <Text style={styles.sectionLabel}>🏆 パブリックラン</Text>
+            <Text style={styles.sectionLabel}>パブリックラン</Text>
             {publicBattles.map(renderPublicBattleCard)}
           </>
         )}
@@ -1040,7 +1055,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 1.5, borderColor: Colors.surface,
   },
-  notifBadgeText: { fontSize: 9, fontWeight: '800', color: '#fff' },
+  notifBadgeText: { fontSize: 9, fontWeight: '800', color: Colors.textOnPrimary },
   scroll: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing['3xl'], gap: Spacing.lg },
 
   // Active Challenge Card
@@ -1116,7 +1131,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     ...Shadow.md,
   },
-  runNowLabel: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.extrabold, color: '#fff' },
+  runNowLabel: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.extrabold, color: Colors.textOnPrimary },
 
   // Section divider
   sectionDivider: {
@@ -1135,10 +1150,10 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     padding: 4,
   },
-  segment: { flex: 1, paddingVertical: Spacing.sm, alignItems: 'center', borderRadius: BorderRadius.sm },
+  segment: { flex: 1, flexDirection: 'row', gap: 5, paddingVertical: Spacing.sm, alignItems: 'center', justifyContent: 'center', borderRadius: BorderRadius.sm },
   segmentActive: { backgroundColor: Colors.surface, ...Shadow.sm },
   segmentLabel: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary, fontWeight: Typography.fontWeight.medium },
-  segmentLabelActive: { color: Colors.primary, fontWeight: Typography.fontWeight.semibold },
+  segmentLabelActive: { color: Colors.textPrimary, fontWeight: Typography.fontWeight.semibold },
 
   // Battle cards (共通)
   card: { marginBottom: 0 },
@@ -1169,7 +1184,6 @@ const styles = StyleSheet.create({
   inviteLabel: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary },
   inviteCode: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.primary, letterSpacing: 2 },
   inviteCopy: { fontSize: Typography.fontSize.sm, marginLeft: Spacing.xs },
-  emptyText: { fontSize: Typography.fontSize.md, color: Colors.textSecondary, textAlign: 'center', padding: Spacing.lg },
 
   // Empty state (State B)
   emptyStateCard: {
@@ -1194,8 +1208,8 @@ const styles = StyleSheet.create({
     ...Shadow.md,
   },
   recommendHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
-  recommendHeaderText: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: '#fff' },
-  recommendTitle: { fontSize: Typography.fontSize.xl, fontWeight: Typography.fontWeight.bold, color: '#fff', marginTop: Spacing.xs },
+  recommendHeaderText: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.textOnPrimary },
+  recommendTitle: { fontSize: Typography.fontSize.xl, fontWeight: Typography.fontWeight.bold, color: Colors.textOnPrimary, marginTop: Spacing.xs },
   recommendShortageRow: {
     alignSelf: 'flex-start',
     backgroundColor: `${Colors.primary}30`,
