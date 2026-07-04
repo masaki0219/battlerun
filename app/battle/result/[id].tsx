@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Share, Platform,
+  ActivityIndicator, Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -14,37 +14,9 @@ import { useAuthStore } from '../../../stores/authStore';
 import { useBattleStore } from '../../../stores/battleStore';
 import { isPro } from '../../../lib/pro';
 import type { Battle, CategoryStats } from '../../../types';
-
-const BR = {
-  light:       '#F4F2EC',
-  lightSurf2:  '#EDEAE2',
-  lightLine:   'rgba(10,14,26,0.08)',
-  dark:        '#0A0E1A',
-  darkCard:    '#161D33',
-  darkLine2:   'rgba(255,255,255,0.14)',
-  ink:         '#0A0E1A',
-  ink2:        '#5A6477',
-  ink3:        '#9AA4B5',
-  primary:     '#00D9A3',
-  primaryDeep: '#06B189',
-  accent:      '#FF5C2B',
-  gold:        '#FFC23C',
-  silver:      '#C2CBD6',
-  bronze:      '#CB7B3A',
-  paper:       '#FFFFFF',
-};
-
-function Tac({ children, color = BR.ink3, size = 9 }: {
-  children: string; color?: string; size?: number;
-}) {
-  return (
-    <Text style={{
-      fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
-      fontSize: size, fontWeight: '700',
-      letterSpacing: size * 0.2, color, textTransform: 'uppercase',
-    }}>{children}</Text>
-  );
-}
+import { Colors, DarkColors, BorderRadius } from '../../../design_tokens';
+import { MonoLabel } from '../../../components/ui/MonoLabel';
+import { RankBadge } from '../../../components/ui/RankBadge';
 
 interface ParticipantInfo {
   userId: string;
@@ -158,7 +130,7 @@ export default function BattleResultScreen() {
     return (
       <SafeAreaView style={s.root}>
         <View style={s.center}>
-          <ActivityIndicator color={BR.primary} />
+          <ActivityIndicator color={Colors.primary} />
         </View>
       </SafeAreaView>
     );
@@ -176,10 +148,10 @@ export default function BattleResultScreen() {
   const endDate = new Date(localBattle.endAt).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' });
 
   function rankMedal(rank: number) {
-    if (rank === 1) return { emoji: '🥇', color: BR.gold, label: '優勝！', bg: `${BR.gold}18` };
-    if (rank === 2) return { emoji: '🥈', color: BR.silver, label: '準優勝', bg: `${BR.silver}28` };
-    if (rank === 3) return { emoji: '🥉', color: BR.bronze, label: '3位入賞', bg: `${BR.bronze}18` };
-    return { emoji: '🏃', color: BR.ink2, label: `${rank}位`, bg: `${BR.lightSurf2}` };
+    if (rank === 1) return { emoji: '🥇', color: Colors.accentYellow, label: '優勝！', bg: `${Colors.accentYellow}18` };
+    if (rank === 2) return { emoji: '🥈', color: Colors.rank2, label: '準優勝', bg: `${Colors.rank2}28` };
+    if (rank === 3) return { emoji: '🥉', color: Colors.rank3, label: '3位入賞', bg: `${Colors.rank3}18` };
+    return { emoji: '🏃', color: Colors.textSecondary, label: `${rank}位`, bg: `${Colors.surfaceAlt}` };
   }
 
   const medal = myRank ? rankMedal(myRank) : null;
@@ -214,21 +186,21 @@ export default function BattleResultScreen() {
       {/* Nav */}
       <View style={s.nav}>
         <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="chevron-back" size={20} color={BR.ink2} />
+          <Ionicons name="chevron-back" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
-        <Tac color={BR.ink3} size={9}>バトル結果</Tac>
+        <MonoLabel color={Colors.textTertiary} size={9}>バトル結果</MonoLabel>
         <View style={{ width: 28 }} />
       </View>
 
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         {/* ── Hero ── */}
         <View style={s.heroCard}>
-          <Tac color={BR.ink3} size={9}>BATTLE RESULT / バトル終了</Tac>
+          <MonoLabel color={Colors.textTertiary} size={9}>BATTLE RESULT / バトル終了</MonoLabel>
           <Text style={s.heroTitle}>{localBattle.title}</Text>
           <Text style={s.heroDates}>{startDate} 〜 {endDate}</Text>
 
           {loading ? (
-            <ActivityIndicator color={BR.primary} style={{ marginTop: 24 }} />
+            <ActivityIndicator color={Colors.primary} style={{ marginTop: 24 }} />
           ) : medal ? (
             <View style={[s.medalBlock, { backgroundColor: medal.bg }]}>
               <Text style={s.medalEmoji}>{medal.emoji}</Text>
@@ -248,10 +220,10 @@ export default function BattleResultScreen() {
         {/* ── 称号発表 ── */}
         {titleName && (
           <View style={s.section}>
-            <Tac color={BR.ink3} size={9}>称号獲得 / TITLE EARNED</Tac>
+            <MonoLabel color={Colors.textTertiary} size={9}>称号獲得 / TITLE EARNED</MonoLabel>
             <View style={s.titleCard}>
               <View style={s.titleIconWrap}>
-                <Ionicons name="ribbon" size={28} color={BR.gold} />
+                <Ionicons name="ribbon" size={28} color={Colors.accentYellow} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={s.titleName}>{titleName}</Text>
@@ -259,28 +231,28 @@ export default function BattleResultScreen() {
                   {myTitle?.teamName ? `「${myTitle.teamName}」として出撃した仲間に贈られる称号` : '陣営として勝ち取った称号'}
                 </Text>
               </View>
-              <Text style={s.titleNew}>NEW</Text>
+              <View style={s.titleNewChip}><Text style={s.titleNew}>NEW</Text></View>
             </View>
           </View>
         )}
 
         {/* ── 個人成績 ── */}
         <View style={s.section}>
-          <Tac color={BR.ink3} size={9}>個人成績 / MY STATS</Tac>
+          <MonoLabel color={Colors.textTertiary} size={9}>個人成績 / MY STATS</MonoLabel>
           <View style={s.statsCard}>
             <View style={s.statRow}>
               <View style={s.statItem}>
-                <Tac color={BR.ink3} size={8}>貢献距離</Tac>
+                <MonoLabel color={Colors.textTertiary} size={8}>貢献距離</MonoLabel>
                 <Text style={s.statVal}>{myStats.totalKm.toFixed(1)}<Text style={s.statUnit}> km</Text></Text>
               </View>
               <View style={s.statDivider} />
               <View style={s.statItem}>
-                <Tac color={BR.ink3} size={8}>記録回数</Tac>
+                <MonoLabel color={Colors.textTertiary} size={8}>記録回数</MonoLabel>
                 <Text style={s.statVal}>{myStats.actCount ?? '—'}<Text style={s.statUnit}> 回</Text></Text>
               </View>
               <View style={s.statDivider} />
               <View style={s.statItem}>
-                <Tac color={BR.ink3} size={8}>陣営内順位</Tac>
+                <MonoLabel color={Colors.textTertiary} size={8}>陣営内順位</MonoLabel>
                 <Text style={s.statVal}>{myRank ?? '—'}<Text style={s.statUnit}> 位</Text></Text>
               </View>
             </View>
@@ -290,22 +262,18 @@ export default function BattleResultScreen() {
         {/* ── 陣営ランキング ── */}
         {sorted.length > 0 && (
           <View style={s.section}>
-            <Tac color={BR.ink3} size={9}>最終ランキング / FINAL RANKING</Tac>
+            <MonoLabel color={Colors.textTertiary} size={9}>最終ランキング / FINAL RANKING</MonoLabel>
             <View style={s.rankCard}>
               {sorted.map((cat, i) => {
                 const isMe = cat.categoryId === myCatId;
-                const rankColors = [BR.gold, BR.silver, BR.bronze];
-                const rc = i < 3 ? rankColors[i] : BR.ink3;
                 const val = rankType === 'total' ? cat.totalDistanceKm : cat.avgDistanceKm;
                 return (
                   <View key={cat.categoryId} style={[s.rankRow, isMe && s.rankRowMe, i > 0 && s.rankRowBorder]}>
-                    <View style={[s.rankNum, { backgroundColor: i < 3 ? `${rc}22` : BR.lightSurf2 }]}>
-                      <Text style={[s.rankNumText, { color: rc }]}>{i + 1}</Text>
-                    </View>
-                    <Text style={[s.rankName, isMe && { color: BR.primary, fontWeight: '900' }]} numberOfLines={1}>
+                    <RankBadge rank={i + 1} />
+                    <Text style={[s.rankName, isMe && { color: Colors.primary, fontWeight: '900' }]} numberOfLines={1}>
                       {cat.label}{isMe ? ' （あなた）' : ''}
                     </Text>
-                    <Text style={[s.rankKm, isMe && { color: BR.primary }]}>
+                    <Text style={[s.rankKm, isMe && { color: Colors.primary }]}>
                       {val.toFixed(1)}<Text style={s.rankKmUnit}> km</Text>
                     </Text>
                   </View>
@@ -318,21 +286,17 @@ export default function BattleResultScreen() {
         {/* ── 個人貢献ランキング (上位5名) ── */}
         {participants.length > 0 && (
           <View style={s.section}>
-            <Tac color={BR.ink3} size={9}>個人貢献ランキング / TOP RUNNERS</Tac>
+            <MonoLabel color={Colors.textTertiary} size={9}>個人貢献ランキング / TOP RUNNERS</MonoLabel>
             <View style={s.rankCard}>
               {participants.slice(0, 5).map((p, i) => {
                 const isMe = p.userId === user?.id;
-                const rankColors = [BR.gold, BR.silver, BR.bronze];
-                const rc = i < 3 ? rankColors[i] : BR.ink3;
                 return (
                   <View key={p.userId} style={[s.rankRow, isMe && s.rankRowMe, i > 0 && s.rankRowBorder]}>
-                    <View style={[s.rankNum, { backgroundColor: i < 3 ? `${rc}22` : BR.lightSurf2 }]}>
-                      <Text style={[s.rankNumText, { color: rc }]}>{i + 1}</Text>
-                    </View>
-                    <Text style={[s.rankName, isMe && { color: BR.primary, fontWeight: '900' }]} numberOfLines={1}>
+                    <RankBadge rank={i + 1} />
+                    <Text style={[s.rankName, isMe && { color: Colors.primary, fontWeight: '900' }]} numberOfLines={1}>
                       {p.displayName}{isMe ? ' （あなた）' : ''}
                     </Text>
-                    <Text style={[s.rankKm, isMe && { color: BR.primary }]}>
+                    <Text style={[s.rankKm, isMe && { color: Colors.primary }]}>
                       {p.totalDistanceKm.toFixed(1)}<Text style={s.rankKmUnit}> km</Text>
                     </Text>
                   </View>
@@ -344,7 +308,7 @@ export default function BattleResultScreen() {
 
         {/* ── 共有 ── */}
         <View style={s.section}>
-          <Tac color={BR.ink3} size={9}>結果をシェア / SHARE RESULT</Tac>
+          <MonoLabel color={Colors.textTertiary} size={9}>結果をシェア / SHARE RESULT</MonoLabel>
           <View ref={shareCardRef} collapsable={false} style={s.sharePreview}>
             <View style={s.sharePreviewContent}>
               <Text style={s.sharePreviewTitle}>{localBattle.title}</Text>
@@ -363,7 +327,7 @@ export default function BattleResultScreen() {
             )}
           </View>
           <TouchableOpacity style={s.shareBtn} onPress={handleShare} activeOpacity={0.85}>
-            <Ionicons name="share-outline" size={18} color="#fff" />
+            <Ionicons name="share-outline" size={18} color={Colors.textOnPrimary} />
             <Text style={s.shareBtnText}>結果をシェアする</Text>
           </TouchableOpacity>
           {!userIsPro && (
@@ -375,14 +339,14 @@ export default function BattleResultScreen() {
 
         {/* ── 次のアクション ── */}
         <View style={s.section}>
-          <Tac color={BR.ink3} size={9}>NEXT ACTION</Tac>
+          <MonoLabel color={Colors.textTertiary} size={9}>NEXT ACTION</MonoLabel>
           <View style={s.nextActions}>
             <TouchableOpacity
               style={s.nextBtn}
               onPress={() => router.replace('/(tabs)/battle' as any)}
               activeOpacity={0.85}
             >
-              <Ionicons name="search-outline" size={18} color={BR.ink} />
+              <Ionicons name="search-outline" size={18} color={Colors.textPrimary} />
               <Text style={s.nextBtnText}>次のバトルを探す</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -390,8 +354,8 @@ export default function BattleResultScreen() {
               onPress={() => router.push('/(tabs)/battle' as any)}
               activeOpacity={0.85}
             >
-              <Ionicons name="add-circle-outline" size={18} color={userIsPro ? BR.primary : BR.ink} />
-              <Text style={[s.nextBtnText, userIsPro && { color: BR.primary }]}>
+              <Ionicons name="add-circle-outline" size={18} color={userIsPro ? Colors.primary : Colors.textPrimary} />
+              <Text style={[s.nextBtnText, userIsPro && { color: Colors.primary }]}>
                 バトルを作る{!userIsPro ? ' (Pro)' : ''}
               </Text>
             </TouchableOpacity>
@@ -403,7 +367,7 @@ export default function BattleResultScreen() {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: BR.light },
+  root: { flex: 1, backgroundColor: Colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   nav: {
@@ -412,36 +376,36 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 10,
-    backgroundColor: BR.paper,
+    backgroundColor: Colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: BR.lightLine,
+    borderBottomColor: Colors.border,
   },
 
   scroll: { paddingBottom: 48 },
 
   // Hero
   heroCard: {
-    backgroundColor: BR.paper,
+    backgroundColor: Colors.surface,
     padding: 20,
     alignItems: 'center',
     gap: 6,
     marginBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: BR.lightLine,
+    borderBottomColor: Colors.border,
   },
-  heroTitle: { fontSize: 20, fontWeight: '900', color: BR.ink, textAlign: 'center', marginTop: 4 },
-  heroDates: { fontSize: 12, color: BR.ink3, fontWeight: '600' },
+  heroTitle: { fontSize: 20, fontWeight: '900', color: Colors.textPrimary, textAlign: 'center', marginTop: 4 },
+  heroDates: { fontSize: 12, color: Colors.textTertiary, fontWeight: '600' },
   medalBlock: {
     marginTop: 20,
     alignItems: 'center',
     padding: 20,
-    borderRadius: 20,
+    borderRadius: BorderRadius.xl,
     gap: 4,
     minWidth: 160,
   },
   medalEmoji: { fontSize: 64, lineHeight: 72 },
   medalLabel: { fontSize: 20, fontWeight: '900', letterSpacing: 0.5, marginTop: 4 },
-  medalTeamName: { fontSize: 13, color: BR.ink3, fontWeight: '600', marginTop: 2 },
+  medalTeamName: { fontSize: 13, color: Colors.textTertiary, fontWeight: '600', marginTop: 2 },
 
   // Section
   section: { paddingHorizontal: 16, marginTop: 16 },
@@ -453,41 +417,46 @@ const s = StyleSheet.create({
     gap: 12,
     padding: 14,
     marginTop: 8,
-    borderRadius: 14,
-    backgroundColor: `${BR.gold}18`,
+    borderRadius: BorderRadius.md,
+    backgroundColor: `${Colors.accentYellow}18`,
     borderWidth: 1.5,
-    borderColor: `${BR.gold}55`,
+    borderColor: `${Colors.accentYellow}55`,
   },
   titleIconWrap: {
-    width: 48, height: 48, borderRadius: 14,
-    backgroundColor: `${BR.gold}30`,
+    width: 48, height: 48, borderRadius: BorderRadius.md,
+    backgroundColor: `${Colors.accentYellow}30`,
     alignItems: 'center', justifyContent: 'center',
   },
-  titleName: { fontSize: 16, fontWeight: '900', color: BR.ink },
-  titleDesc: { fontSize: 11, color: BR.ink3, marginTop: 2 },
-  titleNew: { fontSize: 11, color: BR.gold, fontWeight: '800' },
+  titleName: { fontSize: 16, fontWeight: '900', color: Colors.textPrimary },
+  titleDesc: { fontSize: 11, color: Colors.textTertiary, marginTop: 2 },
+  titleNewChip: {
+    backgroundColor: Colors.accentYellow,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: 8, paddingVertical: 3,
+  },
+  titleNew: { fontSize: 10, color: Colors.textPrimary, fontWeight: '900', letterSpacing: 0.5 },
 
   // Stats card
   statsCard: {
-    backgroundColor: BR.paper,
-    borderRadius: 14,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
     padding: 16,
     marginTop: 8,
     borderWidth: 1,
-    borderColor: BR.lightLine,
+    borderColor: Colors.border,
   },
   statRow: { flexDirection: 'row' },
   statItem: { flex: 1, alignItems: 'center', gap: 4 },
-  statDivider: { width: 1, backgroundColor: BR.lightLine, marginVertical: 4 },
-  statVal: { fontSize: 32, fontWeight: '800', color: BR.ink, letterSpacing: -1, marginTop: 4 },
-  statUnit: { fontSize: 13, color: BR.ink3, fontWeight: '400' },
+  statDivider: { width: 1, backgroundColor: Colors.border, marginVertical: 4 },
+  statVal: { fontSize: 32, fontWeight: '800', color: Colors.textPrimary, letterSpacing: -1, marginTop: 4, fontVariant: ['tabular-nums'] },
+  statUnit: { fontSize: 13, color: Colors.textTertiary, fontWeight: '400' },
 
   // Rank card
   rankCard: {
-    backgroundColor: BR.paper,
-    borderRadius: 14,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
     borderWidth: 1,
-    borderColor: BR.lightLine,
+    borderColor: Colors.border,
     marginTop: 8,
     overflow: 'hidden',
   },
@@ -498,49 +467,44 @@ const s = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
-  rankRowBorder: { borderTopWidth: 1, borderTopColor: BR.lightLine },
-  rankRowMe: { backgroundColor: '#F0FBF8' },
-  rankNum: {
-    width: 28, height: 28, borderRadius: 8,
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-  },
-  rankNumText: { fontSize: 14, fontWeight: '800' },
-  rankName: { flex: 1, fontSize: 13, color: BR.ink, fontWeight: '600' },
-  rankKm: { fontSize: 16, fontWeight: '700', color: BR.ink2, letterSpacing: -0.5 },
-  rankKmUnit: { fontSize: 10, color: BR.ink3, fontWeight: '400' },
+  rankRowBorder: { borderTopWidth: 1, borderTopColor: Colors.border },
+  rankRowMe: { backgroundColor: Colors.primaryLight },
+  rankName: { flex: 1, fontSize: 13, color: Colors.textPrimary, fontWeight: '600' },
+  rankKm: { fontSize: 16, fontWeight: '700', color: Colors.textSecondary, letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
+  rankKmUnit: { fontSize: 10, color: Colors.textTertiary, fontWeight: '400' },
 
   // Share
   sharePreview: {
     marginTop: 8,
     padding: 16,
-    borderRadius: 14,
-    backgroundColor: BR.dark,
+    borderRadius: BorderRadius.md,
+    backgroundColor: DarkColors.background,
     overflow: 'hidden',
     position: 'relative',
   },
   sharePreviewContent: { gap: 4 },
-  sharePreviewTitle: { fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: '700' },
-  sharePreviewRank: { fontSize: 28, fontWeight: '900', color: '#fff', letterSpacing: -1 },
-  sharePreviewTeam: { fontSize: 13, color: 'rgba(255,255,255,0.85)', fontWeight: '700', marginTop: 2 },
-  sharePreviewTag: { fontSize: 12, color: BR.primary, fontWeight: '700', marginTop: 4 },
+  sharePreviewTitle: { fontSize: 13, color: DarkColors.textSecondary, fontWeight: '700' },
+  sharePreviewRank: { fontSize: 28, fontWeight: '900', color: Colors.textOnPrimary, letterSpacing: -1, fontVariant: ['tabular-nums'] },
+  sharePreviewTeam: { fontSize: 13, color: DarkColors.textSecondary, fontWeight: '700', marginTop: 2 },
+  sharePreviewTag: { fontSize: 12, color: DarkColors.primary, fontWeight: '700', marginTop: 4 },
   watermarkBadge: {
     position: 'absolute', bottom: 10, right: 10,
-    backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 6,
+    backgroundColor: DarkColors.lineStrong, borderRadius: BorderRadius.sm,
     paddingHorizontal: 8, paddingVertical: 3,
   },
-  watermarkText: { fontSize: 10, color: 'rgba(255,255,255,0.5)', fontWeight: '700' },
+  watermarkText: { fontSize: 10, color: DarkColors.textTertiary, fontWeight: '700' },
   shareBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: BR.dark,
-    borderRadius: 12,
-    paddingVertical: 14,
+    backgroundColor: Colors.accent,
+    borderRadius: BorderRadius.md,
+    paddingVertical: 16,
     marginTop: 12,
   },
-  shareBtnText: { fontSize: 14, fontWeight: '800', color: '#fff' },
-  proHint: { textAlign: 'center', fontSize: 11, color: BR.primary, fontWeight: '600', marginTop: 8 },
+  shareBtnText: { fontSize: 15, fontWeight: '800', color: Colors.textOnPrimary },
+  proHint: { textAlign: 'center', fontSize: 11, color: Colors.primary, fontWeight: '600', marginTop: 8 },
 
   // Next actions
   nextActions: { flexDirection: 'row', gap: 10, marginTop: 8 },
@@ -551,12 +515,12 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     padding: 14,
-    borderRadius: 12,
-    backgroundColor: BR.paper,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: BR.lightLine,
+    borderColor: Colors.border,
   },
-  nextBtnPro: { borderColor: `${BR.primary}60`, backgroundColor: `${BR.primary}0C` },
-  nextBtnText: { fontSize: 12, fontWeight: '700', color: BR.ink },
+  nextBtnPro: { borderColor: `${Colors.primary}60`, backgroundColor: `${Colors.primary}0C` },
+  nextBtnText: { fontSize: 12, fontWeight: '700', color: Colors.textPrimary },
 
 });
