@@ -4,6 +4,7 @@
  * UIコンポーネントはすべてこのファイルの定数を使うこと。
  * ハードコードされた色・サイズは禁止。
  */
+import { Platform } from 'react-native';
 
 // ============================================================
 // カラーパレット
@@ -11,13 +12,18 @@
 
 export const Colors = {
   // ブランドカラー（メインの緑系ティール）
-  primary: '#00C49A',        // ボタン・アクティブ要素・プログレスバー
+  primary: '#00C49A',        // 明るい背景上のブランド色・ボタン・プログレスバー
+  primaryBright: '#00D9A3',  // ダーク背景上で使う明るいティール
   primaryLight: '#E6FAF6',   // 背景ハイライト・選択状態
-  primaryDark: '#00A07D',    // プレスド状態
+  primaryDark: '#00A07D',    // プレスド状態・深いティール
 
   // アクセントカラー（ランキング・競争要素）
-  accent: '#FF6B35',         // 1位・強調・UP矢印
-  accentYellow: '#FFB800',   // 王冠アイコン・ゴールド
+  accent: '#FF6B35',         // 1位・強調・UP矢印（#FF5C2B もこれに統一）
+  accentDark: '#E0431A',     // アクセントのプレスド状態
+  accentYellow: '#FFB800',   // 王冠アイコン・ゴールド・称号
+
+  // Pro（サブスク）
+  pro: '#7C3AED',            // Pro バッジ・特別感
 
   // セマンティックカラー
   success: '#00C49A',        // 達成・完了（primaryと同じ）
@@ -32,9 +38,10 @@ export const Colors = {
   textOnPrimary: '#FFFFFF',  // primaryカラー上の文字
 
   // 背景
-  background: '#F8FAFB',     // アプリ全体の背景
+  background: '#F4F2EC',     // アプリ全体の背景（温かいオフホワイトに統一）
   surface: '#FFFFFF',        // カード・モーダルの背景
   surfaceGray: '#F3F4F6',    // 入力フィールド・非アクティブ背景
+  surfaceAlt: '#EDEAE2',     // 温かいインセット面（旧 BR.lightSurf2）
 
   // ボーダー
   border: '#E5E7EB',         // 通常のボーダー
@@ -55,6 +62,25 @@ export const Colors = {
 } as const;
 
 // ============================================================
+// ダーク HUD 用カラー（記録中・結果・バトル詳細のダーク部）
+// record.tsx / battle/result/[id].tsx の現行多数派の実値を採用
+// ============================================================
+
+export const DarkColors = {
+  background: '#0A0E1A',                    // ダーク画面の背景
+  surface: '#161D33',                       // ダークカード（旧 BR.darkCard）
+  surfaceAlt: '#11172A',                    // ダークパネル（旧 BR.darkPanel）
+  line: 'rgba(255,255,255,0.08)',           // 区切り線（旧 BR.darkLine）
+  lineStrong: 'rgba(255,255,255,0.14)',     // 強めの区切り線（旧 BR.darkLine2）
+  textPrimary: '#FFFFFF',                   // メイン文字（旧 BR.paper）
+  textSecondary: 'rgba(255,255,255,0.68)',  // サブ文字（旧 BR.paper2）
+  textTertiary: 'rgba(255,255,255,0.40)',   // 補足文字（旧 BR.paper3）
+  primary: '#00D9A3',                       // ダーク上の明るいティール
+  accent: '#FF6B35',                        // アクセント（#FF5C2B から統一）
+  stop: '#FF3D58',                          // STOP ボタン
+} as const;
+
+// ============================================================
 // タイポグラフィ
 // ============================================================
 
@@ -63,6 +89,7 @@ export const Typography = {
   fontFamily: {
     regular: 'System',   // SF Pro Text
     bold: 'System',
+    mono: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }) as string,
   },
 
   // フォントサイズ
@@ -91,6 +118,33 @@ export const Typography = {
     tight: 1.2,
     normal: 1.5,
     relaxed: 1.7,
+  },
+} as const;
+
+// ============================================================
+// テキストスタイル（HUD ラベルとヒーロー数値）
+// ============================================================
+
+export const TextStyles = {
+  // 「BATTLERUN / RUN IN PROGRESS」等の等幅ラベル
+  tacLabel: {
+    fontFamily: Typography.fontFamily.mono,
+    fontSize: 10,
+    fontWeight: '700' as const,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase' as const,
+  },
+  // 距離などの大きな数値。桁が揃うよう tabular-nums を必ず付ける
+  heroNumber: {
+    fontSize: 64,
+    fontWeight: '900' as const,
+    letterSpacing: -2,
+    fontVariant: ['tabular-nums'] as const,
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: '800' as const,
+    fontVariant: ['tabular-nums'] as const,
   },
 } as const;
 
