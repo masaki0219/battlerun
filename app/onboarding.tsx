@@ -7,20 +7,20 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Typography, Spacing, BorderRadius, Shadow } from '../design_tokens';
+import { Colors, DarkColors, Typography, Spacing, BorderRadius, Shadow } from '../design_tokens';
 
 export const ONBOARDING_KEY = '@battlerun_onboarding_seen';
 
 const { width: W } = Dimensions.get('window');
 
-const TEAM_BLUE   = '#3A86FF';
-const TEAM_YELLOW = '#FFC23C';
-const TEAM_RED    = '#FF4757';
-const TEAM_PURPLE = '#9B5CFF';
-const GOLD   = '#FFC23C';
-const SILVER = '#C2CBD6';
-const BRONZE = '#CB7B3A';
-const INK_DARK = '#0A0E1A';
+const TEAM_BLUE   = Colors.teamPalette[0];
+const TEAM_YELLOW = Colors.teamPalette[2];
+const TEAM_RED    = Colors.teamPalette[1];
+const TEAM_PURPLE = Colors.teamPalette[3];
+const GOLD   = Colors.rank1;
+const SILVER = Colors.rank2;
+const BRONZE = Colors.rank3;
+const INK_DARK = Colors.textPrimary;
 
 const STEP_COLORS: Record<number, string> = {
   1: Colors.primary,
@@ -173,11 +173,11 @@ function OB1() {
 const ob1 = StyleSheet.create({
   card: {
     width: W * 0.76,
-    backgroundColor: '#11172A',
+    backgroundColor: DarkColors.surfaceAlt,
     borderRadius: 18,
     padding: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
+    borderColor: DarkColors.lineStrong,
     ...Shadow.lg,
   },
   header: {
@@ -199,7 +199,7 @@ const ob1 = StyleSheet.create({
   liveText: {
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
     fontSize: 8,
-    color: 'rgba(255,255,255,0.4)',
+    color: DarkColors.textTertiary,
     letterSpacing: 2,
   },
   row: {
@@ -207,7 +207,7 @@ const ob1 = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 9,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    borderBottomColor: DarkColors.line,
     gap: 8,
   },
   rank: {
@@ -217,11 +217,11 @@ const ob1 = StyleSheet.create({
     letterSpacing: -0.5,
   },
   stripe: { width: 3, height: 14, borderRadius: 1.5 },
-  name: { flex: 1, fontSize: 11.5, fontWeight: '600', color: '#fff' },
+  name: { flex: 1, fontSize: 11.5, fontWeight: '600', color: DarkColors.textPrimary },
   nameUs: { fontWeight: '800' },
   ours: { fontSize: 8, letterSpacing: 1 },
-  km: { fontSize: 16, fontWeight: '700', color: '#fff', letterSpacing: -0.5 },
-  kmUnit: { fontSize: 9, color: 'rgba(255,255,255,0.4)', marginLeft: 1 },
+  km: { fontSize: 16, fontWeight: '700', color: DarkColors.textPrimary, letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
+  kmUnit: { fontSize: 9, color: DarkColors.textTertiary, marginLeft: 1 },
   hint: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -288,7 +288,7 @@ const ob2 = StyleSheet.create({
   startText: {
     fontSize: 36,
     fontWeight: '800',
-    color: '#fff',
+    color: Colors.textOnPrimary,
     letterSpacing: 2,
   },
   toggle: {
@@ -302,7 +302,7 @@ const ob2 = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderRadius: 99,
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -352,7 +352,7 @@ function OB3() {
 const ob3 = StyleSheet.create({
   card: {
     width: W * 0.76,
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderRadius: 18,
     padding: 24,
     borderWidth: 1.5,
@@ -421,7 +421,7 @@ function OB4() {
 const ob4 = StyleSheet.create({
   card: {
     width: W * 0.76,
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderRadius: 18,
     padding: 16,
     ...Shadow.lg,
@@ -465,7 +465,7 @@ const ob4 = StyleSheet.create({
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#F8FAFB',
+    backgroundColor: Colors.background,
   },
 
   // Top bar
@@ -533,7 +533,7 @@ const styles = StyleSheet.create({
   btnNextText: {
     fontSize: 15,
     fontWeight: '900',
-    color: '#fff',
+    color: Colors.textOnPrimary,
     letterSpacing: 0.5,
   },
   finalCta: { gap: 8 },
@@ -547,7 +547,7 @@ const styles = StyleSheet.create({
   btnPrimaryText: {
     fontSize: 15,
     fontWeight: '900',
-    color: '#fff',
+    color: Colors.textOnPrimary,
     letterSpacing: 0.5,
   },
   btnOutline: {

@@ -9,12 +9,13 @@ import { useRecordStore } from '../../stores/recordStore';
 import { useLocation } from '../../hooks/useLocation';
 import '../../lib/locationTask';
 import { useStepCounter } from '../../hooks/useStepCounter';
+import { Colors } from '../../design_tokens';
 
-const PRIMARY = '#00D9A3';
-const ACCENT  = '#FF5C2B';
-const INK     = '#0A0E1A';
-const INK3    = '#9AA4B5';
-const LINE    = 'rgba(10,14,26,0.08)';
+const PRIMARY = Colors.primary;
+const ACCENT  = Colors.accent;
+const INK     = Colors.textPrimary;
+const INK3    = Colors.textTertiary;
+const LINE    = Colors.border;
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -141,7 +142,7 @@ export default function TabLayout() {
   useStepCounter({ enabled: isRecording && measurementType === 'steps' });
 
   if (isLoading || !user) {
-    return <View style={{ flex: 1, backgroundColor: '#F4F2EC' }} />;
+    return <View style={{ flex: 1, backgroundColor: Colors.background }} />;
   }
 
   return (
