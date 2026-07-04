@@ -28,11 +28,11 @@ export function RankBadge({ rank, size = 28 }: Props) {
 function rankPalette(rank: number): { bg: string; fg: string } {
   switch (rank) {
     case 1:
-      return { bg: Colors.rank1 + '26', fg: '#B7860B' };
+      return { bg: Colors.rank1 + '26', fg: Colors.textPrimary };
     case 2:
-      return { bg: Colors.rank2 + '26', fg: '#6B7280' };
+      return { bg: Colors.rank2 + '26', fg: Colors.textPrimary };
     case 3:
-      return { bg: Colors.rank3 + '26', fg: '#A05A22' };
+      return { bg: Colors.rank3 + '26', fg: Colors.textPrimary };
     default:
       return { bg: Colors.surfaceGray, fg: Colors.textSecondary };
   }
