@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Alert, ActivityIndicator, Modal, Pressable, Platform, Switch,
+  Alert, ActivityIndicator, Modal, Pressable, Switch, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
@@ -13,28 +13,8 @@ import { useRecordStore, saveActivityToFirestore } from '../../stores/recordStor
 import { useAuthStore } from '../../stores/authStore';
 import { useBattleStore } from '../../stores/battleStore';
 import type { MeasurementType, RoutePoint } from '../../types';
-
-// ─── BR palette ────────────────────────────────────────────────
-const BR = {
-  dark:        '#0A0E1A',
-  darkCard:    '#161D33',
-  darkPanel:   '#11172A',
-  darkLine:    'rgba(255,255,255,0.08)',
-  darkLine2:   'rgba(255,255,255,0.14)',
-  light:       '#F4F2EC',
-  lightSurf2:  '#EDEAE2',
-  lightLine:   'rgba(10,14,26,0.08)',
-  ink:         '#0A0E1A',
-  ink2:        '#5A6477',
-  ink3:        '#9AA4B5',
-  primary:     '#00D9A3',
-  primaryDeep: '#06B189',
-  accent:      '#FF5C2B',
-  accentDeep:  '#E0431A',
-  paper:       '#FFFFFF',
-  paper2:      'rgba(255,255,255,0.68)',
-  paper3:      'rgba(255,255,255,0.40)',
-};
+import { Colors, DarkColors, BorderRadius } from '../../design_tokens';
+import { MonoLabel } from '../../components/ui/MonoLabel';
 
 function useElapsedTime(): number {
   const isRecording = useRecordStore((s) => s.isRecording);
@@ -64,19 +44,6 @@ function formatPace(distKm: number, sec: number): string {
   const m = Math.floor(sPerKm / 60);
   const s = Math.round(sPerKm % 60);
   return `${m}'${String(s).padStart(2,'0')}"`;
-}
-
-function Tac({ children, color = BR.paper3, size = 9 }: {
-  children: string; color?: string; size?: number;
-}) {
-  return (
-    <Text style={{
-      fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
-      fontSize: size, fontWeight: '700',
-      letterSpacing: size * 0.2, color,
-      textTransform: 'uppercase',
-    }}>{children}</Text>
-  );
 }
 
 export default function RecordScreen() {
@@ -118,9 +85,37 @@ export default function RecordScreen() {
   const [voiceGuide, setVoiceGuide] = useState(true);
   const spokenKmRef = useRef(0);
 
+  // REC ドット点滅（opacity 1↔0.3、1秒周期）
+  const recDotAnim = useRef(new Animated.Value(1)).current;
+  // START リングの呼吸スケール
+  const ringAnim = useRef(new Animated.Value(0)).current;
+
   useEffect(() => {
     Pedometer.isAvailableAsync().then(setIsStepAvailable).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(recDotAnim, { toValue: 0.3, duration: 500, useNativeDriver: true }),
+        Animated.timing(recDotAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, []);
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(ringAnim, { toValue: 1, duration: 1400, useNativeDriver: true }),
+        Animated.timing(ringAnim, { toValue: 0, duration: 1400, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, []);
+  const ringScale = ringAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] });
 
   // 音声ガイド: 1km通過ごとに読み上げ
   useEffect(() => {
@@ -197,7 +192,7 @@ export default function RecordScreen() {
     return (
       <SafeAreaView style={s.root} edges={['top']}>
         <View style={s.preHeader}>
-          <Tac color={BR.ink3} size={9}>BATTLERUN / ラン準備</Tac>
+          <MonoLabel color={Colors.textTertiary} size={9}>BATTLERUN / ラン準備</MonoLabel>
           <Text style={s.preTitle}>ラン</Text>
         </View>
 
@@ -220,7 +215,7 @@ export default function RecordScreen() {
                 <Ionicons
                   name={mode === 'gps' ? 'navigate-outline' : 'footsteps-outline'}
                   size={14}
-                  color={active ? BR.ink : BR.ink3}
+                  color={active ? Colors.textPrimary : Colors.textTertiary}
                 />
                 <Text style={[s.modeBtnText, active && s.modeBtnTextActive]}>
                   {mode === 'gps' ? 'GPSモード' : '歩数'}
@@ -232,20 +227,20 @@ export default function RecordScreen() {
 
         {/* Voice guide toggle */}
         <View style={s.voiceRow}>
-          <Ionicons name="volume-medium-outline" size={16} color={voiceGuide ? BR.primaryDeep : BR.ink3} />
-          <Text style={[s.voiceLabel, voiceGuide && { color: BR.primaryDeep }]}>音声ガイド</Text>
+          <Ionicons name="volume-medium-outline" size={16} color={voiceGuide ? Colors.primaryDark : Colors.textTertiary} />
+          <Text style={[s.voiceLabel, voiceGuide && { color: Colors.primaryDark }]}>音声ガイド</Text>
           <Switch
             value={voiceGuide}
             onValueChange={setVoiceGuide}
-            trackColor={{ false: BR.lightSurf2, true: `${BR.primary}60` }}
-            thumbColor={voiceGuide ? BR.primary : BR.ink3}
+            trackColor={{ false: Colors.surfaceAlt, true: `${Colors.primary}60` }}
+            thumbColor={voiceGuide ? Colors.primary : Colors.textTertiary}
             style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
           />
         </View>
 
         {/* START button */}
         <View style={s.startArea}>
-          <View style={s.startRing}>
+          <Animated.View style={[s.startRing, { transform: [{ scale: ringScale }] }]}>
             <TouchableOpacity
               style={s.startBtn}
               onPress={() => startRecording(selectedMode)}
@@ -253,7 +248,7 @@ export default function RecordScreen() {
             >
               <Text style={s.startLabel}>START</Text>
             </TouchableOpacity>
-          </View>
+          </Animated.View>
           <Text style={s.startHint}>タップしてラン開始</Text>
 
           {/* Challenge connection badge */}
@@ -271,11 +266,11 @@ export default function RecordScreen() {
             </View>
           ) : (
             <TouchableOpacity
-              style={[s.contribBadge, { backgroundColor: `${BR.ink3}18` }]}
+              style={[s.contribBadge, { backgroundColor: `${Colors.textTertiary}18` }]}
               onPress={() => router.push('/(tabs)/battle' as any)}
               activeOpacity={0.7}
             >
-              <Text style={[s.contribBadgeText, { color: BR.ink3 }]}>
+              <Text style={[s.contribBadgeText, { color: Colors.textTertiary }]}>
                 バトルに参加するとこのランが加算されます
               </Text>
             </TouchableOpacity>
@@ -291,14 +286,14 @@ export default function RecordScreen() {
       {/* Header */}
       <SafeAreaView edges={['top']}>
         <View style={s.hudHeader}>
-          <View style={s.recDot} />
-          <Tac color={BR.paper3} size={9}>RUN IN PROGRESS</Tac>
+          <Animated.View style={[s.recDot, { opacity: recDotAnim }]} />
+          <MonoLabel color={DarkColors.textTertiary} size={9}>RUN IN PROGRESS</MonoLabel>
         </View>
       </SafeAreaView>
 
       {/* Distance hero */}
       <View style={s.hudHero}>
-        <Tac color={BR.primary} size={9}>距離</Tac>
+        <MonoLabel color={DarkColors.primary} size={9}>距離</MonoLabel>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 4 }}>
           <Text style={s.hudBigNum}>{distanceKm.toFixed(2)}</Text>
           <Text style={s.hudUnit}>KM</Text>
@@ -308,9 +303,9 @@ export default function RecordScreen() {
       {/* Stats row */}
       <View style={s.hudStatsRow}>
         <View style={s.hudStat}>
-          <Tac color={BR.paper3} size={8.5}>
+          <MonoLabel color={DarkColors.textTertiary} size={8.5}>
             {measurementType === 'steps' ? '歩数' : 'ペース'}
-          </Tac>
+          </MonoLabel>
           <Text style={s.hudStatVal}>
             {measurementType === 'steps'
               ? steps.toLocaleString()
@@ -322,7 +317,7 @@ export default function RecordScreen() {
         </View>
         <View style={s.hudStatDivider} />
         <View style={s.hudStat}>
-          <Tac color={BR.paper3} size={8.5}>時間</Tac>
+          <MonoLabel color={DarkColors.textTertiary} size={8.5}>時間</MonoLabel>
           <Text style={s.hudStatVal}>{formatTime(elapsed)}</Text>
         </View>
       </View>
@@ -341,19 +336,19 @@ export default function RecordScreen() {
       {/* GPS追跡状態の警告バナー */}
       {measurementType === 'gps' && gpsWarning && (
         <View style={s.warnBanner}>
-          <Ionicons name="warning-outline" size={14} color={BR.accent} />
+          <Ionicons name="warning-outline" size={14} color={Colors.accent} />
           <Text style={s.warnBannerText}>⚠ GPS信号が不安定です。画面を開いたまま走ってください</Text>
         </View>
       )}
       {measurementType === 'gps' && !gpsWarning && locationMode === 'foreground' && (
         <View style={s.warnBanner}>
-          <Ionicons name="warning-outline" size={14} color={BR.accent} />
+          <Ionicons name="warning-outline" size={14} color={Colors.accent} />
           <Text style={s.warnBannerText}>アプリを閉じると記録が止まる可能性があります</Text>
         </View>
       )}
       {measurementType === 'gps' && locationMode === 'denied' && (
         <View style={s.warnBanner}>
-          <Ionicons name="warning-outline" size={14} color={BR.accent} />
+          <Ionicons name="warning-outline" size={14} color={Colors.accent} />
           <Text style={s.warnBannerText}>位置情報の権限がありません。設定から許可してください</Text>
         </View>
       )}
@@ -374,21 +369,21 @@ export default function RecordScreen() {
             {route.length > 1 && (
               <Polyline
                 coordinates={route.map((p) => ({ latitude: p.lat, longitude: p.lng }))}
-                strokeColor={BR.primary}
+                strokeColor={DarkColors.primary}
                 strokeWidth={3}
               />
             )}
           </MapView>
         ) : (
           <View style={[s.hudMap, s.hudMapPlaceholder]}>
-            <ActivityIndicator color={BR.primary} />
-            <Text style={{ color: BR.paper3, marginTop: 8, fontSize: 12 }}>GPS信号を取得中...</Text>
+            <ActivityIndicator color={DarkColors.primary} />
+            <Text style={{ color: DarkColors.textTertiary, marginTop: 8, fontSize: 12 }}>GPS信号を取得中...</Text>
           </View>
         )
       ) : (
         <View style={[s.hudMap, s.hudMapPlaceholder]}>
-          <Ionicons name="footsteps-outline" size={48} color={BR.paper3} />
-          <Text style={{ color: BR.paper3, marginTop: 12, fontSize: 14, fontWeight: '700' }}>
+          <Ionicons name="footsteps-outline" size={48} color={DarkColors.textTertiary} />
+          <Text style={{ color: DarkColors.textTertiary, marginTop: 12, fontSize: 14, fontWeight: '700' }}>
             歩数モード
           </Text>
         </View>
@@ -397,7 +392,7 @@ export default function RecordScreen() {
       {/* STOP button */}
       <View style={s.hudStop}>
         {isSaving ? (
-          <ActivityIndicator color={BR.primary} size="large" />
+          <ActivityIndicator color={DarkColors.primary} size="large" />
         ) : (
           <TouchableOpacity style={s.stopBtn} onPress={handleStop} activeOpacity={0.8}>
             <View style={s.stopSquare} />
@@ -408,9 +403,9 @@ export default function RecordScreen() {
 
       {/* Route modal (after save) */}
       <Modal visible={showRouteModal} animationType="slide" onRequestClose={() => setShowRouteModal(false)}>
-        <SafeAreaView style={{ flex: 1, backgroundColor: BR.dark }}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: DarkColors.background }}>
           <View style={s.hudHeader}>
-            <Text style={{ color: BR.paper, fontWeight: '700', fontSize: 17 }}>走行ルート</Text>
+            <Text style={{ color: DarkColors.textPrimary, fontWeight: '700', fontSize: 17 }}>走行ルート</Text>
           </View>
           {savedRoute.length > 1 ? (() => {
             const lats = savedRoute.map((p) => p.lat);
@@ -429,25 +424,25 @@ export default function RecordScreen() {
               >
                 <Polyline
                   coordinates={savedRoute.map((p) => ({ latitude: p.lat, longitude: p.lng }))}
-                  strokeColor={BR.primary} strokeWidth={4}
+                  strokeColor={DarkColors.primary} strokeWidth={4}
                 />
               </MapView>
             );
           })() : (
             <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ color: BR.paper3 }}>ルートデータがありません</Text>
+              <Text style={{ color: DarkColors.textTertiary }}>ルートデータがありません</Text>
             </View>
           )}
           {savedStats && (
             <View style={s.hudStatsRow}>
               <View style={s.hudStat}>
                 <Text style={s.hudStatVal}>{savedStats.distanceKm.toFixed(2)}</Text>
-                <Tac color={BR.paper3} size={8.5}>km</Tac>
+                <MonoLabel color={DarkColors.textTertiary} size={8.5}>km</MonoLabel>
               </View>
               <View style={s.hudStatDivider} />
               <View style={s.hudStat}>
                 <Text style={s.hudStatVal}>{formatTime(savedStats.durationSeconds)}</Text>
-                <Tac color={BR.paper3} size={8.5}>経過時間</Tac>
+                <MonoLabel color={DarkColors.textTertiary} size={8.5}>経過時間</MonoLabel>
               </View>
             </View>
           )}
@@ -462,9 +457,9 @@ export default function RecordScreen() {
 
 const s = StyleSheet.create({
   // Pre-recording (light)
-  root: { flex: 1, backgroundColor: BR.light },
+  root: { flex: 1, backgroundColor: Colors.background },
   preHeader: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4, gap: 4 },
-  preTitle: { fontSize: 22, fontWeight: '900', color: BR.ink, marginTop: 2 },
+  preTitle: { fontSize: 22, fontWeight: '900', color: Colors.textPrimary, marginTop: 2 },
 
   voiceRow: {
     flexDirection: 'row' as const,
@@ -477,111 +472,111 @@ const s = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     fontWeight: '600' as const,
-    color: BR.ink3,
+    color: Colors.textTertiary,
   },
   modeToggle: {
     flexDirection: 'row', gap: 4, padding: 4,
-    backgroundColor: BR.lightSurf2, borderRadius: 99,
+    backgroundColor: Colors.surfaceAlt, borderRadius: BorderRadius.full,
     marginHorizontal: 40, marginTop: 20,
   },
   modeBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 5, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 99,
+    gap: 5, paddingHorizontal: 14, paddingVertical: 10, borderRadius: BorderRadius.full,
   },
   modeBtnActive: {
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08, shadowRadius: 4, elevation: 2,
   },
-  modeBtnText: { fontSize: 12, fontWeight: '700', color: BR.ink3 },
-  modeBtnTextActive: { color: BR.ink },
+  modeBtnText: { fontSize: 12, fontWeight: '700', color: Colors.textTertiary },
+  modeBtnTextActive: { color: Colors.textPrimary },
 
   startArea: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
   startRing: {
     width: 180, height: 180, borderRadius: 90,
-    borderWidth: 2, borderColor: `${BR.accent}55`,
+    borderWidth: 2, borderColor: `${Colors.accent}55`,
     borderStyle: 'dashed',
     alignItems: 'center', justifyContent: 'center',
   },
   startBtn: {
     width: 160, height: 160, borderRadius: 80,
-    backgroundColor: BR.accent,
+    backgroundColor: Colors.accent,
     alignItems: 'center', justifyContent: 'center',
-    shadowColor: BR.accent, shadowOffset: { width: 0, height: 16 },
+    shadowColor: Colors.accent, shadowOffset: { width: 0, height: 16 },
     shadowOpacity: 0.5, shadowRadius: 32, elevation: 12,
   },
-  startLabel: { fontSize: 38, fontWeight: '900', color: '#fff', letterSpacing: 2 },
-  startHint: { fontSize: 13, color: BR.ink3, fontWeight: '600' },
+  startLabel: { fontSize: 38, fontWeight: '900', color: Colors.textOnPrimary, letterSpacing: 2 },
+  startHint: { fontSize: 13, color: Colors.textTertiary, fontWeight: '600' },
   contribBadge: {
-    backgroundColor: `${BR.primary}22`, borderRadius: 99,
+    backgroundColor: `${Colors.primary}22`, borderRadius: BorderRadius.full,
     paddingHorizontal: 14, paddingVertical: 7,
   },
-  contribBadgeText: { fontSize: 11, fontWeight: '800', color: BR.primaryDeep, textAlign: 'center' },
+  contribBadgeText: { fontSize: 11, fontWeight: '800', color: Colors.primaryDark, textAlign: 'center' },
 
   // Recording (dark HUD)
-  hudRoot: { flex: 1, backgroundColor: BR.dark },
+  hudRoot: { flex: 1, backgroundColor: DarkColors.background },
   hudHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingHorizontal: 20, paddingVertical: 12,
   },
   recDot: {
-    width: 8, height: 8, borderRadius: 4, backgroundColor: BR.accent,
+    width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.accent,
   },
   hudHero: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
   hudBigNum: {
-    fontSize: 80, fontWeight: '900', color: BR.paper,
-    letterSpacing: -3, lineHeight: 80,
+    fontSize: 80, fontWeight: '900', color: DarkColors.textPrimary,
+    letterSpacing: -3, lineHeight: 80, fontVariant: ['tabular-nums'],
   },
-  hudUnit: { fontSize: 28, fontWeight: '700', color: BR.paper3, letterSpacing: 1 },
+  hudUnit: { fontSize: 28, fontWeight: '700', color: DarkColors.textTertiary, letterSpacing: 1 },
   hudContribRow: {
     marginHorizontal: 20, marginBottom: 8,
-    backgroundColor: `${BR.primary}18`,
-    borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8,
+    backgroundColor: `${DarkColors.primary}18`,
+    borderRadius: BorderRadius.sm, paddingHorizontal: 14, paddingVertical: 8,
   },
-  hudContribText: { fontSize: 11, fontWeight: '700', color: BR.primary, textAlign: 'center' },
+  hudContribText: { fontSize: 11, fontWeight: '700', color: DarkColors.primary, textAlign: 'center' },
   warnBanner: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     marginHorizontal: 20, marginBottom: 8, gap: 6,
-    backgroundColor: `${BR.accent}18`,
-    borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8,
+    backgroundColor: `${Colors.accent}18`,
+    borderRadius: BorderRadius.sm, paddingHorizontal: 14, paddingVertical: 8,
   },
-  warnBannerText: { fontSize: 11, fontWeight: '700', color: BR.accent, textAlign: 'center' },
+  warnBannerText: { fontSize: 11, fontWeight: '700', color: Colors.accent, textAlign: 'center' },
   hudStatsRow: {
     flexDirection: 'row',
     marginHorizontal: 20, marginBottom: 12,
-    backgroundColor: BR.darkCard, borderRadius: 12,
-    borderWidth: 1, borderColor: BR.darkLine,
+    backgroundColor: DarkColors.surface, borderRadius: BorderRadius.md,
+    borderWidth: 1, borderColor: DarkColors.line,
   },
   hudStat: { flex: 1, alignItems: 'center', padding: 16 },
   hudStatVal: {
-    fontSize: 22, fontWeight: '700', color: BR.paper,
-    letterSpacing: -0.5, marginTop: 4,
+    fontSize: 22, fontWeight: '700', color: DarkColors.textPrimary,
+    letterSpacing: -0.5, marginTop: 4, fontVariant: ['tabular-nums'],
   },
-  hudStatUnit: { fontSize: 10, color: BR.paper3 },
-  hudStatDivider: { width: 1, backgroundColor: BR.darkLine },
+  hudStatUnit: { fontSize: 10, color: DarkColors.textTertiary },
+  hudStatDivider: { width: 1, backgroundColor: DarkColors.line },
   hudMap: {
-    flex: 1, marginHorizontal: 20, marginBottom: 16, borderRadius: 16, overflow: 'hidden',
+    flex: 1, marginHorizontal: 20, marginBottom: 16, borderRadius: BorderRadius.lg, overflow: 'hidden',
   },
   hudMapPlaceholder: {
-    backgroundColor: BR.darkCard,
+    backgroundColor: DarkColors.surface,
     alignItems: 'center', justifyContent: 'center',
   },
   hudStop: { alignItems: 'center', paddingBottom: 32, gap: 8 },
   stopBtn: {
     width: 72, height: 72, borderRadius: 36,
-    backgroundColor: BR.darkCard, borderWidth: 2, borderColor: BR.darkLine2,
+    backgroundColor: DarkColors.surface, borderWidth: 2, borderColor: DarkColors.lineStrong,
     alignItems: 'center', justifyContent: 'center',
   },
   stopSquare: {
     width: 24, height: 24, borderRadius: 4,
-    backgroundColor: '#FF3D58',
+    backgroundColor: DarkColors.stop,
   },
-  stopLabel: { fontSize: 12, color: BR.paper3, fontWeight: '600', letterSpacing: 0.5 },
+  stopLabel: { fontSize: 12, color: DarkColors.textTertiary, fontWeight: '600', letterSpacing: 0.5 },
 
   // Route modal
   routeCloseBtn: {
-    backgroundColor: BR.primary, paddingVertical: 18, alignItems: 'center',
+    backgroundColor: DarkColors.primary, paddingVertical: 18, alignItems: 'center',
   },
-  routeCloseBtnText: { fontSize: 16, fontWeight: '800', color: BR.dark },
+  routeCloseBtnText: { fontSize: 16, fontWeight: '800', color: DarkColors.background },
 
 });
