@@ -1,95 +1,48 @@
-import React, { useEffect, useState } from 'react';
-import {
-  View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity,
-} from 'react-native';
+import React from 'react';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
-import { Ionicons } from '@expo/vector-icons';
-import { db } from '../../lib/firebase';
-import { useAuthStore } from '../../stores/authStore';
-import { Colors, DarkColors, Spacing, BorderRadius, Shadow } from '../../design_tokens';
-import { MonoLabel } from '../../components/ui/MonoLabel';
+import { useRecentActivities } from '../../hooks/useRecentActivities';
+import { weeklyBuckets, streakDays, relativeDay } from '../../utils/displayStats';
+import { Colors, Spacing, BorderRadius, Shadow, TextStyles } from '../../design_tokens';
+import { StatBlock } from '../../components/ui/StatBlock';
+import { SectionHeader } from '../../components/ui/SectionHeader';
+import { ListRow } from '../../components/ui/ListRow';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { WeeklyBarChart } from '../../components/viz/WeeklyBarChart';
+import { StreakChip } from '../../components/viz/StreakChip';
 
 function formatTime(s: number): string {
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
+  if (h > 0) return `${h}時間${m}分`;
+  return `${m}分`;
 }
 
-function agoLabel(ts: number) {
-  if (!ts) return '日時不明';
-  const diff = Math.floor((Date.now() - ts) / 60000);
-  if (diff < 60) return `${diff}分前`;
-  if (diff < 1440) return `${Math.floor(diff / 60)}時間前`;
-  return `${Math.floor(diff / 1440)}日前`;
-}
-
-interface ActivityRecord {
-  id: string;
-  distanceKm: number;
-  durationSeconds: number;
-  steps: number;
-  startedAt: number;
-  measurementType: string;
-}
+const DAY_MS = 86_400_000;
 
 export default function StatsScreen() {
-  const { user } = useAuthStore();
-  const [activities, setActivities] = useState<ActivityRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [totalKm, setTotalKm] = useState(0);
-  const [totalActivities, setTotalActivities] = useState(0);
-  const [longestRun, setLongestRun] = useState(0);
+  const { activities, loading } = useRecentActivities(50);
 
-  useEffect(() => {
-    if (!user) return;
-    const q = query(
-      collection(db, 'activities'),
-      where('userId', '==', user.id),
-      orderBy('startedAt', 'desc'),
-      limit(50),
-    );
-    getDocs(q)
-      .then((snap) => {
-        let km = 0; let longest = 0;
-        const items: ActivityRecord[] = snap.docs.map((d) => {
-          const data = d.data();
-          const dist = (data['distanceKm'] as number) ?? 0;
-          km += dist;
-          if (dist > longest) longest = dist;
-          const ts: number =
-            data['startedAt']?.toMillis?.() ??
-            (data['startedAt']?.seconds ? data['startedAt'].seconds * 1000 : 0);
-          return {
-            id: d.id,
-            distanceKm: dist,
-            durationSeconds: (data['durationSeconds'] as number) ?? 0,
-            steps: (data['steps'] as number) ?? 0,
-            startedAt: ts,
-            measurementType: (data['measurementType'] as string) ?? 'gps',
-          };
-        });
-        setActivities(items.slice(0, 20));
-        setTotalKm(km);
-        setTotalActivities(snap.size);
-        setLongestRun(longest);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [user]);
-
-  const weekKm = activities
-    .filter((a) => Date.now() - a.startedAt < 7 * 86400000)
+  const now = new Date();
+  const totalKm = activities.reduce((sum, a) => sum + a.distanceKm, 0);
+  const totalCount = activities.length;
+  const longestRun = activities.reduce((max, a) => Math.max(max, a.distanceKm), 0);
+  const monthKm = activities
+    .filter((a) => {
+      const d = new Date(a.startedAt);
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    })
     .reduce((sum, a) => sum + a.distanceKm, 0);
+
+  const weekBuckets = weeklyBuckets(activities, now);
+  const weekTotal = weekBuckets.reduce((sum, b) => sum + b.km, 0);
+  const weekCount = activities.filter((a) => now.getTime() - new Date(a.startedAt).getTime() < 7 * DAY_MS).length;
+  const streak = streakDays(activities, now);
 
   return (
     <SafeAreaView style={s.root} edges={['top']}>
-      {/* Header */}
       <View style={s.header}>
-        <MonoLabel color={Colors.textTertiary} size={10}>BATTLERUN / 記録</MonoLabel>
         <Text style={s.headerTitle}>記録</Text>
       </View>
 
@@ -97,52 +50,41 @@ export default function StatsScreen() {
         <ActivityIndicator color={Colors.primary} style={{ flex: 1 }} />
       ) : (
         <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
-
-          {/* ── Summary cards ─────────────────────────────── */}
-          <View style={s.summaryGrid}>
-            <View style={[s.summaryCard, { backgroundColor: DarkColors.background }]}>
-              <MonoLabel color={Colors.primaryBright} size={9}>累計距離</MonoLabel>
-              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 3, marginTop: 6 }}>
-                <Text style={s.summaryBigNum}>{totalKm.toFixed(1)}</Text>
-                <Text style={s.summaryUnit}>KM</Text>
-              </View>
-              <Text style={s.summarySub}>{totalActivities} 回ラン</Text>
+          {/* ── ヒーロー: 週間バーチャート ── */}
+          <View style={s.heroCard}>
+            <View style={s.heroHead}>
+              <Text style={TextStyles.sectionTitle}>今週</Text>
+              <StreakChip days={streak} />
             </View>
-            <View style={s.summaryCardLight}>
-              <MonoLabel color={Colors.textTertiary} size={9}>今週</MonoLabel>
-              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 3, marginTop: 6 }}>
-                <Text style={[s.summaryBigNum, { color: Colors.primaryDark }]}>{weekKm.toFixed(1)}</Text>
-                <Text style={[s.summaryUnit, { color: Colors.textTertiary }]}>KM</Text>
-              </View>
-              <Text style={[s.summarySub, { color: Colors.textTertiary }]}>過去 7日間</Text>
+            <WeeklyBarChart days={weekBuckets} height={88} />
+            <Text style={s.heroSub}>
+              合計 <Text style={s.heroSubBold}>{weekTotal.toFixed(1)}</Text>km ・{' '}
+              <Text style={s.heroSubBold}>{weekCount}</Text>回
+            </Text>
+          </View>
+
+          {/* ── 統計グリッド 2×2 ── */}
+          <View style={s.grid}>
+            <View style={s.cell}>
+              <StatBlock label="累計距離" value={totalKm.toFixed(1)} unit="km" />
+              <Text style={s.cellNote}>直近50件</Text>
+            </View>
+            <View style={s.cell}>
+              <StatBlock label="最長ラン" value={longestRun.toFixed(1)} unit="km" valueColor={Colors.accent} />
+            </View>
+          </View>
+          <View style={s.grid}>
+            <View style={s.cell}>
+              <StatBlock label="今月" value={monthKm.toFixed(1)} unit="km" />
+            </View>
+            <View style={s.cell}>
+              <StatBlock label="連続日数" value={streak} unit="日" />
             </View>
           </View>
 
-          <View style={s.summaryGrid}>
-            <View style={s.summaryCardLight}>
-              <MonoLabel color={Colors.textTertiary} size={9}>最長ラン</MonoLabel>
-              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 3, marginTop: 6 }}>
-                <Text style={[s.summaryBigNum, { color: Colors.accent, fontSize: 32 }]}>
-                  {longestRun.toFixed(1)}
-                </Text>
-                <Text style={[s.summaryUnit, { color: Colors.textTertiary }]}>KM</Text>
-              </View>
-              <Text style={[s.summarySub, { color: Colors.textTertiary }]}>自己ベスト</Text>
-            </View>
-            <View style={[s.summaryCardLight, { backgroundColor: `${Colors.accentYellow}1c`, borderColor: `${Colors.accentYellow}44` }]}>
-              <MonoLabel color={Colors.accentYellow} size={9}>称号</MonoLabel>
-              <Text style={{ fontSize: 32, marginTop: 6 }}>
-                {totalKm >= 100 ? '🏆' : totalKm >= 50 ? '🥈' : totalKm >= 10 ? '🥉' : '🎖️'}
-              </Text>
-              <Text style={[s.summarySub, { color: Colors.textTertiary, marginTop: 4 }]}>
-                {totalKm >= 100 ? 'ベテラン' : totalKm >= 50 ? '上級ランナー' : totalKm >= 10 ? 'ランナー' : 'ビギナー'}
-              </Text>
-            </View>
-          </View>
-
-          {/* ── Activity history ──────────────────────────── */}
-          <View style={s.sectionHeader}>
-            <MonoLabel color={Colors.textTertiary} size={10}>ラン履歴</MonoLabel>
+          {/* ── 履歴 ── */}
+          <View style={s.historyHead}>
+            <SectionHeader label="履歴" />
           </View>
 
           {activities.length === 0 ? (
@@ -152,43 +94,19 @@ export default function StatsScreen() {
               hint="「ラン」タブから記録を開始してください"
             />
           ) : (
-            <View style={s.actList}>
-              {activities.map((a) => {
-                const rankColor =
-                  a.distanceKm >= 10 ? Colors.accentYellow
-                  : a.distanceKm >= 5 ? Colors.rank2
-                  : Colors.rank3;
-                return (
-                  <TouchableOpacity
-                    key={a.id}
-                    style={s.actRow}
-                    onPress={() => router.push(`/activity/${a.id}` as any)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={[s.actIcon, { backgroundColor: `${rankColor}22` }]}>
-                      <Ionicons
-                        name={a.measurementType === 'steps' ? 'footsteps-outline' : 'navigate-outline'}
-                        size={18}
-                        color={rankColor}
-                      />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
-                        <Text style={s.actDist}>{a.distanceKm.toFixed(2)}</Text>
-                        <Text style={s.actDistUnit}>km</Text>
-                      </View>
-                      <Text style={s.actMeta}>
-                        {formatTime(a.durationSeconds)}
-                        {a.steps > 0 ? `  ·  ${a.steps.toLocaleString()} 歩` : ''}
-                      </Text>
-                    </View>
-                    <Text style={s.actAgo}>{agoLabel(a.startedAt)}</Text>
-                  </TouchableOpacity>
-                );
-              })}
+            <View style={s.historyCard}>
+              {activities.map((a) => (
+                <ListRow
+                  key={a.id}
+                  icon={a.measurementType === 'steps' ? 'footsteps' : 'navigate'}
+                  title={`${a.distanceKm.toFixed(2)}km・${formatTime(a.durationSeconds)}`}
+                  subtitle={a.steps ? `${a.steps.toLocaleString()}歩` : undefined}
+                  value={relativeDay(a.startedAt, now)}
+                  onPress={() => router.push(`/activity/${a.id}` as any)}
+                />
+              ))}
             </View>
           )}
-
         </ScrollView>
       )}
     </SafeAreaView>
@@ -197,44 +115,38 @@ export default function StatsScreen() {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
-  header: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4, gap: 4 },
-  headerTitle: { fontSize: 22, fontWeight: '900', color: Colors.textPrimary, marginTop: 2 },
-  scroll: { padding: 16, paddingBottom: 110, gap: 10 },
+  header: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4 },
+  headerTitle: { fontSize: 22, fontWeight: '900', color: Colors.textPrimary },
+  scroll: { padding: 16, paddingBottom: 110, gap: 12 },
 
-  summaryGrid: { flexDirection: 'row', gap: 10 },
-  summaryCard: {
-    flex: 1, padding: 18, borderRadius: BorderRadius.lg,
-    shadowColor: DarkColors.background, shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18, shadowRadius: 20, elevation: 6,
-  },
-  summaryCardLight: {
-    flex: 1, padding: 18, borderRadius: BorderRadius.lg,
+  heroCard: {
     backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
     borderWidth: 1, borderColor: Colors.border,
+    padding: Spacing.lg,
     ...Shadow.sm,
   },
-  summaryBigNum: {
-    fontSize: 38, fontWeight: '900', color: DarkColors.textPrimary,
-    letterSpacing: -1.5, lineHeight: 40, fontVariant: ['tabular-nums'],
-  },
-  summaryUnit: { fontSize: 14, fontWeight: '700', color: DarkColors.textPrimary, opacity: 0.7 },
-  summarySub: { fontSize: 11, color: DarkColors.textPrimary, opacity: 0.6, marginTop: 4 },
+  heroHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.md },
+  heroSub: { fontSize: 13, color: Colors.textSecondary, marginTop: Spacing.md, fontVariant: ['tabular-nums'] },
+  heroSubBold: { fontWeight: '800', color: Colors.textPrimary },
 
-  sectionHeader: { paddingTop: 10, paddingBottom: 4 },
-
-  actList: { gap: 8 },
-  actRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    padding: 14, backgroundColor: Colors.surface, borderRadius: BorderRadius.md,
+  grid: { flexDirection: 'row', gap: 12 },
+  cell: {
+    flex: 1,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
     borderWidth: 1, borderColor: Colors.border,
+    padding: Spacing.lg,
     ...Shadow.sm,
   },
-  actIcon: {
-    width: 42, height: 42, borderRadius: BorderRadius.md,
-    alignItems: 'center', justifyContent: 'center',
+  cellNote: { fontSize: 10, color: Colors.textTertiary, marginTop: 4 },
+
+  historyHead: { marginTop: Spacing.sm },
+  historyCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1, borderColor: Colors.border,
+    paddingHorizontal: Spacing.lg,
+    ...Shadow.sm,
   },
-  actDist: { fontSize: 20, fontWeight: '800', color: Colors.textPrimary, letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
-  actDistUnit: { fontSize: 12, color: Colors.textTertiary, fontWeight: '600' },
-  actMeta: { fontSize: 11, color: Colors.textTertiary, marginTop: 2, fontVariant: ['tabular-nums'] },
-  actAgo: { fontSize: 11, color: Colors.textTertiary },
 });
