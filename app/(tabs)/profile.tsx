@@ -23,6 +23,10 @@ import { Avatar } from '../../components/ui/Avatar';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { MonoLabel } from '../../components/ui/MonoLabel';
+import { StatBlock } from '../../components/ui/StatBlock';
+import { ListRow } from '../../components/ui/ListRow';
+import { useRecentActivities } from '../../hooks/useRecentActivities';
+import { streakDays } from '../../utils/displayStats';
 import { Colors, DarkColors, Typography, Spacing, BorderRadius } from '../../design_tokens';
 import type { UserTitle } from '../../types';
 
@@ -59,6 +63,12 @@ export default function ProfileScreen() {
   const [deleting, setDeleting] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [proPackageInfo, setProPackageInfo] = useState<ProPackageInfo | null>(null);
+
+  // 自分の戦績（累計距離・ラン回数・ストリーク）
+  const { activities } = useRecentActivities(50);
+  const totalKm = activities.reduce((sum, a) => sum + a.distanceKm, 0);
+  const totalRuns = activities.length;
+  const streak = streakDays(activities);
 
   useEffect(() => {
     if (!isPro(user?.plan, proEntitlement)) {
@@ -252,12 +262,11 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <Text style={styles.headerSub}>BATTLERUN / プロフィール</Text>
         <Text style={styles.headerTitle}>プロフィール</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        {/* ユーザー情報 */}
+        {/* 自分の戦績カード */}
         <Card style={styles.card}>
           <View style={styles.userRow}>
             <TouchableOpacity onPress={handleAvatarOptions} disabled={uploading}>
@@ -283,6 +292,14 @@ export default function ProfileScreen() {
                 </View>
               )}
             </View>
+          </View>
+
+          <View style={styles.statTrio}>
+            <StatBlock label="累計距離" value={totalKm.toFixed(1)} unit="km" align="center" style={styles.statItem} />
+            <View style={styles.statDivider} />
+            <StatBlock label="ラン回数" value={totalRuns} unit="回" align="center" style={styles.statItem} />
+            <View style={styles.statDivider} />
+            <StatBlock label="連続日数" value={streak} unit="日" align="center" style={styles.statItem} />
           </View>
         </Card>
 
@@ -339,25 +356,23 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* バッジ・称号リンク */}
-        <TouchableOpacity
-          style={styles.badgeLinkCard}
-          onPress={() => router.push('/badges' as any)}
-          activeOpacity={0.85}
-        >
-          <View style={styles.badgeLinkLeft}>
-            <View style={styles.badgeLinkIcon}>
-              <Ionicons name="ribbon" size={22} color={Colors.accentYellow} />
-            </View>
-            <View>
-              <Text style={styles.badgeLinkTitle}>バッジ・称号</Text>
-              <Text style={styles.badgeLinkSub}>
-                {titles.length > 0 ? `称号 ${titles.length}件獲得済み` : '走ってバッジを集めよう'}
-              </Text>
-            </View>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
-        </TouchableOpacity>
+        {/* 設定リスト */}
+        <Card style={styles.card} padding={Spacing.lg}>
+          <ListRow
+            icon="ribbon"
+            iconColor={Colors.accentYellow}
+            iconBg={Colors.accentYellow + '20'}
+            title="バッジ・称号"
+            subtitle={titles.length > 0 ? `称号 ${titles.length}件獲得済み` : '走ってバッジを集めよう'}
+            onPress={() => router.push('/badges' as any)}
+          />
+          <View style={styles.rowDivider} />
+          <ListRow
+            icon="notifications-outline"
+            title="通知"
+            onPress={() => router.push('/notifications' as any)}
+          />
+        </Card>
 
         {/* 獲得称号 */}
         <Card style={styles.card}>
@@ -473,6 +488,17 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 22, fontWeight: '900' as const, color: Colors.textPrimary },
   scroll: { padding: Spacing.lg, gap: Spacing['2xl'] },
   card: { marginBottom: 0 },
+  statTrio: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: Spacing.lg,
+    paddingTop: Spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderLight,
+  },
+  statItem: { flex: 1 },
+  statDivider: { width: 1, alignSelf: 'stretch', backgroundColor: Colors.borderLight, marginVertical: 2 },
+  rowDivider: { height: 1, backgroundColor: Colors.borderLight, marginLeft: 48 },
   userRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
   avatarLoading: {
     width: 56, height: 56, borderRadius: 28,
