@@ -8,19 +8,28 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
 import {
-  onSnapshot, collection, getDocs, query, where, getDoc, doc, Timestamp,
+  onSnapshot, collection, getDoc, doc,
 } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import { useBattleStore } from '../../stores/battleStore';
 import { useUnreadNotifications } from '../../hooks/useUnreadNotifications';
+import { useRecentActivities } from '../../hooks/useRecentActivities';
 import { isPro } from '../../lib/pro';
 import { scheduleBattleEndNotification, scheduleBattleEnd1hNotification } from '../../lib/notifications';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { Colors, Typography, Spacing, BorderRadius, Shadow } from '../../design_tokens';
+import { RankChip } from '../../components/ui/RankChip';
+import { StatBlock } from '../../components/ui/StatBlock';
+import { ProgressBar } from '../../components/ui/ProgressBar';
+import { VersusGauge } from '../../components/viz/VersusGauge';
+import { ProgressRing } from '../../components/viz/ProgressRing';
+import { WeeklyBarChart } from '../../components/viz/WeeklyBarChart';
+import { StreakChip } from '../../components/viz/StreakChip';
+import { weeklyBuckets, streakDays, dailyPaceToOvertake, contributionShare } from '../../utils/displayStats';
+import { Colors, Typography, Spacing, BorderRadius, Shadow, TextStyles } from '../../design_tokens';
 import type { Battle, CategoryStats, Category } from '../../types';
 
 type Tab = 'public' | 'private';
@@ -133,9 +142,21 @@ export default function BattleScreen() {
 
   // 参加者個人距離（バトルIDごと）
   const [myDistancePerBattle, setMyDistancePerBattle] = useState<Record<string, number>>({});
-  // 今週の集計
-  const [weeklyDistanceKm, setWeeklyDistanceKm] = useState(0);
-  const [weeklyCount, setWeeklyCount] = useState(0);
+  // 一覧カードの陣営折りたたみ状態
+  const [expandedBattles, setExpandedBattles] = useState<Set<string>>(new Set());
+
+  // 直近アクティビティ（週間バー・ストリーク用）※read-only、useRecentActivities のみ
+  const { activities: recentActivities } = useRecentActivities(50);
+  const weekBuckets = weeklyBuckets(recentActivities);
+  const streak = streakDays(recentActivities);
+
+  function toggleExpanded(id: string) {
+    setExpandedBattles((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
   // ── 初期データ取得 ─────────────────────────────────────────
   useEffect(() => {
@@ -246,27 +267,6 @@ export default function BattleScreen() {
       .catch(() => {});
   }, [user?.id, myMemberships.length, publicBattles.length, privateBattles.length]);
 
-  // ── 今週の距離・回数 ──────────────────────────────────────
-  useEffect(() => {
-    if (!user) return;
-    const monday = new Date();
-    monday.setHours(0, 0, 0, 0);
-    const day = monday.getDay();
-    monday.setDate(monday.getDate() - (day === 0 ? 6 : day - 1));
-    getDocs(query(
-      collection(db, 'activities'),
-      where('userId', '==', user.id),
-      where('startedAt', '>=', Timestamp.fromDate(monday)),
-    ))
-      .then((snap) => {
-        let km = 0;
-        snap.forEach((d) => { km += (d.data()['distanceKm'] as number) ?? 0; });
-        setWeeklyDistanceKm(km);
-        setWeeklyCount(snap.size);
-      })
-      .catch(() => {});
-  }, [user?.id]);
-
   // ── ヘルパー関数 ──────────────────────────────────────────
   function myMembershipFor(battleId: string) {
     return myMemberships.find((m) => m.battleId === battleId);
@@ -297,6 +297,59 @@ export default function BattleScreen() {
     return rankingType === 'total'
       ? `${s.totalDistanceKm.toFixed(1)}km`
       : `${s.avgDistanceKm.toFixed(1)}km/人`;
+  }
+
+  /** 一覧カードの陣営ランキング行（上位3＋自陣営、残りは折りたたみ） */
+  function renderRankRows(battle: Battle, sorted: CategoryStats[], myCatId?: string | null) {
+    if (sorted.length === 0) return null;
+    const rt = battle.rankingType;
+    const maxVal = maxStat(sorted, rt);
+    const expanded = expandedBattles.has(battle.id);
+    const myIdx = sorted.findIndex((s) => s.categoryId === myCatId);
+    const showMyExtra = !expanded && myIdx >= 3;
+    const visible = expanded ? sorted : sorted.slice(0, 3);
+    const hiddenCount = sorted.length - 3;
+
+    const row = (s: CategoryStats, rank: number) => {
+      const isMine = s.categoryId === myCatId;
+      const barColor = isMine
+        ? Colors.primary
+        : Colors.teamColors[Math.min(rank - 1, Colors.teamColors.length - 1)];
+      return (
+        <View key={s.categoryId} style={styles.rankRow}>
+          <Text style={[styles.rankNum, isMine && styles.rankNumMine]}>{rank}</Text>
+          <Text style={[styles.rankName, isMine && styles.rankNameMine]} numberOfLines={1}>
+            {s.label}
+          </Text>
+          <View style={styles.rankBarArea}>
+            <ProgressBar value={maxVal > 0 ? statValue(s, rt) / maxVal : 0} color={barColor} height={8} />
+          </View>
+          <Text style={[styles.rankValue, isMine && styles.rankValueMine]}>{statLabel(s, rt)}</Text>
+        </View>
+      );
+    };
+
+    return (
+      <View style={styles.rankSection}>
+        {visible.map((s, i) => row(s, i + 1))}
+        {showMyExtra && (
+          <>
+            <Text style={styles.ellipsis}>⋯</Text>
+            {row(sorted[myIdx], myIdx + 1)}
+          </>
+        )}
+        {hiddenCount > 0 && (
+          <TouchableOpacity
+            onPress={() => toggleExpanded(battle.id)}
+            style={styles.collapseBtn}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          >
+            <Text style={styles.collapseText}>{expanded ? '閉じる' : `他 ${hiddenCount} 陣営`}</Text>
+            <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color={Colors.textTertiary} />
+          </TouchableOpacity>
+        )}
+      </View>
+    );
   }
 
   // ── ジョイン処理 ──────────────────────────────────────────
@@ -412,73 +465,87 @@ export default function BattleScreen() {
   // ────────────────────────────────────────────────────────────────
   function renderActiveChallengeCard() {
     if (!primaryBattle) return null;
+    const rt = primaryBattle.rankingType;
     const stats = categoryStatsMap[primaryBattle.id] ?? [];
-    const sorted = sortedStats(stats, primaryBattle.rankingType);
-    const myRank = sorted.findIndex((s) => s.categoryId === primaryCategoryId) + 1;
+    const sorted = sortedStats(stats, rt);
+    const myIndex = sorted.findIndex((s) => s.categoryId === primaryCategoryId);
+    const myRank = myIndex + 1;
     const totalTeams = sorted.length;
     const days = daysLeft(primaryBattle.endAt);
     const myDist = myDistancePerBattle[primaryBattle.id] ?? 0;
 
-    const topStat = sorted[0];
-    const myStat = sorted.find((s) => s.categoryId === primaryCategoryId);
-    const distToOvertake = myRank > 1 && topStat && myStat
-      ? Math.max(0, statValue(topStat, primaryBattle.rankingType) - statValue(myStat, primaryBattle.rankingType) + 0.01)
-      : 0;
+    const myStat = myIndex >= 0 ? sorted[myIndex] : undefined;
+    const rivalStat = myIndex > 0 ? sorted[myIndex - 1] : myIndex === 0 ? sorted[1] : undefined;
+    const hasVersus = !!myStat && !!rivalStat;
+    const bothZero = hasVersus && statValue(myStat!, rt) <= 0 && statValue(rivalStat!, rt) <= 0;
+    const leading = myIndex === 0;
+
+    const pace = hasVersus
+      ? dailyPaceToOvertake({
+          myTeamKm: statValue(myStat!, rt),
+          rivalTeamKm: statValue(rivalStat!, rt),
+          endAt: primaryBattle.endAt,
+          isLeading: leading,
+        })
+      : null;
+    const share = myStat ? contributionShare(myDist, myStat.totalDistanceKm) : 0;
 
     return (
       <TouchableOpacity
-        activeOpacity={0.85}
+        activeOpacity={0.9}
         onPress={() => router.push(`/battle/${primaryBattle.id}` as any)}
       >
-        <View style={styles.activeChallengeCard}>
+        <View style={styles.heroCard}>
           {/* ヘッダー */}
           <View style={styles.acHeader}>
             <View style={{ flex: 1 }}>
               <Text style={styles.acTitle} numberOfLines={1}>{primaryBattle.title}</Text>
-              {days !== null && (
-                <Text style={styles.acDays}>残り {days} 日</Text>
+              {days !== null && <Text style={styles.acDays}>残り {days} 日</Text>}
+            </View>
+            {myRank > 0 && <RankChip rank={myRank} total={totalTeams} totalUnit="陣営" />}
+          </View>
+
+          {hasVersus ? (
+            <>
+              <VersusGauge
+                left={{ label: myStat!.label, km: statValue(myStat!, rt), isMine: true }}
+                right={{ label: rivalStat!.label, km: statValue(rivalStat!, rt), isMine: false }}
+                size="md"
+              />
+
+              {/* 逆転／逃げ切りペース */}
+              {pace && !bothZero && (
+                <View style={styles.paceRow}>
+                  <Ionicons name="flash" size={14} color={Colors.accent} />
+                  <Text style={styles.paceText}>
+                    1日 {pace.kmPerDay.toFixed(1)}km 走れば{leading ? '逃げ切り' : '逆転'}
+                  </Text>
+                </View>
               )}
+
+              {/* 貢献リング */}
+              {myStat && (
+                <View style={styles.contribRow}>
+                  <ProgressRing progress={share} size={52} strokeWidth={7}>
+                    <Text style={styles.ringPct}>{Math.round(share * 100)}%</Text>
+                  </ProgressRing>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.contribLabel}>あなたの貢献</Text>
+                    <Text style={styles.contribValue}>
+                      {myDist.toFixed(1)}km / {myStat.totalDistanceKm.toFixed(1)}km
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </>
+          ) : (
+            /* 陣営データが不足（1陣営のみ等）: 自分の合計距離にフォールバック */
+            <View style={styles.fallbackRow}>
+              <StatBlock label="自分の合計距離" value={myDist.toFixed(1)} unit="km" hero />
             </View>
-            {myRank > 0 && (
-              <View style={styles.acRankBadge}>
-                <Text style={styles.acRankText}>
-                  {myRank === 1 ? '👑 ' : ''}{myRank}位 / {totalTeams}チーム
-                </Text>
-              </View>
-            )}
-          </View>
+          )}
 
-          {/* 自分の距離 */}
-          <View style={styles.acDistRow}>
-            <View>
-              <Text style={styles.acDistLabel}>自分の合計距離</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
-                <Text style={styles.acDistNum}>{myDist.toFixed(1)}</Text>
-                <Text style={styles.acDistUnit}>km</Text>
-              </View>
-            </View>
-
-            {/* 逆転ヒント */}
-            {distToOvertake > 0 && (
-              <View style={styles.acOvertake}>
-                <Ionicons name="arrow-up" size={11} color={Colors.primary} />
-                <Text style={styles.acOvertakeText}>
-                  あと {distToOvertake < 0.1
-                    ? `${Math.round(distToOvertake * 1000)}m`
-                    : `${distToOvertake.toFixed(1)}km`} で逆転
-                </Text>
-              </View>
-            )}
-            {myRank === 1 && (
-              <View style={[styles.acOvertake, { backgroundColor: `${Colors.accentYellow}22` }]}>
-                <Text style={[styles.acOvertakeText, { color: Colors.accentYellow }]}>
-                  👑 現在トップ！
-                </Text>
-              </View>
-            )}
-          </View>
-
-          {/* 複数バトル参加中の場合 */}
+          {/* 複数バトル参加中 */}
           {activeBattles.length > 1 && (
             <View style={styles.multiBattleBadge}>
               <Ionicons name="flash" size={11} color={Colors.primary} />
@@ -492,17 +559,15 @@ export default function BattleScreen() {
     );
   }
 
-  function renderWeeklyContributionRow() {
+  function renderWeeklyCard() {
     return (
-      <View style={styles.weeklyRow}>
-        <Ionicons name="trending-up-outline" size={16} color={Colors.primary} />
-        <Text style={styles.weeklyText}>
-          今週{' '}
-          <Text style={styles.weeklyBold}>{weeklyDistanceKm.toFixed(1)}km</Text>
-          {' '}・{' '}
-          <Text style={styles.weeklyBold}>{weeklyCount}回</Text>
-        </Text>
-      </View>
+      <Card style={styles.card}>
+        <View style={styles.weekHead}>
+          <Text style={TextStyles.sectionTitle}>今週の走り</Text>
+          <StreakChip days={streak} />
+        </View>
+        <WeeklyBarChart days={weekBuckets} height={56} />
+      </Card>
     );
   }
 
@@ -515,15 +580,15 @@ export default function BattleScreen() {
 
     return (
       <View style={styles.runNowSection}>
-        <Text style={styles.runNowHint}>{label}</Text>
         <TouchableOpacity
           style={styles.runNowBtn}
           onPress={() => router.push('/(tabs)/record' as any)}
           activeOpacity={0.85}
         >
-          <Ionicons name="walk" size={20} color="#fff" />
+          <Ionicons name="walk" size={20} color={Colors.textOnAccent} />
           <Text style={styles.runNowLabel}>今すぐ走る</Text>
         </TouchableOpacity>
+        <Text style={styles.runNowHint}>{label}</Text>
       </View>
     );
   }
@@ -562,33 +627,7 @@ export default function BattleScreen() {
             )}
           </View>
 
-          {sorted.length > 0 && (
-            <View style={styles.statsSection}>
-              {sorted.map((s, i) => {
-                const isMine = s.categoryId === myCatId;
-                const barColor = isMine
-                  ? Colors.primary
-                  : Colors.teamColors[Math.min(i, Colors.teamColors.length - 1)];
-                return (
-                  <View key={s.categoryId} style={styles.teamRow}>
-                    <Text style={[styles.teamName, isMine && styles.teamNameMine]} numberOfLines={1}>
-                      {i === 0 ? '👑 ' : ''}{s.label}
-                    </Text>
-                    <View style={styles.barArea}>
-                      <View style={styles.barTrack}>
-                        <View style={[styles.barFill, {
-                          width: `${(statValue(s, battle.rankingType) / maxVal) * 100}%`,
-                          backgroundColor: barColor,
-                        }]} />
-                      </View>
-                      <Text style={styles.avgText}>{statLabel(s, battle.rankingType)}</Text>
-                    </View>
-                    <Text style={styles.memberCount}>{s.participantCount}人</Text>
-                  </View>
-                );
-              })}
-            </View>
-          )}
+          {renderRankRows(battle, sorted, myCatId)}
 
           {!membership && battle.categories.length > 0 && (
             <View style={styles.joinSection}>
@@ -648,30 +687,7 @@ export default function BattleScreen() {
             )}
           </View>
 
-          {sorted.length > 0 && (
-            <View style={styles.statsSection}>
-              {sorted.map((s, i) => {
-                const isMine = s.categoryId === myCatId;
-                return (
-                  <View key={s.categoryId} style={styles.teamRow}>
-                    <Text style={[styles.teamName, isMine && styles.teamNameMine]} numberOfLines={1}>
-                      {i === 0 ? '👑 ' : ''}{s.label}
-                    </Text>
-                    <View style={styles.barArea}>
-                      <View style={styles.barTrack}>
-                        <View style={[styles.barFill, {
-                          width: `${(statValue(s, battle.rankingType) / maxVal) * 100}%`,
-                          backgroundColor: isMine ? Colors.primary : Colors.teamColors[Math.min(i, Colors.teamColors.length - 1)],
-                        }]} />
-                      </View>
-                      <Text style={styles.avgText}>{statLabel(s, battle.rankingType)}</Text>
-                    </View>
-                    <Text style={styles.memberCount}>{s.participantCount}人</Text>
-                  </View>
-                );
-              })}
-            </View>
-          )}
+          {renderRankRows(battle, sorted, myCatId)}
 
         </Card>
       </TouchableOpacity>
@@ -814,7 +830,7 @@ export default function BattleScreen() {
     return (
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         {renderActiveChallengeCard()}
-        {renderWeeklyContributionRow()}
+        {renderWeeklyCard()}
         {renderRunNowButton()}
 
         {/* 他のバトル セクション */}
@@ -897,28 +913,42 @@ export default function BattleScreen() {
   // ────────────────────────────────────────────────────────────────
   function renderJoinRecommendationCard() {
     if (!recommendedBattle) return null;
+    const sorted = sortedStats(recommendedStats, recommendedBattle.rankingType);
+    const top = sorted[0];
+    const second = sorted[1];
+    const hasVs = !!top && !!second;
     return (
       <TouchableOpacity
-        activeOpacity={0.88}
+        activeOpacity={0.9}
         onPress={() => setCategoryModalBattle(recommendedBattle)}
-        style={styles.recommendCard}
       >
-        <View style={styles.recommendHeader}>
-          <Ionicons name="flash" size={16} color="#fff" />
-          <Text style={styles.recommendHeaderText}>開催中の作戦に参加しよう</Text>
-        </View>
-        <Text style={styles.recommendTitle} numberOfLines={1}>{recommendedBattle.title}</Text>
-        {recommendedShortageCategory && (
-          <View style={styles.recommendShortageRow}>
-            <Text style={styles.recommendShortageText}>
-              「{recommendedShortageCategory.label}」は援軍募集中！
-            </Text>
+        <Card variant="highlight" style={styles.card}>
+          <View style={styles.recommendHeader}>
+            <Ionicons name="flash" size={16} color={Colors.accent} />
+            <Text style={styles.recommendHeaderText}>開催中の作戦に参加しよう</Text>
           </View>
-        )}
-        <View style={styles.recommendCta}>
-          <Text style={styles.recommendCtaText}>区分を選んで参加する</Text>
-          <Ionicons name="chevron-forward" size={16} color={Colors.primary} />
-        </View>
+          <Text style={styles.recommendTitle} numberOfLines={1}>{recommendedBattle.title}</Text>
+          {hasVs && (
+            <View style={{ marginTop: Spacing.md }}>
+              <VersusGauge
+                left={{ label: top.label, km: statValue(top, recommendedBattle.rankingType), isMine: false }}
+                right={{ label: second.label, km: statValue(second, recommendedBattle.rankingType), isMine: false }}
+                size="md"
+              />
+            </View>
+          )}
+          {recommendedShortageCategory && (
+            <View style={styles.recommendShortageRow}>
+              <Text style={styles.recommendShortageText}>
+                「{recommendedShortageCategory.label}」は援軍募集中！
+              </Text>
+            </View>
+          )}
+          <View style={styles.recommendCta}>
+            <Text style={styles.recommendCtaText}>区分を選んで参加する</Text>
+            <Ionicons name="chevron-forward" size={16} color={Colors.accent} />
+          </View>
+        </Card>
       </TouchableOpacity>
     );
   }
@@ -1058,6 +1088,54 @@ const styles = StyleSheet.create({
   notifBadgeText: { fontSize: 9, fontWeight: '800', color: Colors.textOnPrimary },
   scroll: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing['3xl'], gap: Spacing.lg },
 
+  // Hero card (VS ゲージ)
+  heroCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: Spacing.lg,
+    ...Shadow.sm,
+  },
+  paceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.accentLight,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+  paceText: { fontSize: Typography.fontSize.sm, color: Colors.accent, fontWeight: Typography.fontWeight.bold, fontVariant: ['tabular-nums'] },
+  contribRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderLight,
+    paddingTop: Spacing.md,
+  },
+  ringPct: { fontSize: 14, fontWeight: '800', color: Colors.textPrimary, fontVariant: ['tabular-nums'] },
+  contribLabel: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary },
+  contribValue: { fontSize: Typography.fontSize.md, fontWeight: '800', color: Colors.textPrimary, fontVariant: ['tabular-nums'], marginTop: 2 },
+  fallbackRow: { paddingVertical: Spacing.sm },
+  weekHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.md },
+
+  // 一覧カードの順位行
+  rankSection: { gap: Spacing.md, marginBottom: Spacing.sm },
+  rankRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  rankNum: { width: 16, fontSize: Typography.fontSize.sm, fontWeight: '700', color: Colors.textTertiary, textAlign: 'center', fontVariant: ['tabular-nums'] },
+  rankNumMine: { color: Colors.primary },
+  rankName: { width: 76, fontSize: Typography.fontSize.sm, color: Colors.textPrimary },
+  rankNameMine: { fontWeight: '800', color: Colors.primary },
+  rankBarArea: { flex: 1 },
+  rankValue: { width: 62, fontSize: Typography.fontSize.xs, color: Colors.textSecondary, textAlign: 'right', fontVariant: ['tabular-nums'] },
+  rankValueMine: { fontWeight: '800', color: Colors.textPrimary },
+  ellipsis: { fontSize: Typography.fontSize.sm, color: Colors.textTertiary, textAlign: 'center', marginTop: -4 },
+  collapseBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingTop: Spacing.xs },
+  collapseText: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, fontWeight: '600' },
+
   // Active Challenge Card
   activeChallengeCard: {
     backgroundColor: Colors.surface,
@@ -1131,7 +1209,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     ...Shadow.md,
   },
-  runNowLabel: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.extrabold, color: Colors.textOnPrimary },
+  runNowLabel: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.extrabold, color: Colors.textOnAccent },
 
   // Section divider
   sectionDivider: {
@@ -1199,37 +1277,30 @@ const styles = StyleSheet.create({
   emptyStateHint: { fontSize: Typography.fontSize.sm, color: Colors.textTertiary, textAlign: 'center' },
   sectionLabel: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
 
-  // Day-0アクティベーション: 参加おすすめカード
-  recommendCard: {
-    backgroundColor: Colors.textPrimary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    gap: Spacing.xs,
-    ...Shadow.md,
-  },
+  // Day-0アクティベーション: 参加おすすめカード（highlight カード内）
   recommendHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
-  recommendHeaderText: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.textOnPrimary },
-  recommendTitle: { fontSize: Typography.fontSize.xl, fontWeight: Typography.fontWeight.bold, color: Colors.textOnPrimary, marginTop: Spacing.xs },
+  recommendHeaderText: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.accentDark },
+  recommendTitle: { fontSize: Typography.fontSize.xl, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary, marginTop: Spacing.xs },
   recommendShortageRow: {
     alignSelf: 'flex-start',
-    backgroundColor: `${Colors.primary}30`,
+    backgroundColor: Colors.surface,
     borderRadius: BorderRadius.sm,
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
-    marginTop: Spacing.xs,
+    marginTop: Spacing.md,
   },
-  recommendShortageText: { fontSize: Typography.fontSize.xs, fontWeight: Typography.fontWeight.bold, color: Colors.primary },
+  recommendShortageText: { fontSize: Typography.fontSize.xs, fontWeight: Typography.fontWeight.bold, color: Colors.accent },
   recommendCta: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.xs,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: Colors.surface,
     borderRadius: BorderRadius.md,
     paddingVertical: Spacing.sm,
-    marginTop: Spacing.sm,
+    marginTop: Spacing.md,
   },
-  recommendCtaText: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.primary },
+  recommendCtaText: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.accent },
 
   // Forms
   formTitle: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.lg },
