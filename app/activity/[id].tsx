@@ -11,7 +11,7 @@ import MapView, { Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import type { RoutePoint, ReactionType } from '../../types';
-import { Colors, DarkColors, BorderRadius } from '../../design_tokens';
+import { Colors, DarkColors, BorderRadius, TextStyles } from '../../design_tokens';
 import { MonoLabel } from '../../components/ui/MonoLabel';
 
 function formatTime(sec: number): string {
@@ -199,7 +199,6 @@ export default function ActivityDetailScreen() {
           <Ionicons name="chevron-back" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <MonoLabel color={Colors.textTertiary} size={9}>ACTIVITY / 記録詳細</MonoLabel>
           <Text style={s.headerTitle}>{dateStr}</Text>
         </View>
       </View>
@@ -263,7 +262,7 @@ export default function ActivityDetailScreen() {
         {/* ── Battle contribution ── */}
         {battleContributions.length > 0 && (
           <View style={s.section}>
-            <MonoLabel color={Colors.textTertiary} size={9}>バトル貢献</MonoLabel>
+            <Text style={TextStyles.sectionTitle}>バトル貢献</Text>
             {battleContributions.map((c) => (
               <TouchableOpacity
                 key={c.battleId}
@@ -284,7 +283,7 @@ export default function ActivityDetailScreen() {
 
         {/* ── Reactions ── */}
         <View style={s.section}>
-          <MonoLabel color={Colors.textTertiary} size={9}>リアクション</MonoLabel>
+          <Text style={TextStyles.sectionTitle}>リアクション</Text>
           <View style={s.reactionsRow}>
             {reactions.map((r) => (
               <TouchableOpacity

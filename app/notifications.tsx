@@ -14,7 +14,6 @@ import { db } from '../lib/firebase';
 import { useAuthStore } from '../stores/authStore';
 import type { AppNotification, NotificationType } from '../types';
 import { Colors, BorderRadius } from '../design_tokens';
-import { MonoLabel } from '../components/ui/MonoLabel';
 import { EmptyState } from '../components/ui/EmptyState';
 
 function notificationIcon(type: NotificationType): { name: any; color: string } {
@@ -100,7 +99,6 @@ export default function NotificationsScreen() {
           <Ionicons name="chevron-back" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <MonoLabel color={Colors.textTertiary} size={10}>BATTLERUN / 通知</MonoLabel>
           <Text style={s.headerTitle}>通知センター</Text>
         </View>
         {unreadCount > 0 && (

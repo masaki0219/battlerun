@@ -13,8 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { db } from '../lib/firebase';
 import { useAuthStore } from '../stores/authStore';
 import type { UserActivityStats, EarnedBadge, UserTitle } from '../types';
-import { Colors, BorderRadius } from '../design_tokens';
-import { MonoLabel } from '../components/ui/MonoLabel';
+import { Colors, BorderRadius, TextStyles } from '../design_tokens';
 import { ProgressBar } from '../components/ui/ProgressBar';
 
 // ── バッジ定義 ─────────────────────────────────────────────────
@@ -225,7 +224,6 @@ export default function BadgesScreen() {
           <Ionicons name="chevron-back" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <MonoLabel color={Colors.textTertiary} size={9}>BATTLERUN / コレクション</MonoLabel>
           <Text style={s.headerTitle}>バッジ・称号</Text>
         </View>
       </View>
@@ -237,7 +235,7 @@ export default function BadgesScreen() {
 
           {/* 獲得済みバッジ */}
           <View style={s.section}>
-            <MonoLabel color={Colors.textTertiary} size={9}>{`獲得済みバッジ · ${earned.length}/${BADGE_DEFS.length}`}</MonoLabel>
+            <Text style={TextStyles.sectionTitle}>{`獲得済みバッジ ${earned.length}/${BADGE_DEFS.length}`}</Text>
             {earned.length === 0 ? (
               <Text style={s.emptyText}>まだバッジがありません。走って獲得しよう！</Text>
             ) : (
@@ -257,7 +255,7 @@ export default function BadgesScreen() {
           {/* 次に取れそうなバッジ */}
           {upcoming.length > 0 && (
             <View style={s.section}>
-              <MonoLabel color={Colors.textTertiary} size={9}>次に取れそうなバッジ</MonoLabel>
+              <Text style={TextStyles.sectionTitle}>次に取れそうなバッジ</Text>
               {upcoming.map(({ badge, prog }) => {
                 const pct = Math.min(prog.current / prog.target, 1);
                 const left = (prog.target - prog.current).toFixed(1);
@@ -285,7 +283,7 @@ export default function BadgesScreen() {
           {/* 未獲得バッジ */}
           {unearned.length > 0 && (
             <View style={s.section}>
-              <MonoLabel color={Colors.textTertiary} size={9}>未獲得バッジ</MonoLabel>
+              <Text style={TextStyles.sectionTitle}>未獲得バッジ</Text>
               <View style={s.badgeGrid}>
                 {unearned.map((b) => (
                   <View key={b.id} style={[s.badgeItem, s.badgeItemGray]}>
@@ -301,7 +299,7 @@ export default function BadgesScreen() {
 
           {/* 獲得称号 */}
           <View style={s.section}>
-            <MonoLabel color={Colors.textTertiary} size={9}>獲得称号一覧</MonoLabel>
+            <Text style={TextStyles.sectionTitle}>獲得称号一覧</Text>
             {titles.length === 0 ? (
               <Text style={s.emptyText}>まだ称号がありません。バトルで活躍しよう！</Text>
             ) : (

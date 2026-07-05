@@ -13,7 +13,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useBattleStore } from '../../stores/battleStore';
 import { isPro } from '../../lib/pro';
 import type { CategoryStats } from '../../types';
-import { Colors, DarkColors, BorderRadius } from '../../design_tokens';
+import { Colors, DarkColors, BorderRadius, TextStyles } from '../../design_tokens';
 import { MonoLabel } from '../../components/ui/MonoLabel';
 
 function formatTime(sec: number): string {
@@ -207,7 +207,7 @@ export default function RecordingSummaryScreen() {
 
         {/* ── Battle impact ─────────────────────────────── */}
         <View style={s.section}>
-          <MonoLabel color={Colors.textTertiary} size={9}>RUN IMPACT / ランへの反映</MonoLabel>
+          <Text style={TextStyles.sectionTitle}>ランへの反映</Text>
           {loadingImpact ? (
             <View style={[s.impactCard, { alignItems: 'center', paddingVertical: 24 }]}>
               <ActivityIndicator color={Colors.primary} />
@@ -281,7 +281,7 @@ export default function RecordingSummaryScreen() {
                 <Ionicons name="shield" size={24} color={Colors.textOnPrimary} />
               </View>
               <View style={{ flex: 1 }}>
-                <MonoLabel color={Colors.accentYellow} size={9}>バッジ獲得</MonoLabel>
+                <Text style={s.badgeKicker}>バッジ獲得</Text>
                 <Text style={s.badgeTitle}>{earnedBadge}</Text>
                 <Text style={s.badgeSub}>累計10km 陣営に貢献達成</Text>
               </View>
@@ -292,7 +292,7 @@ export default function RecordingSummaryScreen() {
 
         {/* ── Share ─────────────────────────────────────── */}
         <View style={s.section}>
-          <MonoLabel color={Colors.textTertiary} size={9}>今日の出撃をシェア / SHARE RUN</MonoLabel>
+          <Text style={TextStyles.sectionTitle}>今日の出撃をシェア</Text>
           <View ref={shareCardRef} collapsable={false} style={s.shareCard}>
             <View style={{ gap: 4 }}>
               <Text style={s.shareCardKm}>{distanceKm.toFixed(1)}<Text style={s.shareCardKmUnit}> km</Text></Text>
@@ -425,6 +425,7 @@ const s = StyleSheet.create({
     shadowColor: Colors.accentYellow, shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.4, shadowRadius: 12, elevation: 6,
   },
+  badgeKicker: { fontSize: 12, fontWeight: '700', color: Colors.accentYellow },
   badgeTitle: { fontSize: 15, fontWeight: '900', color: Colors.textPrimary, marginTop: 1 },
   badgeSub: { fontSize: 11, color: Colors.textTertiary, marginTop: 1 },
   badgeNew: { fontSize: 11, color: Colors.accentYellow, fontWeight: '800' },

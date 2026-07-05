@@ -12,7 +12,6 @@ import { useAuthStore } from '../../stores/authStore';
 import { isPro } from '../../lib/pro';
 import type { BattleTheme } from '../../types';
 import { Colors, BorderRadius } from '../../design_tokens';
-import { MonoLabel } from '../../components/ui/MonoLabel';
 
 interface ThemeDef {
   id: BattleTheme;
@@ -118,7 +117,6 @@ export default function BattleThemeScreen() {
           <Ionicons name="chevron-back" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <MonoLabel color={Colors.textTertiary} size={9}>BATTLERUN / Pro機能</MonoLabel>
           <Text style={s.headerTitle}>テーマを選ぶ</Text>
         </View>
         <TouchableOpacity
