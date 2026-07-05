@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity,
-  Alert, ActivityIndicator, Modal, Pressable, Switch, Animated,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView,
+  Alert, ActivityIndicator, Modal, Pressable, Switch, Animated, Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
@@ -12,9 +12,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRecordStore, saveActivityToFirestore } from '../../stores/recordStore';
 import { useAuthStore } from '../../stores/authStore';
 import { useBattleStore } from '../../stores/battleStore';
+import { useRecentActivities } from '../../hooks/useRecentActivities';
 import type { MeasurementType, RoutePoint } from '../../types';
-import { Colors, DarkColors, BorderRadius } from '../../design_tokens';
+import { Colors, DarkColors, Spacing, BorderRadius, TextStyles } from '../../design_tokens';
 import { MonoLabel } from '../../components/ui/MonoLabel';
+import { StatBlock } from '../../components/ui/StatBlock';
+import { SectionHeader } from '../../components/ui/SectionHeader';
+import { ListRow } from '../../components/ui/ListRow';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { WeeklyBarChart } from '../../components/viz/WeeklyBarChart';
+import { StreakChip } from '../../components/viz/StreakChip';
+import { weeklyBuckets, streakDays, lastRun, relativeDay } from '../../utils/displayStats';
 
 function useElapsedTime(): number {
   const isRecording = useRecordStore((s) => s.isRecording);
@@ -76,6 +84,12 @@ export default function RecordScreen() {
     .map((id) => allBattles.find((b) => b.id === id))
     .filter(Boolean) as typeof allBattles;
 
+  // 開始前の下段データ（前回のラン・週間ミニバー・ストリーク）
+  const { activities: recentActivities, loading: recentLoading } = useRecentActivities(20);
+  const last = lastRun(recentActivities);
+  const weekBuckets = weeklyBuckets(recentActivities);
+  const streak = streakDays(recentActivities);
+
   const [selectedMode, setSelectedMode] = useState<MeasurementType>('gps');
   const [isSaving, setIsSaving] = useState(false);
   const [isStepAvailable, setIsStepAvailable] = useState(false);
@@ -106,16 +120,14 @@ export default function RecordScreen() {
   }, []);
 
   useEffect(() => {
+    // 破線リングをゆっくり回転（20秒 / 周）
     const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(ringAnim, { toValue: 1, duration: 1400, useNativeDriver: true }),
-        Animated.timing(ringAnim, { toValue: 0, duration: 1400, useNativeDriver: true }),
-      ]),
+      Animated.timing(ringAnim, { toValue: 1, duration: 20000, easing: Easing.linear, useNativeDriver: true }),
     );
     loop.start();
     return () => loop.stop();
   }, []);
-  const ringScale = ringAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] });
+  const ringRotate = ringAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
   // 音声ガイド: 1km通過ごとに読み上げ
   useEffect(() => {
@@ -191,91 +203,132 @@ export default function RecordScreen() {
   if (!isRecording) {
     return (
       <SafeAreaView style={s.root} edges={['top']}>
-        <View style={s.preHeader}>
-          <MonoLabel color={Colors.textTertiary} size={9}>BATTLERUN / ラン準備</MonoLabel>
-          <Text style={s.preTitle}>ラン</Text>
-        </View>
+        <ScrollView contentContainerStyle={s.preScroll} showsVerticalScrollIndicator={false}>
+          <View style={s.preHeader}>
+            <Text style={s.preTitle}>ラン</Text>
+          </View>
 
-        {/* Mode toggle */}
-        <View style={s.modeToggle}>
-          {(['gps', 'steps'] as MeasurementType[]).map((mode) => {
-            const active = selectedMode === mode;
-            return (
+          {/* Mode toggle */}
+          <View style={s.modeToggle}>
+            {(['gps', 'steps'] as MeasurementType[]).map((mode) => {
+              const active = selectedMode === mode;
+              return (
+                <TouchableOpacity
+                  key={mode}
+                  style={[s.modeBtn, active && s.modeBtnActive]}
+                  onPress={() => {
+                    if (mode === 'steps' && !isStepAvailable) {
+                      Alert.alert('歩数センサー非対応', 'GPSモードをご利用ください。');
+                      return;
+                    }
+                    setSelectedMode(mode);
+                  }}
+                >
+                  <Ionicons
+                    name={mode === 'gps' ? 'navigate-outline' : 'footsteps-outline'}
+                    size={14}
+                    color={active ? Colors.textPrimary : Colors.textTertiary}
+                  />
+                  <Text style={[s.modeBtnText, active && s.modeBtnTextActive]}>
+                    {mode === 'gps' ? 'GPSモード' : '歩数'}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Voice guide toggle */}
+          <View style={s.voiceRow}>
+            <Ionicons name="volume-medium-outline" size={16} color={voiceGuide ? Colors.primaryDark : Colors.textTertiary} />
+            <Text style={[s.voiceLabel, voiceGuide && { color: Colors.primaryDark }]}>音声ガイド</Text>
+            <Switch
+              value={voiceGuide}
+              onValueChange={setVoiceGuide}
+              trackColor={{ false: Colors.surfaceGray, true: `${Colors.primary}60` }}
+              thumbColor={voiceGuide ? Colors.primary : Colors.textTertiary}
+              style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
+            />
+          </View>
+
+          {/* START button */}
+          <View style={s.startArea}>
+            <View style={s.startStack}>
+              <Animated.View style={[s.startRing, { transform: [{ rotate: ringRotate }] }]} />
               <TouchableOpacity
-                key={mode}
-                style={[s.modeBtn, active && s.modeBtnActive]}
-                onPress={() => {
-                  if (mode === 'steps' && !isStepAvailable) {
-                    Alert.alert('歩数センサー非対応', 'GPSモードをご利用ください。');
-                    return;
-                  }
-                  setSelectedMode(mode);
-                }}
+                style={s.startBtn}
+                onPress={() => startRecording(selectedMode)}
+                activeOpacity={0.85}
               >
-                <Ionicons
-                  name={mode === 'gps' ? 'navigate-outline' : 'footsteps-outline'}
-                  size={14}
-                  color={active ? Colors.textPrimary : Colors.textTertiary}
-                />
-                <Text style={[s.modeBtnText, active && s.modeBtnTextActive]}>
-                  {mode === 'gps' ? 'GPSモード' : '歩数'}
+                <Text style={s.startLabel}>START</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={s.startHint}>タップしてラン開始</Text>
+
+            {/* Challenge connection badge */}
+            {currentActiveBattles.length === 1 ? (
+              <View style={s.contribBadge}>
+                <Text style={s.contribBadgeText}>
+                  このランは「{currentActiveBattles[0].title}」に加算されます
+                </Text>
+              </View>
+            ) : currentActiveBattles.length > 1 ? (
+              <View style={s.contribBadge}>
+                <Text style={s.contribBadgeText}>
+                  このランは参加中の{currentActiveBattles.length}件のバトルに加算されます
+                </Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={[s.contribBadge, { backgroundColor: `${Colors.textTertiary}18` }]}
+                onPress={() => router.push('/(tabs)/battle' as any)}
+                activeOpacity={0.7}
+              >
+                <Text style={[s.contribBadgeText, { color: Colors.textTertiary }]}>
+                  バトルに参加するとこのランが加算されます
                 </Text>
               </TouchableOpacity>
-            );
-          })}
-        </View>
+            )}
+          </View>
 
-        {/* Voice guide toggle */}
-        <View style={s.voiceRow}>
-          <Ionicons name="volume-medium-outline" size={16} color={voiceGuide ? Colors.primaryDark : Colors.textTertiary} />
-          <Text style={[s.voiceLabel, voiceGuide && { color: Colors.primaryDark }]}>音声ガイド</Text>
-          <Switch
-            value={voiceGuide}
-            onValueChange={setVoiceGuide}
-            trackColor={{ false: Colors.surfaceAlt, true: `${Colors.primary}60` }}
-            thumbColor={voiceGuide ? Colors.primary : Colors.textTertiary}
-            style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
-          />
-        </View>
+          {/* 前回のラン・今週 */}
+          <View style={s.preData}>
+            {recentLoading ? (
+              <>
+                <View style={s.skelLine} />
+                <View style={s.skelBlock} />
+              </>
+            ) : last ? (
+              <>
+                <SectionHeader label="前回のラン" />
+                <View style={s.lastRunCard}>
+                  <ListRow
+                    icon={last.measurementType === 'steps' ? 'footsteps-outline' : 'navigate-outline'}
+                    title={`${last.distanceKm.toFixed(1)}km・${formatTime(last.durationSeconds)}`}
+                    onPress={() => router.push(`/activity/${last.id}` as any)}
+                    right={
+                      <View style={s.lastRunRight}>
+                        <Text style={s.lastRunAgo}>{relativeDay(last.startedAt)}</Text>
+                        <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
+                      </View>
+                    }
+                  />
+                </View>
 
-        {/* START button */}
-        <View style={s.startArea}>
-          <Animated.View style={[s.startRing, { transform: [{ scale: ringScale }] }]}>
-            <TouchableOpacity
-              style={s.startBtn}
-              onPress={() => startRecording(selectedMode)}
-              activeOpacity={0.85}
-            >
-              <Text style={s.startLabel}>START</Text>
-            </TouchableOpacity>
-          </Animated.View>
-          <Text style={s.startHint}>タップしてラン開始</Text>
-
-          {/* Challenge connection badge */}
-          {currentActiveBattles.length === 1 ? (
-            <View style={s.contribBadge}>
-              <Text style={s.contribBadgeText}>
-                このランは「{currentActiveBattles[0].title}」に加算されます
-              </Text>
-            </View>
-          ) : currentActiveBattles.length > 1 ? (
-            <View style={s.contribBadge}>
-              <Text style={s.contribBadgeText}>
-                このランは参加中の{currentActiveBattles.length}件のバトルに加算されます
-              </Text>
-            </View>
-          ) : (
-            <TouchableOpacity
-              style={[s.contribBadge, { backgroundColor: `${Colors.textTertiary}18` }]}
-              onPress={() => router.push('/(tabs)/battle' as any)}
-              activeOpacity={0.7}
-            >
-              <Text style={[s.contribBadgeText, { color: Colors.textTertiary }]}>
-                バトルに参加するとこのランが加算されます
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
+                <View style={s.weekHead}>
+                  <Text style={TextStyles.sectionTitle}>今週</Text>
+                  <StreakChip days={streak} />
+                </View>
+                <WeeklyBarChart days={weekBuckets} height={40} compact />
+              </>
+            ) : (
+              <EmptyState
+                icon="walk-outline"
+                title="最初のランを記録しよう"
+                hint="STARTを押して走り出そう"
+              />
+            )}
+          </View>
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -303,22 +356,17 @@ export default function RecordScreen() {
       {/* Stats row */}
       <View style={s.hudStatsRow}>
         <View style={s.hudStat}>
-          <MonoLabel color={DarkColors.textTertiary} size={8.5}>
-            {measurementType === 'steps' ? '歩数' : 'ペース'}
-          </MonoLabel>
-          <Text style={s.hudStatVal}>
-            {measurementType === 'steps'
-              ? steps.toLocaleString()
-              : formatPace(distanceKm, elapsed)}
-          </Text>
-          {measurementType === 'gps' && (
-            <Text style={s.hudStatUnit}>/km</Text>
-          )}
+          <StatBlock
+            dark
+            align="center"
+            label={measurementType === 'steps' ? '歩数' : 'ペース'}
+            value={measurementType === 'steps' ? steps.toLocaleString() : formatPace(distanceKm, elapsed)}
+            unit={measurementType === 'gps' ? '/km' : undefined}
+          />
         </View>
         <View style={s.hudStatDivider} />
         <View style={s.hudStat}>
-          <MonoLabel color={DarkColors.textTertiary} size={8.5}>時間</MonoLabel>
-          <Text style={s.hudStatVal}>{formatTime(elapsed)}</Text>
+          <StatBlock dark align="center" label="時間" value={formatTime(elapsed)} />
         </View>
       </View>
 
@@ -458,6 +506,7 @@ export default function RecordScreen() {
 const s = StyleSheet.create({
   // Pre-recording (light)
   root: { flex: 1, backgroundColor: Colors.background },
+  preScroll: { paddingBottom: 110 },
   preHeader: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4, gap: 4 },
   preTitle: { fontSize: 22, fontWeight: '900', color: Colors.textPrimary, marginTop: 2 },
 
@@ -476,7 +525,7 @@ const s = StyleSheet.create({
   },
   modeToggle: {
     flexDirection: 'row', gap: 4, padding: 4,
-    backgroundColor: Colors.surfaceAlt, borderRadius: BorderRadius.full,
+    backgroundColor: Colors.surfaceGray, borderRadius: BorderRadius.full,
     marginHorizontal: 40, marginTop: 20,
   },
   modeBtn: {
@@ -491,12 +540,14 @@ const s = StyleSheet.create({
   modeBtnText: { fontSize: 12, fontWeight: '700', color: Colors.textTertiary },
   modeBtnTextActive: { color: Colors.textPrimary },
 
-  startArea: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
+  startArea: { alignItems: 'center', justifyContent: 'center', gap: 16, paddingVertical: 36 },
+  startStack: { width: 180, height: 180, alignItems: 'center', justifyContent: 'center' },
   startRing: {
-    width: 180, height: 180, borderRadius: 90,
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    borderRadius: 90,
     borderWidth: 2, borderColor: `${Colors.accent}55`,
     borderStyle: 'dashed',
-    alignItems: 'center', justifyContent: 'center',
   },
   startBtn: {
     width: 160, height: 160, borderRadius: 80,
@@ -505,13 +556,27 @@ const s = StyleSheet.create({
     shadowColor: Colors.accent, shadowOffset: { width: 0, height: 16 },
     shadowOpacity: 0.5, shadowRadius: 32, elevation: 12,
   },
-  startLabel: { fontSize: 38, fontWeight: '900', color: Colors.textOnPrimary, letterSpacing: 2 },
+  startLabel: { fontSize: 38, fontWeight: '900', color: Colors.textOnAccent, letterSpacing: 2 },
   startHint: { fontSize: 13, color: Colors.textTertiary, fontWeight: '600' },
   contribBadge: {
     backgroundColor: `${Colors.primary}22`, borderRadius: BorderRadius.full,
     paddingHorizontal: 14, paddingVertical: 7,
   },
   contribBadgeText: { fontSize: 11, fontWeight: '800', color: Colors.primaryDark, textAlign: 'center' },
+
+  // 開始前 下段データ
+  preData: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm, gap: Spacing.md },
+  lastRunCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1, borderColor: Colors.border,
+    paddingHorizontal: Spacing.md,
+  },
+  lastRunRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  lastRunAgo: { fontSize: 13, color: Colors.textTertiary, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  weekHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing.sm },
+  skelLine: { height: 16, width: '40%', borderRadius: 6, backgroundColor: Colors.surfaceGray },
+  skelBlock: { height: 64, borderRadius: BorderRadius.md, backgroundColor: Colors.surfaceGray },
 
   // Recording (dark HUD)
   hudRoot: { flex: 1, backgroundColor: DarkColors.background },
