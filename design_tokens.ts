@@ -20,6 +20,7 @@ export const Colors = {
   // アクセントカラー（ランキング・競争要素）
   accent: '#FF6B35',         // 1位・強調・UP矢印（#FF5C2B もこれに統一）
   accentDark: '#E0431A',     // アクセントのプレスド状態
+  accentLight: '#FFEDE5',    // accent の淡背景（チップ・バッジ・強調カード）
   accentYellow: '#FFB800',   // 王冠アイコン・ゴールド・称号
 
   // Pro（サブスク）
@@ -28,36 +29,40 @@ export const Colors = {
   // セマンティックカラー
   success: '#00C49A',        // 達成・完了（primaryと同じ）
   warning: '#FFB800',
-  error: '#FF4444',
+  error: '#EF4444',
   info: '#4A90E2',
 
   // テキスト
-  textPrimary: '#1A1A2E',    // メイン文字（ほぼ黒）
+  textPrimary: '#111827',    // メイン文字（純白背景でのコントラスト最適化。旧 #1A1A2E）
   textSecondary: '#6B7280',  // サブ文字（グレー）
   textTertiary: '#9CA3AF',   // プレースホルダー・補足
   textOnPrimary: '#FFFFFF',  // primaryカラー上の文字
+  textOnAccent: '#FFFFFF',   // accentカラー上の文字（CTA）
 
-  // 背景
-  background: '#F4F2EC',     // アプリ全体の背景（温かいオフホワイトに統一）
+  // 背景（白ベースのミニマル基調。旧・温かいベージュから移行）
+  background: '#F7F8FA',     // アプリ全体の背景（旧 #F4F2EC / #F8FAFB を統一）
   surface: '#FFFFFF',        // カード・モーダルの背景
-  surfaceGray: '#F3F4F6',    // 入力フィールド・非アクティブ背景
-  surfaceAlt: '#EDEAE2',     // 温かいインセット面（旧 BR.lightSurf2）
+  surfaceGray: '#F1F3F5',    // 入力フィールド・非アクティブ背景
+  /** @deprecated 温かいインセット面。白ベース移行に伴いクールグレーへ。新規は surfaceGray を使う */
+  surfaceAlt: '#EEF1F5',
 
   // ボーダー
   border: '#E5E7EB',         // 通常のボーダー
-  borderLight: '#F3F4F6',    // 薄いセパレーター
+  borderLight: '#F1F3F5',    // 薄いセパレーター
 
   // チームランキング用（競争感を出す色）
   rank1: '#FFB800',          // 1位 ゴールド
   rank2: '#9CA3AF',          // 2位 シルバー
   rank3: '#CD7F32',          // 3位 ブロンズ
 
-  // チームバーのカラー（他チームとの比較グラフ用）
+  // 陣営バー用。自陣営は常に primary、敵陣営の筆頭は accent（VS の緊張感を色で作る）
   teamColors: [
-    '#00C49A',  // 自チーム（primary）
-    '#FF6B35',  // 2位チーム
-    '#4A90E2',  // 3位チーム
-    '#9B59B6',  // 4位チーム
+    '#00C49A',  // 自陣営（primary）
+    '#FF6B35',  // 敵筆頭（accent）
+    '#4A90E2',
+    '#9B59B6',
+    '#F59E0B',
+    '#64748B',
   ],
 
   // 陣営識別カラー（バトル詳細・一覧で最大6陣営を色分け）
@@ -69,6 +74,11 @@ export const Colors = {
     '#00D9A3',
     '#FF6B35',
   ],
+
+  // チャート用（WeeklyBarChart）
+  chartBarActive: '#00C49A',    // データありの日
+  chartBarInactive: '#E5E7EB',  // データ 0 の日・プレースホルダー
+  chartToday: '#FF6B35',        // 今日のバーだけアクセント
 } as const;
 
 // ============================================================
@@ -136,7 +146,7 @@ export const Typography = {
 // ============================================================
 
 export const TextStyles = {
-  // 「BATTLERUN / RUN IN PROGRESS」等の等幅ラベル
+  // 等幅ラベル。★ダーク画面（記録中HUD・結果）専用。ライト画面では SectionHeader を使う
   tacLabel: {
     fontFamily: Typography.fontFamily.mono,
     fontSize: 10,
@@ -146,15 +156,24 @@ export const TextStyles = {
   } as TextStyle,
   // 距離などの大きな数値。桁が揃うよう tabular-nums を必ず付ける
   heroNumber: {
-    fontSize: 64,
-    fontWeight: '900',
-    letterSpacing: -2,
+    fontSize: 56,
+    fontWeight: '800',
+    letterSpacing: -1.5,
     fontVariant: ['tabular-nums'],
+    color: Colors.textPrimary,
   } as TextStyle,
   statNumber: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '800',
     fontVariant: ['tabular-nums'],
+    color: Colors.textPrimary,
+  } as TextStyle,
+  // ライト画面のセクション見出し（MonoLabel の代替）
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+    letterSpacing: 0.2,
   } as TextStyle,
 } as const;
 
