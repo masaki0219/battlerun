@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Platform, ActivityIndicator,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -10,16 +9,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import { useBattleStore } from '../../stores/battleStore';
-import { Colors, DarkColors, Spacing, Shadow, BorderRadius } from '../../design_tokens';
+import { Colors, DarkColors, Spacing, Shadow, BorderRadius, TextStyles } from '../../design_tokens';
 import { MonoLabel } from '../../components/ui/MonoLabel';
-import { getThemeTokens } from '../../lib/battleTheme';
-import type { CategoryStats, BattleTheme, Battle, Category } from '../../types';
-
-// ─── team colour palette ───────────────────────────────────────
-function teamColor(i: number) { return Colors.teamPalette[i % Colors.teamPalette.length]; }
-function rankColor(rank: number) {
-  return rank === 1 ? Colors.rank1 : rank === 2 ? Colors.rank2 : rank === 3 ? Colors.rank3 : Colors.textTertiary;
-}
+import { StatBlock } from '../../components/ui/StatBlock';
+import { ProgressBar } from '../../components/ui/ProgressBar';
+import { ListRow } from '../../components/ui/ListRow';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { VersusGauge } from '../../components/viz/VersusGauge';
+import { dailyPaceToOvertake } from '../../utils/displayStats';
+import type { CategoryStats, Battle, Category } from '../../types';
 
 // ─── countdown helpers ─────────────────────────────────────────
 function timeLeft(endAt: string): { d: number; h: number; m: number } {
@@ -31,7 +29,6 @@ function timeLeft(endAt: string): { d: number; h: number; m: number } {
   const m = totalMin % 60;
   return { d, h, m };
 }
-
 function pad(n: number) { return String(n).padStart(2, '0'); }
 
 // ─── activity feed item type (simplified) ─────────────────────
@@ -52,7 +49,6 @@ export default function BattleDetailScreen() {
   const [stats, setStats] = useState<CategoryStats[]>([]);
   const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
   const [loading, setLoading] = useState(true);
-  const [theme, setTheme] = useState<BattleTheme>('sports');
   const [fetchedBattle, setFetchedBattle] = useState<Battle | null>(null);
 
   const battleFromStore = [...publicBattles, ...privateBattles].find((b) => b.id === id);
@@ -66,7 +62,6 @@ export default function BattleDetailScreen() {
     getDoc(doc(db, 'battles', id)).then((snap) => {
       if (!snap.exists()) return;
       const data = snap.data();
-      setTheme((data['theme'] as BattleTheme) ?? 'sports');
       setFetchedBattle({
         id: snap.id,
         type: (data['type'] as 'public' | 'private') ?? 'public',
@@ -81,14 +76,6 @@ export default function BattleDetailScreen() {
         createdBy: (data['createdBy'] as string | null) ?? null,
         inviteCode: (data['inviteCode'] as string | null) ?? null,
       });
-    }).catch(() => {});
-  }, [id, battleFromStore]);
-
-  // ── テーマ取得（store から battle が見つかった場合のみ）──
-  useEffect(() => {
-    if (!id || !battleFromStore) return;
-    getDoc(doc(db, 'battles', id)).then((snap) => {
-      if (snap.exists()) setTheme((snap.data()['theme'] as BattleTheme) ?? 'sports');
     }).catch(() => {});
   }, [id, battleFromStore]);
 
@@ -168,67 +155,55 @@ export default function BattleDetailScreen() {
   }
 
   const { d, h, m } = timeLeft(battle.endAt);
-  const tk = getThemeTokens(theme);
-
   const rankType = battle.rankingType ?? 'total';
-  const sorted = [...stats].sort((a, b) =>
-    rankType === 'total'
-      ? b.totalDistanceKm - a.totalDistanceKm
-      : b.avgDistanceKm - a.avgDistanceKm
-  );
-  const myStatIdx = sorted.findIndex((s) => s.categoryId === myCatId);
+  const val = (st: CategoryStats) => (rankType === 'total' ? st.totalDistanceKm : st.avgDistanceKm);
+
+  const sorted = [...stats].sort((a, b) => val(b) - val(a));
+  const myStatIdx = sorted.findIndex((st) => st.categoryId === myCatId);
   const myTeam = myStatIdx >= 0 ? sorted[myStatIdx] : null;
   const myRank = myStatIdx >= 0 ? myStatIdx + 1 : null;
 
-  const is2Team = sorted.length === 2;
+  // 対向ゲージ: 自陣営 vs 直上（自分が1位なら2位）。未参加なら上位2陣営
+  const rival = myStatIdx > 0 ? sorted[myStatIdx - 1] : myStatIdx === 0 ? sorted[1] : undefined;
+  const gaugeLeft = myTeam ?? sorted[0];
+  const gaugeRight = myTeam ? rival : sorted[1];
+  const leading = myStatIdx === 0;
+  const pace = myTeam && rival
+    ? dailyPaceToOvertake({
+        myTeamKm: val(myTeam),
+        rivalTeamKm: val(rival),
+        endAt: battle.endAt,
+        isLeading: leading,
+      })
+    : null;
+  const bothZero = gaugeLeft && gaugeRight && val(gaugeLeft) <= 0 && val(gaugeRight) <= 0;
+  const maxVal = Math.max(...sorted.map(val), 0.01);
 
   return (
     <SafeAreaView style={s.root} edges={['top']}>
       {/* ── Nav bar ─────────────────────────────────────── */}
       <View style={s.navBar}>
         <TouchableOpacity
-          style={s.navBack}
           onPress={() => router.back()}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Ionicons name="chevron-back" size={20} color={Colors.textSecondary} />
-          <MonoLabel color={Colors.textTertiary} size={9}>{`${tk.battleLabel} / ACTIVE`}</MonoLabel>
+          <Ionicons name="chevron-back" size={22} color={Colors.textPrimary} />
         </TouchableOpacity>
         <View style={s.navActions}>
-          <TouchableOpacity style={s.navBtn} onPress={() => router.push(`/battle/result/${id}` as any)}>
-            <Text style={s.navBtnText}>RESULT</Text>
+          <TouchableOpacity
+            style={s.navIconBtn}
+            onPress={() => router.push(`/battle/result/${id}` as any)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="podium-outline" size={20} color={Colors.textSecondary} />
           </TouchableOpacity>
-          <TouchableOpacity style={s.navBtn} onPress={() => router.push(`/battle/theme?id=${id}` as any)}>
-            <Text style={s.navBtnText}>THEME</Text>
+          <TouchableOpacity
+            style={s.navIconBtn}
+            onPress={() => router.push(`/battle/theme?id=${id}` as any)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="color-palette-outline" size={20} color={Colors.textSecondary} />
           </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* ── Title block ──────────────────────────────────── */}
-      <View style={s.titleBlock}>
-        {battle.inviteCode && (
-          <MonoLabel color={Colors.primary} size={9}>{`招待コード: ${battle.inviteCode}`}</MonoLabel>
-        )}
-        <Text style={s.battleTitle}>{battle.title}</Text>
-      </View>
-
-      {/* ── Countdown ────────────────────────────────────── */}
-      <View style={s.countdownWrap}>
-        <View style={[s.countdown, {
-          backgroundColor: `${tk.accent}10`,
-          borderColor: `${tk.accent}35`,
-        }]}>
-          <View style={[s.countdownDot, { backgroundColor: tk.accent }]} />
-          <MonoLabel color={tk.accent} size={9}>残り時間</MonoLabel>
-          <View style={{ flex: 1 }} />
-          <Text style={s.countdownNum}>
-            {d}
-            <Text style={s.countdownUnit}>D </Text>
-            {pad(h)}
-            <Text style={s.countdownUnit}>H </Text>
-            {pad(m)}
-            <Text style={s.countdownUnit}>M</Text>
-          </Text>
         </View>
       </View>
 
@@ -237,84 +212,89 @@ export default function BattleDetailScreen() {
         contentContainerStyle={s.scroll}
         showsVerticalScrollIndicator={false}
       >
-        {loading ? (
-          <ActivityIndicator color={tk.primary} style={{ marginTop: 40 }} />
-        ) : is2Team && sorted.length === 2 ? (
-          <TwoTeamBlock
-            left={sorted[0]}
-            right={sorted[1]}
-            myCatId={myCatId}
-            themeTokens={tk}
-            rankType={rankType}
-          />
-        ) : (
-          <MultiTeamBlock
-            teams={sorted}
-            myCatId={myCatId}
-            rankType={rankType}
-            myTeam={myTeam}
-            myRank={myRank}
-            myContrib={user ? undefined : undefined}
-            themeTokens={tk}
-          />
-        )}
+        {/* ── Dark hero (勝負どころ) ──────────────────────── */}
+        <View style={s.hero}>
+          {battle.inviteCode ? (
+            <MonoLabel color={DarkColors.primary} size={9}>{`招待コード ${battle.inviteCode}`}</MonoLabel>
+          ) : (
+            <MonoLabel color={DarkColors.textTertiary} size={9}>BATTLE / ACTIVE</MonoLabel>
+          )}
+          <Text style={s.heroTitle}>{battle.title}</Text>
 
-        {/* ── Member contribution ranking ──────────────────── */}
-        <View style={s.sectionCard}>
-          <MonoLabel color={Colors.textTertiary} size={9}>陣営内 貢献ランキング</MonoLabel>
-          <View style={{ height: 10 }} />
-          {sorted.map((cat, i) => {
-            const isMe = cat.categoryId === myCatId;
-            const rc = rankColor(i + 1);
-            return (
-              <View key={cat.categoryId} style={[s.memberRow, isMe && s.memberRowMe]}>
-                <View style={[s.memberRank, {
-                  backgroundColor: i < 3 ? rc : Colors.surfaceGray,
-                }]}>
-                  <Text style={[s.memberRankText, {
-                    color: i < 3 ? (i === 0 ? Colors.textPrimary : Colors.textOnPrimary) : Colors.textTertiary,
-                  }]}>{i + 1}</Text>
-                </View>
-                <Text style={[s.memberName, isMe && { color: Colors.primary, fontWeight: '700' }]} numberOfLines={1}>
-                  {cat.label}{isMe ? ' （あなた）' : ''}
-                </Text>
-                <Text style={[s.memberKm, isMe && { color: Colors.primary }]}>
-                  {rankType === 'total'
-                    ? cat.totalDistanceKm.toFixed(1)
-                    : cat.avgDistanceKm.toFixed(1)}
-                  <Text style={s.memberKmUnit}> KM</Text>
-                </Text>
-              </View>
-            );
-          })}
+          {/* countdown 3連 */}
+          <View style={s.countRow}>
+            <StatBlock dark align="center" label="日" value={d} />
+            <View style={s.countDivider} />
+            <StatBlock dark align="center" label="時" value={pad(h)} />
+            <View style={s.countDivider} />
+            <StatBlock dark align="center" label="分" value={pad(m)} />
+          </View>
+
+          {gaugeLeft && gaugeRight ? (
+            <View style={s.heroGauge}>
+              <VersusGauge
+                left={{ label: gaugeLeft.label, km: val(gaugeLeft), isMine: !!myTeam }}
+                right={{ label: gaugeRight.label, km: val(gaugeRight), isMine: false }}
+                size="lg"
+                dark
+              />
+            </View>
+          ) : null}
+
+          {pace && !bothZero && (
+            <View style={s.heroPace}>
+              <Ionicons name="flash" size={14} color={DarkColors.accent} />
+              <Text style={s.heroPaceText}>
+                1日 {pace.kmPerDay.toFixed(1)}km 走れば{leading ? '逃げ切り' : '逆転'}
+              </Text>
+            </View>
+          )}
         </View>
 
-        {/* ── Recent activity ──────────────────────────────── */}
+        {/* ── 陣営ランキング（全件） ──────────────────────── */}
+        <View style={s.sectionCard}>
+          <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.md }]}>陣営ランキング</Text>
+          {loading && sorted.length === 0 ? (
+            <ActivityIndicator color={Colors.primary} style={{ marginVertical: 20 }} />
+          ) : sorted.length === 0 ? (
+            <EmptyState icon="flag-outline" title="まだ記録がありません" hint="最初のランで陣営に貢献しよう" />
+          ) : (
+            sorted.map((cat, i) => {
+              const isMine = cat.categoryId === myCatId;
+              const barColor = isMine ? Colors.primary : Colors.teamColors[Math.min(i, Colors.teamColors.length - 1)];
+              return (
+                <View key={cat.categoryId} style={s.rankRow}>
+                  <Text style={[s.rankNum, isMine && s.rankNumMine]}>{i + 1}</Text>
+                  <View style={s.rankMain}>
+                    <View style={s.rankNameRow}>
+                      <Text style={[s.rankName, isMine && s.rankNameMine]} numberOfLines={1}>
+                        {cat.label}{isMine ? ' （あなた）' : ''}
+                      </Text>
+                      <Text style={[s.rankValue, isMine && s.rankValueMine]}>{val(cat).toFixed(1)}km</Text>
+                    </View>
+                    <ProgressBar value={val(cat) / maxVal} color={barColor} height={8} />
+                  </View>
+                </View>
+              );
+            })
+          )}
+        </View>
+
+        {/* ── 最近の活動 ──────────────────────────────────── */}
         {recentActivities.length > 0 && (
           <View style={s.sectionCard}>
-            <MonoLabel color={Colors.textTertiary} size={9}>最近の活動</MonoLabel>
-            <View style={{ height: 10 }} />
-            {recentActivities.map((a, i) => (
-              <TouchableOpacity
+            <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.sm }]}>最近の活動</Text>
+            {recentActivities.map((a) => (
+              <ListRow
                 key={a.id}
-                style={[
-                  s.actRow,
-                  i < recentActivities.length - 1 && s.actRowBorder,
-                ]}
+                icon="walk"
+                iconColor={a.isMe ? Colors.primary : Colors.textTertiary}
+                iconBg={a.isMe ? Colors.primaryLight : Colors.surfaceGray}
+                title={a.displayName}
+                subtitle={`${a.distanceKm.toFixed(1)}km走った · ${a.ago}`}
+                titleColor={a.isMe ? Colors.primary : undefined}
                 onPress={() => router.push(`/activity/${a.id}` as any)}
-                activeOpacity={0.7}
-              >
-                <View style={[s.actAvatar, a.isMe && s.actAvatarMe]}>
-                  <Ionicons name="walk-outline" size={16} color={a.isMe ? Colors.primary : Colors.textTertiary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.actName, a.isMe && { color: Colors.primary }]}>
-                    {a.displayName}
-                  </Text>
-                  <Text style={s.actMeta}>{a.distanceKm.toFixed(1)}km走った · {a.ago}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={14} color={Colors.textTertiary} />
-              </TouchableOpacity>
+              />
             ))}
           </View>
         )}
@@ -322,419 +302,6 @@ export default function BattleDetailScreen() {
     </SafeAreaView>
   );
 }
-
-// ═══════════════════════════════════════════════════════════════
-// 2-TEAM VS BLOCK
-// ═══════════════════════════════════════════════════════════════
-function TwoTeamBlock({
-  left, right, myCatId, rankType, themeTokens,
-}: {
-  left: CategoryStats;
-  right: CategoryStats;
-  myCatId: string | null;
-  rankType: 'average' | 'total';
-  themeTokens?: import('../../lib/battleTheme').ThemeTokens;
-}) {
-  const tk = themeTokens ?? { primary: DarkColors.primary, accent: Colors.accent } as any;
-  function val(s: CategoryStats) {
-    return rankType === 'total' ? s.totalDistanceKm : s.avgDistanceKm;
-  }
-  const lv = val(left);
-  const rv = val(right);
-  const total = lv + rv || 1;
-  const lRatio = lv / total;
-  const lWin = lv >= rv;
-  const isLeftMine = left.categoryId === myCatId;
-  const isRightMine = right.categoryId === myCatId;
-  const myTeam = isLeftMine ? left : isRightMine ? right : null;
-  const foeTeam = isLeftMine ? right : isRightMine ? left : null;
-  const winning = myTeam && foeTeam ? val(myTeam) >= val(foeTeam) : false;
-  const diff = myTeam && foeTeam ? Math.abs(val(myTeam) - val(foeTeam)).toFixed(1) : '0.0';
-
-  const leftColor  = teamColor(0);
-  const rightColor = teamColor(1);
-
-  return (
-    <View style={t2.block}>
-      {/* team name row */}
-      <View style={t2.teamsRow}>
-        {/* left team */}
-        <View style={t2.teamSide}>
-          <MonoLabel color={leftColor} size={8}>{isLeftMine ? 'MY TEAM' : 'TEAM'}</MonoLabel>
-          <Text style={t2.teamName}>{left.label}</Text>
-          <Text style={[t2.teamKm, lWin && { color: Colors.primary }]}>
-            {lv.toFixed(1)}
-            <Text style={t2.kmUnit}> KM</Text>
-          </Text>
-          {isLeftMine && (
-            <Text style={t2.contrib}>
-              {left.participantCount}名 参加中
-            </Text>
-          )}
-        </View>
-
-        {/* VS badge */}
-        <View style={t2.vsBadge}>
-          <Text style={t2.vsText}>VS</Text>
-        </View>
-
-        {/* right team */}
-        <View style={[t2.teamSide, t2.teamRight]}>
-          <MonoLabel color={rightColor} size={8}>{isRightMine ? 'MY TEAM' : 'TEAM'}</MonoLabel>
-          <Text style={[t2.teamName, { textAlign: 'right' }]}>{right.label}</Text>
-          <Text style={[t2.teamKm, { textAlign: 'right' }, !lWin && { color: Colors.accent }]}>
-            {rv.toFixed(1)}
-            <Text style={t2.kmUnit}> KM</Text>
-          </Text>
-          {isRightMine && (
-            <Text style={[t2.contrib, { textAlign: 'right' }]}>
-              {right.participantCount}名 参加中
-            </Text>
-          )}
-        </View>
-      </View>
-
-      {/* gauge bar */}
-      <View style={t2.gaugeWrap}>
-        <View style={t2.gauge}>
-          <View style={[t2.gaugeFill, {
-            width: `${lRatio * 100}%`,
-            backgroundColor: leftColor,
-          }]} />
-          <View style={[t2.gaugeFoe, {
-            width: `${(1 - lRatio) * 100}%`,
-            backgroundColor: rightColor,
-          }]} />
-          <View style={t2.gaugeMid} />
-        </View>
-      </View>
-
-      {/* NEXT MOVE callout */}
-      {myTeam && foeTeam && (
-        <View style={[t2.nextMove, {
-          backgroundColor: winning ? `${tk.primary}12` : `${tk.accent}12`,
-          borderColor: winning ? `${tk.primary}40` : `${tk.accent}40`,
-        }]}>
-          <Text style={t2.nextEmoji}>{winning ? '🔥' : '⚡'}</Text>
-          <View style={{ flex: 1 }}>
-            <MonoLabel color={winning ? tk.primary : tk.accent} size={8}>NEXT MOVE</MonoLabel>
-            <Text style={t2.nextText}>
-              {winning
-                ? `リードを守れ！ 差は ${diff}km`
-                : `あと ${diff}km で逆転`}
-            </Text>
-          </View>
-          <TouchableOpacity style={[t2.deployBtn, { backgroundColor: tk.accent }]} onPress={() => router.push('/(tabs)/record' as any)}>
-            <Text style={t2.deployText}>ラン</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-    </View>
-  );
-}
-
-const t2 = StyleSheet.create({
-  block: {
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    overflow: 'hidden',
-    marginBottom: Spacing.lg,
-    ...Shadow.sm,
-  },
-  teamsRow: { flexDirection: 'row', alignItems: 'stretch' },
-  teamSide: { flex: 1, padding: 16, borderRightWidth: 1, borderRightColor: Colors.border },
-  teamRight: { borderRightWidth: 0, borderLeftWidth: 1, borderLeftColor: Colors.border },
-  teamName: { fontSize: 13, fontWeight: '900', color: Colors.textPrimary, marginTop: 4 },
-  teamKm: { fontSize: 32, fontWeight: '700', color: Colors.textPrimary, lineHeight: 38, marginTop: 6, letterSpacing: -1, fontVariant: ['tabular-nums'] },
-  kmUnit: { fontSize: 11, color: Colors.textTertiary, letterSpacing: 0 },
-  contrib: { fontSize: 11, color: Colors.textTertiary, marginTop: 3 },
-  vsBadge: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 10,
-    flexShrink: 0,
-  },
-  vsText: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: Colors.accent,
-    letterSpacing: 1,
-    backgroundColor: `${Colors.accent}15`,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 99,
-  },
-  gaugeWrap: { paddingHorizontal: 14, paddingBottom: 6 },
-  gauge: {
-    position: 'relative',
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: Colors.surfaceGray,
-    flexDirection: 'row',
-    overflow: 'hidden',
-  },
-  gaugeFill: { height: 16, borderRadius: 0 },
-  gaugeFoe: { height: 16, borderRadius: 0 },
-  gaugeMid: {
-    position: 'absolute',
-    left: '50%' as any,
-    top: 0,
-    bottom: 0,
-    width: 2,
-    backgroundColor: Colors.background,
-  },
-  nextMove: {
-    marginHorizontal: 14,
-    marginBottom: 14,
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    gap: 10,
-  },
-  nextEmoji: { fontSize: 18 },
-  nextText: { fontSize: 13, fontWeight: '900', color: Colors.textPrimary, marginTop: 3 },
-  deployBtn: {
-    backgroundColor: Colors.accent,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  deployText: { fontSize: 12, fontWeight: '900', color: Colors.textOnPrimary },
-});
-
-// ═══════════════════════════════════════════════════════════════
-// MULTI-TEAM BLOCK
-// ═══════════════════════════════════════════════════════════════
-function MultiTeamBlock({
-  teams, myCatId, rankType, myTeam, myRank, themeTokens,
-}: {
-  teams: CategoryStats[];
-  myCatId: string | null;
-  rankType: 'average' | 'total';
-  myTeam: CategoryStats | null;
-  myRank: number | null;
-  myContrib?: number;
-  themeTokens?: import('../../lib/battleTheme').ThemeTokens;
-}) {
-  const tk = themeTokens ?? { primary: DarkColors.primary, accent: Colors.accent, primaryDeep: Colors.primaryDark } as any;
-  const maxVal = Math.max(
-    ...teams.map((t) => rankType === 'total' ? t.totalDistanceKm : t.avgDistanceKm),
-    0.01,
-  );
-
-  function val(s: CategoryStats) {
-    return rankType === 'total' ? s.totalDistanceKm : s.avgDistanceKm;
-  }
-
-  const myIdx = teams.findIndex((t) => t.categoryId === myCatId);
-  const above = myIdx > 0 ? teams[myIdx - 1] : null;
-  const below = myIdx >= 0 && myIdx < teams.length - 1 ? teams[myIdx + 1] : null;
-  const toOvertake = above ? (val(above) - val(teams[myIdx])).toFixed(1) : null;
-  const chased = below ? (val(teams[myIdx]) - val(below)).toFixed(1) : null;
-
-  return (
-    <View>
-      {/* My status pill */}
-      {myTeam && myRank !== null && (
-        <View style={mt.myPill}>
-          <View style={[mt.myRankBox, { backgroundColor: `${teamColor(myRank - 1)}22`, borderColor: teamColor(myRank - 1) }]}>
-            <Text style={[mt.myRankNum, { color: teamColor(myRank - 1) }]}>{myRank}</Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={mt.myTeamLabel}>あなたの陣営</Text>
-            <Text style={mt.myTeamName}>{myTeam.label}</Text>
-          </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text style={mt.myContribLabel}>参加人数</Text>
-            <Text style={mt.myContribVal}>{myTeam.participantCount}<Text style={mt.myContribUnit}>名</Text></Text>
-          </View>
-        </View>
-      )}
-
-      {/* Bar chart */}
-      <View style={mt.chartBlock}>
-        <View style={mt.chartHeader}>
-          <MonoLabel color={Colors.textTertiary} size={9}>陣営ランキング</MonoLabel>
-          {teams.length > 5 && <MonoLabel color={Colors.textTertiary} size={8}>スクロールで全件</MonoLabel>}
-        </View>
-
-        <ScrollView style={{ maxHeight: teams.length > 5 ? 280 : undefined }} scrollEnabled={teams.length > 5} nestedScrollEnabled>
-          {teams.map((team, i) => {
-            const isUs = team.categoryId === myCatId;
-            const ratio = val(team) / maxVal;
-            const rc = rankColor(i + 1);
-            const tc = teamColor(i);
-            const showGap = i === myIdx - 1 && toOvertake;
-
-            return (
-              <React.Fragment key={team.categoryId}>
-                <View style={[mt.barRow, isUs && {
-                  backgroundColor: `${tc}0D`,
-                  borderLeftWidth: 3,
-                  borderLeftColor: tc,
-                }]}>
-                  <View style={mt.barMeta}>
-                    <View style={[mt.rankDot, {
-                      backgroundColor: i < 3 ? rc : Colors.surfaceGray,
-                    }]}>
-                      <Text style={[mt.rankDotText, {
-                        color: i < 3 ? (i === 0 ? Colors.textPrimary : Colors.textOnPrimary) : Colors.textTertiary,
-                      }]}>{i + 1}</Text>
-                    </View>
-                    <Text style={[mt.barName, isUs && { color: tc, fontWeight: '900' }]} numberOfLines={1}>
-                      {team.label}{isUs && <Text style={[mt.youLabel, { color: Colors.textTertiary }]}> （あなた）</Text>}
-                    </Text>
-                    <Text style={[mt.barKm, isUs && { color: tc }]}>
-                      {val(team).toFixed(1)}<Text style={mt.barKmUnit}> KM</Text>
-                    </Text>
-                  </View>
-                  <View style={mt.track}>
-                    <View style={[mt.fill, {
-                      width: `${ratio * 100}%`,
-                      backgroundColor: isUs ? tc : `${tc}55`,
-                    }]} />
-                  </View>
-                </View>
-
-                {showGap && (
-                  <View style={[mt.gapBadge, {
-                    backgroundColor: `${tk.accent}14`,
-                    borderColor: `${tk.accent}50`,
-                  }]}>
-                    <Text style={mt.gapEmoji}>⚡</Text>
-                    <Text style={[mt.gapText, { color: tk.accent }]}>あと {toOvertake}km で {above!.label} を逆転</Text>
-                  </View>
-                )}
-              </React.Fragment>
-            );
-          })}
-
-          {chased && myIdx >= 0 && (
-            <View style={mt.chasedBadge}>
-              <Text style={mt.chasedEmoji}>⚠️</Text>
-              <Text style={mt.chasedText}>
-                {teams[myIdx + 1].label} が {chased}km 差まで追い上げ中
-              </Text>
-            </View>
-          )}
-        </ScrollView>
-      </View>
-    </View>
-  );
-}
-
-const mt = StyleSheet.create({
-  myPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    ...Shadow.sm,
-  },
-  myRankBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  myRankNum: { fontSize: 20, fontWeight: '800', letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
-  myTeamLabel: { fontSize: 11, color: Colors.textTertiary },
-  myTeamName: { fontSize: 14, fontWeight: '900', color: Colors.textPrimary, marginTop: 1 },
-  myContribLabel: { fontSize: 10, color: Colors.textTertiary },
-  myContribVal: { fontSize: 20, color: Colors.primary, fontWeight: '700', lineHeight: 24, fontVariant: ['tabular-nums'] },
-  myContribUnit: { fontSize: 10, color: Colors.textTertiary },
-
-  chartBlock: {
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    overflow: 'hidden',
-    marginBottom: Spacing.lg,
-    ...Shadow.sm,
-  },
-  chartHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  barRow: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: 'transparent',
-  },
-  barMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
-  rankDot: {
-    width: 18,
-    height: 18,
-    borderRadius: 99,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  rankDotText: { fontSize: 10, fontWeight: '700' },
-  barName: { flex: 1, fontSize: 12, fontWeight: '500', color: Colors.textPrimary },
-  youLabel: { fontWeight: '400', fontSize: 10 },
-  barKm: { fontSize: 15, fontWeight: '700', color: Colors.textSecondary, letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
-  barKmUnit: { fontSize: 9, fontWeight: '400', color: Colors.textTertiary, letterSpacing: 0 },
-  track: {
-    height: 6,
-    borderRadius: 4,
-    backgroundColor: Colors.surfaceGray,
-    overflow: 'hidden',
-  },
-  fill: { height: '100%', borderRadius: 4 },
-
-  gapBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginHorizontal: 14,
-    marginBottom: 2,
-    padding: 6,
-    borderRadius: 6,
-    backgroundColor: `${Colors.accent}14`,
-    borderWidth: 1,
-    borderColor: `${Colors.accent}50`,
-    borderStyle: 'dashed',
-  },
-  gapEmoji: { fontSize: 12 },
-  gapText: { fontSize: 11, color: Colors.accent, fontWeight: '700' },
-  chasedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    margin: 10,
-    padding: 8,
-    borderRadius: 6,
-    backgroundColor: `${Colors.accentYellow}14`,
-    borderWidth: 1,
-    borderColor: `${Colors.warning}40`,
-    borderStyle: 'dashed',
-  },
-  chasedEmoji: { fontSize: 12 },
-  chasedText: { fontSize: 11, color: Colors.warning, fontWeight: '700' },
-});
-
-// ═══════════════════════════════════════════════════════════════
-// SCREEN-LEVEL STYLES
-// ═══════════════════════════════════════════════════════════════
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
@@ -746,121 +313,68 @@ const s = StyleSheet.create({
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.md,
   },
-  navBack: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  navActions: { flexDirection: 'row', gap: 6 },
-  navBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 4,
-  },
-  navBtnText: {
-    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
-    fontSize: 9,
-    letterSpacing: 2,
-    color: Colors.textSecondary,
-  },
-
-  titleBlock: { paddingHorizontal: Spacing.xl, paddingBottom: Spacing.md, gap: 4 },
-  battleTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: Colors.textPrimary,
-    letterSpacing: 0.2,
-    marginTop: 4,
-  },
-
-  countdownWrap: { paddingHorizontal: Spacing.xl, paddingBottom: Spacing.lg },
-  countdown: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: `${Colors.accent}10`,
-    borderWidth: 1,
-    borderColor: `${Colors.accent}35`,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  countdownDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: Colors.accent,
-  },
-  countdownNum: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    letterSpacing: 0.5,
-    fontVariant: ['tabular-nums'],
-  },
-  countdownUnit: { fontSize: 10, color: Colors.textSecondary },
+  navActions: { flexDirection: 'row', gap: Spacing.md },
+  navIconBtn: { padding: 2 },
 
   scroll: {
     paddingHorizontal: Spacing.xl,
     paddingBottom: 100,
+    gap: Spacing.lg,
   },
 
+  // Dark hero
+  hero: {
+    backgroundColor: DarkColors.surface,
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1,
+    borderColor: DarkColors.line,
+    padding: Spacing.xl,
+    gap: Spacing.lg,
+  },
+  heroTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: DarkColors.textPrimary,
+    marginTop: 4,
+    letterSpacing: 0.2,
+  },
+  countRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    backgroundColor: DarkColors.surfaceAlt,
+    borderRadius: BorderRadius.md,
+    paddingVertical: Spacing.md,
+  },
+  countDivider: { width: 1, alignSelf: 'stretch', backgroundColor: DarkColors.line, marginVertical: 6 },
+  heroGauge: { marginTop: 2 },
+  heroPace: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: `${DarkColors.accent}1F`,
+    borderRadius: BorderRadius.sm,
+    paddingVertical: Spacing.sm,
+  },
+  heroPaceText: { fontSize: 13, fontWeight: '800', color: DarkColors.accent, fontVariant: ['tabular-nums'] },
+
+  // Light ranking / sections
   sectionCard: {
     backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
+    borderRadius: BorderRadius.lg,
     borderWidth: 1,
     borderColor: Colors.border,
-    padding: 14,
-    marginBottom: Spacing.lg,
+    padding: Spacing.lg,
     ...Shadow.sm,
   },
-
-  memberRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    marginBottom: 4,
-    borderRadius: 8,
-  },
-  memberRowMe: {
-    backgroundColor: `${Colors.primary}12`,
-    borderWidth: 1,
-    borderColor: `${Colors.primary}35`,
-  },
-  memberRank: {
-    width: 22,
-    height: 22,
-    borderRadius: 99,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  memberRankText: { fontSize: 12, fontWeight: '700' },
-  memberName: { flex: 1, fontSize: 12, color: Colors.textPrimary, fontWeight: '500' },
-  memberKm: { fontSize: 16, fontWeight: '700', color: Colors.textSecondary, letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
-  memberKmUnit: { fontSize: 9, fontWeight: '400', color: Colors.textTertiary },
-
-  actRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 10,
-  },
-  actRowBorder: { borderBottomWidth: 1, borderBottomColor: Colors.border },
-  actAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 99,
-    backgroundColor: Colors.surfaceGray,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actAvatarMe: {
-    backgroundColor: `${Colors.primary}22`,
-    borderColor: Colors.primary,
-  },
-  actName: { fontSize: 12, color: Colors.textPrimary, fontWeight: '700' },
-  actMeta: { fontSize: 11, color: Colors.textTertiary, marginTop: 2 },
+  rankRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.md },
+  rankNum: { width: 18, fontSize: 13, fontWeight: '700', color: Colors.textTertiary, textAlign: 'center', fontVariant: ['tabular-nums'] },
+  rankNumMine: { color: Colors.primary },
+  rankMain: { flex: 1, gap: 4 },
+  rankNameRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
+  rankName: { flex: 1, fontSize: 13, color: Colors.textPrimary },
+  rankNameMine: { fontWeight: '800', color: Colors.primary },
+  rankValue: { fontSize: 13, fontWeight: '700', color: Colors.textSecondary, fontVariant: ['tabular-nums'], marginLeft: Spacing.sm },
+  rankValueMine: { color: Colors.textPrimary },
 });
