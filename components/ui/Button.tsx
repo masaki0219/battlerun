@@ -15,20 +15,21 @@ interface Props {
   style?: ViewStyle;
 }
 
+// このアプリの主 CTA はオレンジ（accent）。primary=accent に統一
 const BG: Record<Variant, string> = {
-  primary: Colors.primary,
-  secondary: Colors.primaryLight,
+  primary: Colors.accent,
+  secondary: Colors.surface,
   ghost: 'transparent',
   danger: Colors.error,
   accent: Colors.accent,
 };
 
 const FG: Record<Variant, string> = {
-  primary: Colors.textOnPrimary,
-  secondary: Colors.primaryDark,
+  primary: Colors.textOnAccent,
+  secondary: Colors.textPrimary,
   ghost: Colors.textSecondary,
   danger: Colors.textOnPrimary,
-  accent: Colors.textOnPrimary,
+  accent: Colors.textOnAccent,
 };
 
 const FONT: Record<Size, number> = {
@@ -41,7 +42,7 @@ export function Button({ label, onPress, variant = 'primary', size = 'md', disab
   const height = ComponentSize.buttonHeight[size];
   const bg = BG[variant];
   const color = FG[variant];
-  const border = variant === 'ghost' ? { borderWidth: 1, borderColor: Colors.border } : null;
+  const border = variant === 'secondary' ? { borderWidth: 1, borderColor: Colors.border } : null;
 
   return (
     <Pressable

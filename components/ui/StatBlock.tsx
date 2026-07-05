@@ -1,10 +1,9 @@
 import React from 'react';
 import { View, Text, StyleSheet, ViewStyle, StyleProp } from 'react-native';
-import { Colors, TextStyles } from '../../design_tokens';
-import { MonoLabel } from './MonoLabel';
+import { Colors, DarkColors, TextStyles } from '../../design_tokens';
 
 interface Props {
-  /** 上の等幅ラベル */
+  /** 上のラベル */
   label: string;
   /** 大数値本体 */
   value: string | number;
@@ -22,19 +21,19 @@ interface Props {
 }
 
 /**
- * ラベル＋大数値＋単位の縦組み。record HUD・stats・result で共通利用。
- * 数値は必ず tabular-nums で桁を揃える。
+ * ラベル（12, textSecondary）＋大数値（tabular-nums）＋単位の縦組み。
+ * stats・record HUD・result・profile で共通利用。数値は必ず桁が揃う。
+ * ライト画面では等幅ラベルを使わない（MonoLabel はダーク専用）。
  */
 export function StatBlock({
   label, value, unit, hero, dark, valueColor, labelColor, align = 'flex-start', style,
 }: Props) {
-  const textColor = valueColor ?? (dark ? Colors.textOnPrimary : Colors.textPrimary);
-  const subColor = dark ? Colors.textOnPrimary : Colors.textSecondary;
+  const textColor = valueColor ?? (dark ? DarkColors.textPrimary : Colors.textPrimary);
+  const subColor = dark ? DarkColors.textSecondary : Colors.textSecondary;
+  const lblColor = labelColor ?? (dark ? DarkColors.textSecondary : Colors.textSecondary);
   return (
     <View style={[{ alignItems: align }, style]}>
-      <MonoLabel color={labelColor ?? (dark ? Colors.primaryBright : Colors.textTertiary)} size={9}>
-        {label}
-      </MonoLabel>
+      <Text style={[styles.label, { color: lblColor }]}>{label}</Text>
       <View style={styles.valueRow}>
         <Text
           style={[
@@ -55,13 +54,17 @@ export function StatBlock({
 }
 
 const styles = StyleSheet.create({
+  label: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
   valueRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
     marginTop: 4,
   },
   unit: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     marginLeft: 3,
   },

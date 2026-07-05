@@ -1,10 +1,9 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { Colors, Spacing } from '../../design_tokens';
-import { MonoLabel } from './MonoLabel';
+import { Colors, DarkColors, Spacing, TextStyles } from '../../design_tokens';
 
 interface Props {
-  /** 左側の等幅ラベル（例: "BATTLERUN / 記録"） */
+  /** 左側の見出しテキスト（例: "今週の走り"） */
   label: string;
   labelColor?: string;
   /** 右側アクションのテキスト（例: "すべて見る"） */
@@ -15,17 +14,23 @@ interface Props {
 }
 
 /**
- * セクション見出しの統一。左に MonoLabel、任意で右にテキストアクション。
+ * ライト画面のセクション見出し。左 TextStyles.sectionTitle、任意で右にアクション。
+ * MonoLabel をライト画面で使っていた箇所はすべてこれに置換する。
  */
 export function SectionHeader({ label, labelColor, actionLabel, onActionPress, dark }: Props) {
   return (
     <View style={styles.row}>
-      <MonoLabel color={labelColor ?? (dark ? Colors.primaryBright : Colors.textTertiary)} size={10}>
+      <Text
+        style={[
+          TextStyles.sectionTitle,
+          { color: labelColor ?? (dark ? DarkColors.textSecondary : Colors.textSecondary) },
+        ]}
+      >
         {label}
-      </MonoLabel>
+      </Text>
       {actionLabel ? (
         <TouchableOpacity onPress={onActionPress} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={[styles.action, { color: dark ? Colors.primaryBright : Colors.primary }]}>
+          <Text style={[styles.action, { color: dark ? DarkColors.primary : Colors.primary }]}>
             {actionLabel}
           </Text>
         </TouchableOpacity>

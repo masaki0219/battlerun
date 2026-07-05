@@ -2,7 +2,7 @@ import React from 'react';
 import { View, StyleSheet, ViewStyle, StyleProp } from 'react-native';
 import { Colors, DarkColors, BorderRadius, Shadow, Spacing, ComponentSize } from '../../design_tokens';
 
-type Variant = 'default' | 'outlined' | 'dark';
+type Variant = 'default' | 'outlined' | 'dark' | 'highlight';
 
 interface Props {
   children: React.ReactNode;
@@ -44,5 +44,10 @@ const styles = StyleSheet.create({
     backgroundColor: DarkColors.surface,
     borderWidth: 1,
     borderColor: DarkColors.line,
+  },
+  highlight: {
+    backgroundColor: Colors.accentLight,
+    borderWidth: 1,
+    borderColor: Colors.accent,
   },
 });
