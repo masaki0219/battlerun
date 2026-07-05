@@ -14,9 +14,12 @@ import { useAuthStore } from '../../../stores/authStore';
 import { useBattleStore } from '../../../stores/battleStore';
 import { isPro } from '../../../lib/pro';
 import type { Battle, CategoryStats } from '../../../types';
-import { Colors, DarkColors, BorderRadius } from '../../../design_tokens';
+import { Colors, DarkColors, Spacing, BorderRadius } from '../../../design_tokens';
 import { MonoLabel } from '../../../components/ui/MonoLabel';
 import { RankBadge } from '../../../components/ui/RankBadge';
+import { VersusGauge } from '../../../components/viz/VersusGauge';
+import { ProgressRing } from '../../../components/viz/ProgressRing';
+import { contributionShare } from '../../../utils/displayStats';
 
 interface ParticipantInfo {
   userId: string;
@@ -143,6 +146,13 @@ export default function BattleResultScreen() {
   const myTeamIdx = sorted.findIndex((s) => s.categoryId === myCatId);
   const myTeam = myTeamIdx >= 0 ? sorted[myTeamIdx] : null;
   const myRank = myTeamIdx >= 0 ? myTeamIdx + 1 : null;
+  const valOf = (st: CategoryStats) => (rankType === 'total' ? st.totalDistanceKm : st.avgDistanceKm);
+
+  // 最終 VS ゲージ用（自陣営 vs 直上、未参加なら上位2陣営）
+  const rival = myTeamIdx > 0 ? sorted[myTeamIdx - 1] : myTeamIdx === 0 ? sorted[1] : undefined;
+  const gaugeLeft = myTeam ?? sorted[0];
+  const gaugeRight = myTeam ? rival : sorted[1];
+  const myShare = myTeam ? contributionShare(myStats.totalKm, myTeam.totalDistanceKm) : 0;
 
   const startDate = new Date(localBattle.startAt).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' });
   const endDate = new Date(localBattle.endAt).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' });
@@ -193,6 +203,21 @@ export default function BattleResultScreen() {
       </View>
 
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+        {/* ── 最終 VS ゲージ（ダーク演出） ── */}
+        {!loading && gaugeLeft && gaugeRight && (
+          <View style={s.finalVs}>
+            <MonoLabel color={DarkColors.textTertiary} size={9}>最終結果 / FINAL</MonoLabel>
+            <View style={{ marginTop: 12 }}>
+              <VersusGauge
+                left={{ label: gaugeLeft.label, km: valOf(gaugeLeft), isMine: !!myTeam }}
+                right={{ label: gaugeRight.label, km: valOf(gaugeRight), isMine: false }}
+                size="lg"
+                dark
+              />
+            </View>
+          </View>
+        )}
+
         {/* ── Hero ── */}
         <View style={s.heroCard}>
           <MonoLabel color={Colors.textTertiary} size={9}>BATTLE RESULT / バトル終了</MonoLabel>
@@ -240,6 +265,16 @@ export default function BattleResultScreen() {
         <View style={s.section}>
           <MonoLabel color={Colors.textTertiary} size={9}>個人成績 / MY STATS</MonoLabel>
           <View style={s.statsCard}>
+            {myTeam && (
+              <View style={s.contribRow}>
+                <ProgressRing progress={myShare} size={64} strokeWidth={8}>
+                  <Text style={s.contribPct}>{Math.round(myShare * 100)}%</Text>
+                </ProgressRing>
+                <Text style={s.contribText}>
+                  あなたは陣営の{'\n'}<Text style={s.contribBold}>{Math.round(myShare * 100)}%</Text> を走った
+                </Text>
+              </View>
+            )}
             <View style={s.statRow}>
               <View style={s.statItem}>
                 <MonoLabel color={Colors.textTertiary} size={8}>貢献距離</MonoLabel>
@@ -327,7 +362,7 @@ export default function BattleResultScreen() {
             )}
           </View>
           <TouchableOpacity style={s.shareBtn} onPress={handleShare} activeOpacity={0.85}>
-            <Ionicons name="share-outline" size={18} color={Colors.textOnPrimary} />
+            <Ionicons name="share-outline" size={18} color={Colors.textOnAccent} />
             <Text style={s.shareBtnText}>結果をシェアする</Text>
           </TouchableOpacity>
           {!userIsPro && (
@@ -451,6 +486,32 @@ const s = StyleSheet.create({
   statVal: { fontSize: 32, fontWeight: '800', color: Colors.textPrimary, letterSpacing: -1, marginTop: 4, fontVariant: ['tabular-nums'] },
   statUnit: { fontSize: 13, color: Colors.textTertiary, fontWeight: '400' },
 
+  // Final VS (dark)
+  finalVs: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
+    backgroundColor: DarkColors.surface,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: DarkColors.line,
+    padding: 16,
+  },
+
+  // Contribution ring
+  contribRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.lg,
+    marginBottom: Spacing.md,
+    paddingBottom: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
+  },
+  contribPct: { fontSize: 15, fontWeight: '800', color: Colors.textPrimary, fontVariant: ['tabular-nums'] },
+  contribText: { flex: 1, fontSize: 14, color: Colors.textSecondary, lineHeight: 20 },
+  contribBold: { fontWeight: '900', color: Colors.textPrimary, fontSize: 18 },
+
   // Rank card
   rankCard: {
     backgroundColor: Colors.surface,
@@ -503,7 +564,7 @@ const s = StyleSheet.create({
     paddingVertical: 16,
     marginTop: 12,
   },
-  shareBtnText: { fontSize: 15, fontWeight: '800', color: Colors.textOnPrimary },
+  shareBtnText: { fontSize: 15, fontWeight: '800', color: Colors.textOnAccent },
   proHint: { textAlign: 'center', fontSize: 11, color: Colors.primary, fontWeight: '600', marginTop: 8 },
 
   // Next actions
