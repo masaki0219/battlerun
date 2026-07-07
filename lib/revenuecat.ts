@@ -5,7 +5,7 @@
  *    EAS カスタムビルドが必要。
  *    EXPO_PUBLIC_REVENUECAT_API_KEY を EAS 環境変数に設定すること。
  *
- * セットアップ手順は MANUAL_SETUP_GUIDE.md を参照。
+ * セットアップ手順は README.md を参照。
  */
 
 // トップレベルで import するとネイティブモジュール未登録時にクラッシュするため
