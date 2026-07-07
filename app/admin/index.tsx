@@ -67,7 +67,9 @@ export default function AdminIndexScreen() {
     const next = battle.status === 'active' ? 'finished' : 'active';
     Alert.alert(
       `ステータスを「${next === 'active' ? '開催中' : '終了'}」に変更`,
-      '変更しますか？',
+      next === 'finished'
+        ? '終了すると称号付与と終了通知が自動で行われます。変更しますか？'
+        : '変更しますか？',
       [
         { text: 'キャンセル', style: 'cancel' },
         {

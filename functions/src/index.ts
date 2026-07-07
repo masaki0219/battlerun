@@ -6,6 +6,7 @@ export { aggregateActivity } from './aggregateActivity';
 export { participantCounter } from './participantCounter';
 export { revenuecatWebhook } from './revenuecatWebhook';
 export { battleStatusScheduler } from './battleScheduler';
+export { onBattleFinished } from './onBattleFinished';
 export { rankChangeScheduler } from './rankChangeScheduler';
 export { onReactionCreated, onUserTitlesUpdated } from './notifications';
 export { validateBattleTitleOnCreate } from './battleTitleValidation';

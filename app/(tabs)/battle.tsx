@@ -414,14 +414,11 @@ export default function BattleScreen() {
 
     setCreating(true);
     try {
-      const resolvedCats = validCats.map((c, i) => ({
-        id: c.label.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') || `cat${i}`,
-        label: c.label.trim(),
-      }));
       await createBattle({
         title: createTitle.trim(),
         description: createDesc.trim(),
-        categories: resolvedCats,
+        // ID生成は createBattle 側に集約。ラベルのみ渡す（id は無視される）。
+        categories: validCats.map((c) => ({ id: '', label: c.label.trim() })),
         rankingType: createRankingType,
         startAt: startDate,
         endAt: endDate,

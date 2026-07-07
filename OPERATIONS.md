@@ -91,8 +91,9 @@ SNS化・健康アプリ化はしない方針のため、テーマは軽い遊�
 
 ### 4-1. 称号が付与されなかった場合（`scripts/award-titles.ts`）
 
-`battleStatusScheduler`（60分毎のスケジューラ）が何らかの理由で実行されず、
-バトル終了時に称号が付与されなかった場合の手動復旧スクリプト。
+`battleStatusScheduler`（60分毎のスケジューラ）と `onBattleFinished`（status→finished
+トリガー）の**両方が失敗した**場合の緊急復旧スクリプト。通常運用では自動終了・手動終了の
+いずれも `finishBattle` が称号付与・通知を行うため、このスクリプトを実行する必要はない。
 
 ```bash
 # 初回のみ
@@ -114,14 +115,16 @@ GOOGLE_APPLICATION_CREDENTIALS=./service-account.json \
 ### 4-2. admin画面での status 手動切替の注意点
 
 `app/admin/index.tsx` の「終了にする」ボタンは `battles/{id}.status` を
-直接 `updateDoc` で `finished` に書き換えるだけであり、
-**`battleStatusScheduler` の称号付与ロジックは発火しない**
-（スケジューラは cron 実行時に `endAt` を過ぎた `active` バトルを自分でクエリして
-処理するものであり、Firestoreの書き込みをトリガーにした関数ではないため）。
+直接 `updateDoc` で `finished` に書き換えるだけだが、この書き込みをトリガーに
+`onBattleFinished`（Cloud Functions）が発火し、`finishBattle` が
+**スケジューラと同一ロジックで称号付与・終了通知を自動で行う**。
 
-そのため、admin画面から手動でバトルを終了させた場合は、
-**直後に `scripts/award-titles.ts` を実行して称号付与を行うこと。**
-実行を忘れると、参加者に称号が付与されないまま気づかれずに残ってしまう。
+そのため、admin画面から手動でバトルを終了させても、
+**`scripts/award-titles.ts` を手動実行する必要はない。**
+（4-1 の通り、スケジューラとトリガーの両方が失敗した場合の緊急復旧用に位置づけを下げた。）
+
+冪等性は `battle.titlesAwardedAt` で担保されており、スケジューラの自動終了 write に
+対してトリガーが発火しても即 no-op になるため、称号・通知が二重になることはない。
 
 ### 4-3. participantCount / avgDistanceKm がずれていると思われる場合
 

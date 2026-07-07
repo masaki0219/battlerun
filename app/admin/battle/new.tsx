@@ -206,15 +206,11 @@ export default function NewPublicBattleScreen() {
         resolvedSeasonId = seasonRef.id;
       }
 
-      const resolvedCategories: Category[] = validCats.map((c, i) => ({
-        id: c.label.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') || `cat${i}`,
-        label: c.label.trim(),
-      }));
-
       await createBattle({
         title: title.trim(),
         description: description.trim(),
-        categories: resolvedCategories,
+        // ID生成は createBattle 側に集約。ラベルのみ渡す（id は無視される）。
+        categories: validCats.map((c) => ({ id: '', label: c.label.trim() })),
         rankingType,
         startAt: startDate,
         endAt: endDate,

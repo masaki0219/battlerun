@@ -37,9 +37,24 @@ interface BattleStore {
   getActiveBattleIds: () => string[];
 }
 
-function generateCategoryId(label: string): string {
-  const base = label.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '').slice(0, 20);
-  return base || `cat_${Date.now()}`;
+// ラベルからカテゴリIDを生成する。日本語のみのラベルは英数字が残らないため
+// フォールバックで cat_{index} を用い、重複IDは連番サフィックスで回避する。
+function resolveCategoryIds(categories: { label: string }[]): Category[] {
+  const seen = new Set<string>();
+  return categories.map((cat, i) => {
+    const base =
+      cat.label
+        .toLowerCase()
+        .trim()
+        .replace(/\s+/g, '_')
+        .replace(/[^a-z0-9_]/g, '')
+        .slice(0, 20) || `cat_${i}`;
+    let id = base;
+    let n = 1;
+    while (seen.has(id)) id = `${base}_${n++}`;
+    seen.add(id);
+    return { id, label: cat.label.trim() };
+  });
 }
 
 // 個人戦バトル（mode: 'individual'）は1.0で廃止。
@@ -234,12 +249,12 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
 
     const inviteCode = isPublic ? null : Math.random().toString(36).substring(2, 8).toUpperCase();
 
-    // 区分IDを確定（重複ラベルには連番を付与）
-    const resolvedCategories: Category[] = categories.map((cat, i) => ({
-      id: cat.id || generateCategoryId(`${cat.label}_${i}`),
-      label: cat.label,
-    }));
+    // 区分IDを確定（ラベルから毎回生成し、重複ラベルには連番を付与）。
+    // 呼び出し側が渡した cat.id は無視する。
+    const resolvedCategories = resolveCategoryIds(categories);
 
+    // 開始日が未来なら upcoming で作成し、スケジューラの upcoming→active に委ねる。
+    const status = startAt.getTime() <= Date.now() ? 'active' : 'upcoming';
     const battleRef = await addDoc(collection(db, 'battles'), {
       type: isPublic ? 'public' : 'private',
       seasonId: seasonId ?? null,
@@ -249,7 +264,7 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
       rankingType,
       startAt: Timestamp.fromDate(startAt),
       endAt: Timestamp.fromDate(endAt),
-      status: 'active',
+      status,
       createdBy: userId,
       inviteCode,
       createdAt: Timestamp.now(),
