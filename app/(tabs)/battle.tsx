@@ -670,6 +670,7 @@ export default function BattleScreen() {
                     Alert.alert('コピーしました', `招待コード: ${battle.inviteCode}`);
                   }}
                   activeOpacity={0.7}
+                  hitSlop={{ top: 12, bottom: 12, left: 8, right: 12 }}
                 >
                   <Text style={styles.inviteLabel}>招待コード: </Text>
                   <Text style={styles.inviteCode}>{battle.inviteCode}</Text>
