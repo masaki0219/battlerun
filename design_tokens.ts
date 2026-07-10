@@ -11,14 +11,14 @@ import { Platform, TextStyle } from 'react-native';
 // ============================================================
 
 export const Colors = {
-  // ブランドカラー（メインの緑系ティール）
-  primary: '#00C49A',        // 明るい背景上のブランド色・ボタン・プログレスバー
-  primaryBright: '#00D9A3',  // ダーク背景上で使う明るいティール
+  // ブランドカラー（メインの緑系ティール。BR世代の #00D9A3 に一本化）
+  primary: '#00D9A3',        // 明るい背景上のブランド色・ボタン・プログレスバー
+  primaryBright: '#00D9A3',  // 後方互換（primary と同値。ダーク背景上のティール）
   primaryLight: '#E6FAF6',   // 背景ハイライト・選択状態
-  primaryDark: '#00A07D',    // プレスド状態・深いティール
+  primaryDark: '#00A07D',    // 白背景上の小さなテキスト色・プレスド状態
 
-  // アクセントカラー（ランキング・競争要素）
-  accent: '#FF6B35',         // 1位・強調・UP矢印（#FF5C2B もこれに統一）
+  // アクセントカラー（ランキング・競争要素。BR世代の #FF5C2B に一本化）
+  accent: '#FF5C2B',         // 1位・強調・UP矢印
   accentDark: '#E0431A',     // アクセントのプレスド状態
   accentLight: '#FFEDE5',    // accent の淡背景（チップ・バッジ・強調カード）
   accentYellow: '#FFB800',   // 王冠アイコン・ゴールド・称号
@@ -27,7 +27,7 @@ export const Colors = {
   pro: '#7C3AED',            // Pro バッジ・特別感
 
   // セマンティックカラー
-  success: '#00C49A',        // 達成・完了（primaryと同じ）
+  success: '#00D9A3',        // 達成・完了（primaryと同じ）
   warning: '#FFB800',
   error: '#EF4444',
   info: '#4A90E2',
@@ -54,11 +54,16 @@ export const Colors = {
   rank1: '#FFB800',          // 1位 ゴールド
   rank2: '#9CA3AF',          // 2位 シルバー
   rank3: '#CD7F32',          // 3位 ブロンズ
+  // 金銀銅の淡背景（RankBadge の 1〜3 位バッジ地）
+  rank1Bg: '#FFF4D6',
+  rank2Bg: '#F1F3F5',
+  rank3Bg: '#F6E8DC',
 
   // 陣営バー用。自陣営は常に primary、敵陣営の筆頭は accent（VS の緊張感を色で作る）
+  // 7 陣営目以降は各利用箇所で配列を循環させる
   teamColors: [
-    '#00C49A',  // 自陣営（primary）
-    '#FF6B35',  // 敵筆頭（accent）
+    '#00D9A3',  // 自陣営（primary）
+    '#FF5C2B',  // 敵筆頭（accent）
     '#4A90E2',
     '#9B59B6',
     '#F59E0B',
@@ -72,13 +77,13 @@ export const Colors = {
     '#FFC23C',
     '#9B5CFF',
     '#00D9A3',
-    '#FF6B35',
+    '#FF5C2B',
   ],
 
   // チャート用（WeeklyBarChart）
-  chartBarActive: '#00C49A',    // データありの日
+  chartBarActive: '#00D9A3',    // データありの日
   chartBarInactive: '#E5E7EB',  // データ 0 の日・プレースホルダー
-  chartToday: '#FF6B35',        // 今日のバーだけアクセント
+  chartToday: '#FF5C2B',        // 今日のバーだけアクセント
 } as const;
 
 // ============================================================
@@ -96,7 +101,7 @@ export const DarkColors = {
   textSecondary: 'rgba(255,255,255,0.68)',  // サブ文字（旧 BR.paper2）
   textTertiary: 'rgba(255,255,255,0.40)',   // 補足文字（旧 BR.paper3）
   primary: '#00D9A3',                       // ダーク上の明るいティール
-  accent: '#FF6B35',                        // アクセント（#FF5C2B から統一）
+  accent: '#FF5C2B',                        // アクセント（ブランド統一色）
   stop: '#FF3D58',                          // STOP ボタン
 } as const;
 
