@@ -6,19 +6,19 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
-import { onSnapshot, collection, getDoc, doc } from 'firebase/firestore';
+import { getDoc, doc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import { useBattleStore } from '../../stores/battleStore';
 import { useUnreadNotifications } from '../../hooks/useUnreadNotifications';
 import { useRecentActivities } from '../../hooks/useRecentActivities';
+import { useBattleCategoryStats } from '../../hooks/useBattleCategoryStats';
 import { isPro } from '../../lib/pro';
 import { scheduleBattleEndNotification, scheduleBattleEnd1hNotification } from '../../lib/notifications';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { VersusGauge } from '../../components/viz/VersusGauge';
 import { WeeklyBarChart } from '../../components/viz/WeeklyBarChart';
 import { StreakChip } from '../../components/viz/StreakChip';
 import { CategorySelectModal } from '../../components/battle/CategorySelectModal';
@@ -27,9 +27,10 @@ import { PublicBattleCard } from '../../components/battle/PublicBattleCard';
 import { PrivateBattleCard } from '../../components/battle/PrivateBattleCard';
 import { PrivateBattleCreateForm } from '../../components/battle/PrivateBattleCreateForm';
 import { InviteCodeJoinView } from '../../components/battle/InviteCodeJoinView';
-import { weeklyBuckets, streakDays, sortedStats, statValue } from '../../utils/displayStats';
+import { JoinRecommendationCard } from '../../components/battle/JoinRecommendationCard';
+import { weeklyBuckets, streakDays } from '../../utils/displayStats';
 import { Colors, Typography, Spacing, BorderRadius, Shadow, TextStyles } from '../../design_tokens';
-import type { Battle, CategoryStats, Category } from '../../types';
+import type { Battle, Category, CategoryStats } from '../../types';
 
 type Tab = 'public' | 'private';
 type PrivateView = 'list' | 'create' | 'join_code' | 'join_select';
@@ -48,9 +49,13 @@ export default function BattleScreen() {
   } = useBattleStore();
 
   const [activeTab, setActiveTab] = useState<Tab>('public');
-  const [categoryStatsMap, setCategoryStatsMap] = useState<Record<string, CategoryStats[]>>({});
   const [joiningBattleId, setJoiningBattleId] = useState<string | null>(null);
   const [localLoading, setLocalLoading] = useState(true);
+
+  // 各バトルの陣営統計をリアルタイム購読（public / private を同一フックで共通化）
+  const publicStatsMap = useBattleCategoryStats(publicBattles);
+  const privateStatsMap = useBattleCategoryStats(privateBattles);
+  const categoryStatsMap: Record<string, CategoryStats[]> = { ...publicStatsMap, ...privateStatsMap };
 
   // 区分選択モーダル
   const [categoryModalBattle, setCategoryModalBattle] = useState<Battle | null>(null);
@@ -139,52 +144,6 @@ export default function BattleScreen() {
         return count < minCount ? cat : min;
       }, null)
     : null;
-
-  // ── パブリックランの category_stats をリアルタイム購読 ──────
-  useEffect(() => {
-    if (!user || publicBattles.length === 0) return;
-    const unsubs = publicBattles.map((battle) => {
-      const colRef = collection(db, 'battles', battle.id, 'category_stats');
-      return onSnapshot(colRef, (snap) => {
-        const stats: CategoryStats[] = snap.docs.map((d) => {
-          const catId = d.id;
-          const label = battle.categories.find((c) => c.id === catId)?.label ?? catId;
-          return {
-            categoryId: catId,
-            label,
-            totalDistanceKm: (d.data()['totalDistanceKm'] as number) ?? 0,
-            avgDistanceKm: (d.data()['avgDistanceKm'] as number) ?? 0,
-            participantCount: (d.data()['participantCount'] as number) ?? 0,
-          };
-        });
-        setCategoryStatsMap((prev) => ({ ...prev, [battle.id]: stats }));
-      });
-    });
-    return () => unsubs.forEach((u) => u());
-  }, [publicBattles]);
-
-  // ── 友達チャレンジの category_stats もリアルタイム購読 ────
-  useEffect(() => {
-    if (!user || privateBattles.length === 0) return;
-    const unsubs = privateBattles.map((battle) => {
-      const colRef = collection(db, 'battles', battle.id, 'category_stats');
-      return onSnapshot(colRef, (snap) => {
-        const stats: CategoryStats[] = snap.docs.map((d) => {
-          const catId = d.id;
-          const label = battle.categories.find((c) => c.id === catId)?.label ?? catId;
-          return {
-            categoryId: catId,
-            label,
-            totalDistanceKm: (d.data()['totalDistanceKm'] as number) ?? 0,
-            avgDistanceKm: (d.data()['avgDistanceKm'] as number) ?? 0,
-            participantCount: (d.data()['participantCount'] as number) ?? 0,
-          };
-        });
-        setCategoryStatsMap((prev) => ({ ...prev, [battle.id]: stats }));
-      });
-    });
-    return () => unsubs.forEach((u) => u());
-  }, [privateBattles]);
 
   // ── 自分の参加者個人距離を取得 ────────────────────────────
   useEffect(() => {
@@ -415,45 +374,6 @@ export default function BattleScreen() {
     );
   }
 
-  function renderJoinRecommendationCard() {
-    if (!recommendedBattle) return null;
-    const sorted = sortedStats(recommendedStats, recommendedBattle.rankingType);
-    const top = sorted[0];
-    const second = sorted[1];
-    const hasVs = !!top && !!second;
-    return (
-      <TouchableOpacity activeOpacity={0.9} onPress={() => setCategoryModalBattle(recommendedBattle)}>
-        <Card variant="highlight" style={styles.card}>
-          <View style={styles.recommendHeader}>
-            <Ionicons name="flash" size={16} color={Colors.accent} />
-            <Text style={styles.recommendHeaderText}>開催中の作戦に参加しよう</Text>
-          </View>
-          <Text style={styles.recommendTitle} numberOfLines={1}>{recommendedBattle.title}</Text>
-          {hasVs && (
-            <View style={{ marginTop: Spacing.md }}>
-              <VersusGauge
-                left={{ label: top.label, km: statValue(top, recommendedBattle.rankingType), isMine: false }}
-                right={{ label: second.label, km: statValue(second, recommendedBattle.rankingType), isMine: false }}
-                size="md"
-              />
-            </View>
-          )}
-          {recommendedShortageCategory && (
-            <View style={styles.recommendShortageRow}>
-              <Text style={styles.recommendShortageText}>
-                「{recommendedShortageCategory.label}」は援軍募集中！
-              </Text>
-            </View>
-          )}
-          <View style={styles.recommendCta}>
-            <Text style={styles.recommendCtaText}>区分を選んで参加する</Text>
-            <Ionicons name="chevron-forward" size={16} color={Colors.accent} />
-          </View>
-        </Card>
-      </TouchableOpacity>
-    );
-  }
-
   // ── State A: 参加中レイアウト ──────────────────────────────
   function renderParticipatingView() {
     return (
@@ -551,7 +471,12 @@ export default function BattleScreen() {
     return (
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         {recommendedBattle ? (
-          renderJoinRecommendationCard()
+          <JoinRecommendationCard
+            battle={recommendedBattle}
+            stats={recommendedStats}
+            shortageCategory={recommendedShortageCategory}
+            onPress={() => setCategoryModalBattle(recommendedBattle)}
+          />
         ) : (
           <View style={styles.emptyStateCard}>
             <Ionicons name="trophy-outline" size={40} color={Colors.textTertiary} />
@@ -730,31 +655,6 @@ const styles = StyleSheet.create({
   emptyStateTitle: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.semibold, color: Colors.textSecondary },
   emptyStateHint: { fontSize: Typography.fontSize.sm, color: Colors.textTertiary, textAlign: 'center' },
   sectionLabel: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
-
-  // Day-0アクティベーション: 参加おすすめカード（highlight カード内）
-  recommendHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
-  recommendHeaderText: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.accentDark },
-  recommendTitle: { fontSize: Typography.fontSize.xl, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary, marginTop: Spacing.xs },
-  recommendShortageRow: {
-    alignSelf: 'flex-start',
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-    marginTop: Spacing.md,
-  },
-  recommendShortageText: { fontSize: Typography.fontSize.xs, fontWeight: Typography.fontWeight.bold, color: Colors.accent },
-  recommendCta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.xs,
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.sm,
-    marginTop: Spacing.md,
-  },
-  recommendCtaText: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.accent },
 
   // State B のインライン招待コード入力カード
   formTitle: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.lg },
