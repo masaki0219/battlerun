@@ -324,7 +324,7 @@ export default function ProfileScreen() {
             <MonoLabel color={Colors.accentYellow} size={10}>BATTLERUN PRO</MonoLabel>
             <Text style={styles.proUpsellTitle}>Proにアップグレード</Text>
             <Text style={styles.freeDescDark}>
-              プライベートチャレンジの作成が無制限になり、バトルテーマや透かしなし共有が使えます。
+              友達チャレンジの作成が無制限になり、バトルテーマや透かしなし共有が使えます。
             </Text>
             {proPackageInfo && (
               <Text style={styles.priceTextDark}>

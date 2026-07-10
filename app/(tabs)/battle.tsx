@@ -884,7 +884,7 @@ export default function BattleScreen() {
                   onPress={() => {
                     if (!userIsPro) {
                       Alert.alert('Proプランが必要です',
-                        'プライベートチャレンジの作成にはProプランが必要です。\nプロフィール画面からアップグレードできます。');
+                        '友達チャレンジの作成にはProプランが必要です。\nプロフィール画面からアップグレードできます。');
                       return;
                     }
                     setPrivateView('create');
@@ -1001,7 +1001,7 @@ export default function BattleScreen() {
             onPress={() => {
               if (!userIsPro) {
                 Alert.alert('Proプランが必要です',
-                  'プライベートチャレンジの作成にはProプランが必要です。\nプロフィール画面からアップグレードできます。');
+                  '友達チャレンジの作成にはProプランが必要です。\nプロフィール画面からアップグレードできます。');
                 return;
               }
               setPrivateView('create');

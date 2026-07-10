@@ -14,9 +14,11 @@ import { MonoLabel } from '../../components/ui/MonoLabel';
 import { StatBlock } from '../../components/ui/StatBlock';
 import { ProgressBar } from '../../components/ui/ProgressBar';
 import { ListRow } from '../../components/ui/ListRow';
+import { RankBadge } from '../../components/ui/RankBadge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { VersusGauge } from '../../components/viz/VersusGauge';
 import { dailyPaceToOvertake } from '../../utils/displayStats';
+import { useBattleParticipants } from '../../hooks/useBattleParticipants';
 import type { CategoryStats, Battle, Category } from '../../types';
 
 // ─── countdown helpers ─────────────────────────────────────────
@@ -55,6 +57,13 @@ export default function BattleDetailScreen() {
   const battle = battleFromStore ?? fetchedBattle;
   const membership = myMemberships.find((m) => m.battleId === id);
   const myCatId = membership?.categoryId ?? null;
+
+  // 個人戦（陣営が実質1つ以下）は陣営ランキングが成立しないため、参加者個人のランキングを表示する
+  const isIndividual = !!battle && battle.categories.length <= 1;
+  const { participants, loading: participantsLoading } = useBattleParticipants(id, {
+    enabled: isIndividual,
+    limit: 20,
+  });
 
   // ── store に存在しない場合の fallback fetch ────────────────
   useEffect(() => {
@@ -251,34 +260,62 @@ export default function BattleDetailScreen() {
           )}
         </View>
 
-        {/* ── 陣営ランキング（全件） ──────────────────────── */}
-        <View style={s.sectionCard}>
-          <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.md }]}>陣営ランキング</Text>
-          {loading && sorted.length === 0 ? (
-            <ActivityIndicator color={Colors.primary} style={{ marginVertical: 20 }} />
-          ) : sorted.length === 0 ? (
-            <EmptyState icon="flag-outline" title="まだ記録がありません" hint="最初のランで陣営に貢献しよう" />
-          ) : (
-            sorted.map((cat, i) => {
-              const isMine = cat.categoryId === myCatId;
-              const barColor = isMine ? Colors.primary : Colors.teamColors[Math.min(i, Colors.teamColors.length - 1)];
-              return (
-                <View key={cat.categoryId} style={s.rankRow}>
-                  <Text style={[s.rankNum, isMine && s.rankNumMine]}>{i + 1}</Text>
-                  <View style={s.rankMain}>
-                    <View style={s.rankNameRow}>
-                      <Text style={[s.rankName, isMine && s.rankNameMine]} numberOfLines={1}>
-                        {cat.label}{isMine ? ' （あなた）' : ''}
-                      </Text>
-                      <Text style={[s.rankValue, isMine && s.rankValueMine]}>{val(cat).toFixed(1)}km</Text>
-                    </View>
-                    <ProgressBar value={val(cat) / maxVal} color={barColor} height={8} />
+        {/* ── ランキング ──────────────────────────────────── */}
+        {isIndividual ? (
+          /* 個人戦: 参加者を距離降順で表示 */
+          <View style={s.sectionCard}>
+            <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.md }]}>ランキング</Text>
+            {participantsLoading && participants.length === 0 ? (
+              <ActivityIndicator color={Colors.primary} style={{ marginVertical: 20 }} />
+            ) : participants.length === 0 ? (
+              <EmptyState icon="flag-outline" title="まだ誰も走っていない" hint="一番乗りしよう" />
+            ) : (
+              participants.map((p, i) => {
+                const isMine = p.userId === user?.id;
+                return (
+                  <View key={p.userId} style={[s.partRow, i > 0 && s.partRowBorder, isMine && s.partRowMine]}>
+                    <RankBadge rank={i + 1} />
+                    <Text style={[s.partName, isMine && s.partNameMine]} numberOfLines={1}>
+                      {p.displayName}{isMine ? ' （あなた）' : ''}
+                    </Text>
+                    <Text style={[s.partKm, isMine && s.partKmMine]}>
+                      {p.totalDistanceKm.toFixed(1)}<Text style={s.partKmUnit}> km</Text>
+                    </Text>
                   </View>
-                </View>
-              );
-            })
-          )}
-        </View>
+                );
+              })
+            )}
+          </View>
+        ) : (
+          /* 陣営戦: category_stats を陣営バーで表示 */
+          <View style={s.sectionCard}>
+            <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.md }]}>陣営ランキング</Text>
+            {loading && sorted.length === 0 ? (
+              <ActivityIndicator color={Colors.primary} style={{ marginVertical: 20 }} />
+            ) : sorted.length === 0 ? (
+              <EmptyState icon="flag-outline" title="まだ記録がありません" hint="最初のランで陣営に貢献しよう" />
+            ) : (
+              sorted.map((cat, i) => {
+                const isMine = cat.categoryId === myCatId;
+                const barColor = isMine ? Colors.primary : Colors.teamColors[Math.min(i, Colors.teamColors.length - 1)];
+                return (
+                  <View key={cat.categoryId} style={s.rankRow}>
+                    <Text style={[s.rankNum, isMine && s.rankNumMine]}>{i + 1}</Text>
+                    <View style={s.rankMain}>
+                      <View style={s.rankNameRow}>
+                        <Text style={[s.rankName, isMine && s.rankNameMine]} numberOfLines={1}>
+                          {cat.label}{isMine ? ' （あなた）' : ''}
+                        </Text>
+                        <Text style={[s.rankValue, isMine && s.rankValueMine]}>{val(cat).toFixed(1)}km</Text>
+                      </View>
+                      <ProgressBar value={val(cat) / maxVal} color={barColor} height={8} />
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </View>
+        )}
 
         {/* ── 最近の活動 ──────────────────────────────────── */}
         {recentActivities.length > 0 && (
@@ -377,4 +414,14 @@ const s = StyleSheet.create({
   rankNameMine: { fontWeight: '800', color: Colors.primary },
   rankValue: { fontSize: 13, fontWeight: '700', color: Colors.textSecondary, fontVariant: ['tabular-nums'], marginLeft: Spacing.sm },
   rankValueMine: { color: Colors.textPrimary },
+
+  // 個人戦の参加者ランキング行
+  partRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.md },
+  partRowBorder: { borderTopWidth: 1, borderTopColor: Colors.borderLight },
+  partRowMine: { backgroundColor: Colors.primaryLight, borderRadius: BorderRadius.sm, paddingHorizontal: Spacing.sm },
+  partName: { flex: 1, fontSize: 14, color: Colors.textPrimary, fontWeight: '600' },
+  partNameMine: { color: Colors.primary, fontWeight: '900' },
+  partKm: { fontSize: 15, fontWeight: '700', color: Colors.textSecondary, letterSpacing: -0.3, fontVariant: ['tabular-nums'] },
+  partKmMine: { color: Colors.primary },
+  partKmUnit: { fontSize: 10, color: Colors.textTertiary, fontWeight: '400' },
 });

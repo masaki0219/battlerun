@@ -66,7 +66,7 @@ export default function StatsScreen() {
           {/* ── 統計グリッド 2×2 ── */}
           <View style={s.grid}>
             <View style={s.cell}>
-              <StatBlock label="累計距離" value={totalKm.toFixed(1)} unit="km" />
+              <StatBlock label="距離" value={totalKm.toFixed(1)} unit="km" />
               <Text style={s.cellNote}>直近50件</Text>
             </View>
             <View style={s.cell}>

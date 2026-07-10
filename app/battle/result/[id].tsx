@@ -20,13 +20,7 @@ import { RankBadge } from '../../../components/ui/RankBadge';
 import { VersusGauge } from '../../../components/viz/VersusGauge';
 import { ProgressRing } from '../../../components/viz/ProgressRing';
 import { contributionShare } from '../../../utils/displayStats';
-
-interface ParticipantInfo {
-  userId: string;
-  displayName: string;
-  totalDistanceKm: number;
-  activityCount: number | null; // サーバー未集計（0回)ならnull。'—'表示に使う
-}
+import { useBattleParticipants } from '../../../hooks/useBattleParticipants';
 
 function mapFirestoreToBattle(id: string, data: Record<string, unknown>): Battle {
   return {
@@ -52,13 +46,15 @@ export default function BattleResultScreen() {
   const userIsPro = isPro(user?.plan, proEntitlement);
 
   const [stats, setStats] = useState<CategoryStats[]>([]);
-  const [participants, setParticipants] = useState<ParticipantInfo[]>([]);
   const [myStats, setMyStats] = useState<{ totalKm: number; actCount: number | null }>({ totalKm: 0, actCount: null });
   const [loading, setLoading] = useState(true);
   const [localBattle, setLocalBattle] = useState<Battle | null>(
     () => [...publicBattles, ...privateBattles].find((b) => b.id === id) ?? null
   );
   const shareCardRef = useRef<View>(null);
+
+  // 参加者ランキング（貢献 TOP）。battle/[id] の個人戦表示と共用の read-only フック
+  const { participants } = useBattleParticipants(id, { enabled: !!localBattle, limit: 20 });
 
   const membership = myMemberships.find((m) => m.battleId === id);
   const myCatId = membership?.categoryId ?? null;
@@ -94,24 +90,7 @@ export default function BattleResultScreen() {
         }));
         setStats(s);
 
-        // participants (top 20)
-        // 記録回数は aggregateActivity がサーバー側で participants.activityCount に
-        // 加算済みのため、activities への個別クエリはせずそのまま読む
-        const partSnap = await getDocs(collection(db, 'battles', id, 'participants'));
-
-        const parts: ParticipantInfo[] = [];
-        await Promise.all(
-          partSnap.docs.slice(0, 20).map(async (d) => {
-            const uid = d.id;
-            const km = (d.data()['totalDistanceKm'] as number) ?? 0;
-            const activityCount = (d.data()['activityCount'] as number | undefined) ?? null;
-            const userSnap = await getDoc(doc(db, 'users', uid));
-            const name = (userSnap.data()?.['name'] as string) ?? 'メンバー';
-            parts.push({ userId: uid, displayName: name, totalDistanceKm: km, activityCount });
-          })
-        );
-        parts.sort((a, b) => b.totalDistanceKm - a.totalDistanceKm);
-        setParticipants(parts);
+        // participants（貢献ランキング）は useBattleParticipants フックで取得する
 
         // my stats
         if (user) {
