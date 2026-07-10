@@ -1,15 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  ActivityIndicator, Alert, TextInput, KeyboardAvoidingView,
-  Platform, Modal, Pressable, FlatList,
+  ActivityIndicator, Alert, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import { router } from 'expo-router';
-import {
-  onSnapshot, collection, getDoc, doc,
-} from 'firebase/firestore';
+import { onSnapshot, collection, getDoc, doc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
@@ -21,14 +18,16 @@ import { scheduleBattleEndNotification, scheduleBattleEnd1hNotification } from '
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { RankChip } from '../../components/ui/RankChip';
-import { StatBlock } from '../../components/ui/StatBlock';
-import { ProgressBar } from '../../components/ui/ProgressBar';
 import { VersusGauge } from '../../components/viz/VersusGauge';
-import { ProgressRing } from '../../components/viz/ProgressRing';
 import { WeeklyBarChart } from '../../components/viz/WeeklyBarChart';
 import { StreakChip } from '../../components/viz/StreakChip';
-import { weeklyBuckets, streakDays, dailyPaceToOvertake, contributionShare } from '../../utils/displayStats';
+import { CategorySelectModal } from '../../components/battle/CategorySelectModal';
+import { ActiveBattleHero } from '../../components/battle/ActiveBattleHero';
+import { PublicBattleCard } from '../../components/battle/PublicBattleCard';
+import { PrivateBattleCard } from '../../components/battle/PrivateBattleCard';
+import { PrivateBattleCreateForm } from '../../components/battle/PrivateBattleCreateForm';
+import { InviteCodeJoinView } from '../../components/battle/InviteCodeJoinView';
+import { weeklyBuckets, streakDays, sortedStats, statValue } from '../../utils/displayStats';
 import { Colors, Typography, Spacing, BorderRadius, Shadow, TextStyles } from '../../design_tokens';
 import type { Battle, CategoryStats, Category } from '../../types';
 
@@ -36,73 +35,7 @@ type Tab = 'public' | 'private';
 type PrivateView = 'list' | 'create' | 'join_code' | 'join_select';
 
 // ────────────────────────────────────────────────────────────────
-// 区分選択モーダル
-// ────────────────────────────────────────────────────────────────
-function CategorySelectModal({
-  visible,
-  battle,
-  onJoin,
-  onClose,
-  loading,
-}: {
-  visible: boolean;
-  battle: Battle | null;
-  onJoin: (categoryId: string) => void;
-  onClose: () => void;
-  loading: boolean;
-}) {
-  const [selected, setSelected] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (visible) setSelected(null);
-  }, [visible]);
-
-  if (!battle) return null;
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={modal.overlay} onPress={onClose}>
-        <Pressable style={modal.sheet} onPress={() => {}}>
-          <View style={modal.handle} />
-          <Text style={modal.title}>{battle.title}</Text>
-          <Text style={modal.subtitle}>参加する区分を選んでください</Text>
-
-          <FlatList
-            data={battle.categories}
-            keyExtractor={(c) => c.id}
-            renderItem={({ item }) => {
-              const isSelected = selected === item.id;
-              return (
-                <TouchableOpacity
-                  style={[modal.catBtn, isSelected && modal.catBtnSelected]}
-                  onPress={() => setSelected(item.id)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[modal.catLabel, isSelected && modal.catLabelSelected]}>
-                    {item.label}
-                  </Text>
-                  {isSelected && <Text style={modal.checkmark}>✓</Text>}
-                </TouchableOpacity>
-              );
-            }}
-            contentContainerStyle={{ gap: Spacing.sm, paddingBottom: Spacing.lg }}
-          />
-
-          <Button
-            label="参加する"
-            onPress={() => { if (selected) onJoin(selected); }}
-            loading={loading}
-            style={{ opacity: selected ? 1 : 0.4 }}
-          />
-          <Button label="キャンセル" onPress={onClose} variant="ghost" style={{ marginTop: Spacing.sm }} />
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
-
-// ────────────────────────────────────────────────────────────────
-// メイン画面
+// メイン画面（state・購読・handler を集約。表示は components/battle/* に委譲）
 // ────────────────────────────────────────────────────────────────
 export default function BattleScreen() {
   const { user, proEntitlement } = useAuthStore();
@@ -267,89 +200,9 @@ export default function BattleScreen() {
       .catch(() => {});
   }, [user?.id, myMemberships.length, publicBattles.length, privateBattles.length]);
 
-  // ── ヘルパー関数 ──────────────────────────────────────────
+  // ── ヘルパー ──────────────────────────────────────────────
   function myMembershipFor(battleId: string) {
     return myMemberships.find((m) => m.battleId === battleId);
-  }
-
-  function daysLeft(endAt: string): number | null {
-    if (!endAt) return null;
-    return Math.max(0, Math.ceil((new Date(endAt).getTime() - Date.now()) / 86400000));
-  }
-
-  function sortedStats(stats: CategoryStats[], rankingType: 'average' | 'total') {
-    return [...stats].sort((a, b) =>
-      rankingType === 'total'
-        ? b.totalDistanceKm - a.totalDistanceKm
-        : b.avgDistanceKm - a.avgDistanceKm,
-    );
-  }
-  function maxStat(stats: CategoryStats[], rankingType: 'average' | 'total') {
-    return Math.max(
-      ...stats.map((s) => (rankingType === 'total' ? s.totalDistanceKm : s.avgDistanceKm)),
-      0.01,
-    );
-  }
-  function statValue(s: CategoryStats, rankingType: 'average' | 'total') {
-    return rankingType === 'total' ? s.totalDistanceKm : s.avgDistanceKm;
-  }
-  function statLabel(s: CategoryStats, rankingType: 'average' | 'total') {
-    return rankingType === 'total'
-      ? `${s.totalDistanceKm.toFixed(1)}km`
-      : `${s.avgDistanceKm.toFixed(1)}km/人`;
-  }
-
-  /** 一覧カードの陣営ランキング行（上位3＋自陣営、残りは折りたたみ） */
-  function renderRankRows(battle: Battle, sorted: CategoryStats[], myCatId?: string | null) {
-    if (sorted.length === 0) return null;
-    const rt = battle.rankingType;
-    const maxVal = maxStat(sorted, rt);
-    const expanded = expandedBattles.has(battle.id);
-    const myIdx = sorted.findIndex((s) => s.categoryId === myCatId);
-    const showMyExtra = !expanded && myIdx >= 3;
-    const visible = expanded ? sorted : sorted.slice(0, 3);
-    const hiddenCount = sorted.length - 3;
-
-    const row = (s: CategoryStats, rank: number) => {
-      const isMine = s.categoryId === myCatId;
-      const barColor = isMine
-        ? Colors.primary
-        : Colors.teamColors[Math.min(rank - 1, Colors.teamColors.length - 1)];
-      return (
-        <View key={s.categoryId} style={styles.rankRow}>
-          <Text style={[styles.rankNum, isMine && styles.rankNumMine]}>{rank}</Text>
-          <Text style={[styles.rankName, isMine && styles.rankNameMine]} numberOfLines={1}>
-            {s.label}
-          </Text>
-          <View style={styles.rankBarArea}>
-            <ProgressBar value={maxVal > 0 ? statValue(s, rt) / maxVal : 0} color={barColor} height={8} />
-          </View>
-          <Text style={[styles.rankValue, isMine && styles.rankValueMine]}>{statLabel(s, rt)}</Text>
-        </View>
-      );
-    };
-
-    return (
-      <View style={styles.rankSection}>
-        {visible.map((s, i) => row(s, i + 1))}
-        {showMyExtra && (
-          <>
-            <Text style={styles.ellipsis}>⋯</Text>
-            {row(sorted[myIdx], myIdx + 1)}
-          </>
-        )}
-        {hiddenCount > 0 && (
-          <TouchableOpacity
-            onPress={() => toggleExpanded(battle.id)}
-            style={styles.collapseBtn}
-            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-          >
-            <Text style={styles.collapseText}>{expanded ? '閉じる' : `他 ${hiddenCount} 陣営`}</Text>
-            <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color={Colors.textTertiary} />
-          </TouchableOpacity>
-        )}
-      </View>
-    );
   }
 
   // ── ジョイン処理 ──────────────────────────────────────────
@@ -448,113 +301,86 @@ export default function BattleScreen() {
   function addCategory() {
     setCreateCategories((prev) => [...prev, { id: '', label: '' }]);
   }
-
   function removeCategory(index: number) {
     setCreateCategories((prev) => prev.filter((_, i) => i !== index));
   }
-
   function updateCategoryLabel(index: number, label: string) {
     setCreateCategories((prev) => prev.map((c, i) => (i === index ? { ...c, label } : c)));
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // State A: 参加中コンポーネント
-  // ────────────────────────────────────────────────────────────────
-  function renderActiveChallengeCard() {
-    if (!primaryBattle) return null;
-    const rt = primaryBattle.rankingType;
-    const stats = categoryStatsMap[primaryBattle.id] ?? [];
-    const sorted = sortedStats(stats, rt);
-    const myIndex = sorted.findIndex((s) => s.categoryId === primaryCategoryId);
-    const myRank = myIndex + 1;
-    const totalTeams = sorted.length;
-    const days = daysLeft(primaryBattle.endAt);
-    const myDist = myDistancePerBattle[primaryBattle.id] ?? 0;
-
-    const myStat = myIndex >= 0 ? sorted[myIndex] : undefined;
-    const rivalStat = myIndex > 0 ? sorted[myIndex - 1] : myIndex === 0 ? sorted[1] : undefined;
-    const hasVersus = !!myStat && !!rivalStat;
-    const bothZero = hasVersus && statValue(myStat!, rt) <= 0 && statValue(rivalStat!, rt) <= 0;
-    const leading = myIndex === 0;
-
-    const pace = hasVersus
-      ? dailyPaceToOvertake({
-          myTeamKm: statValue(myStat!, rt),
-          rivalTeamKm: statValue(rivalStat!, rt),
-          endAt: primaryBattle.endAt,
-          isLeading: leading,
-        })
-      : null;
-    const share = myStat ? contributionShare(myDist, myStat.totalDistanceKm) : 0;
-
-    return (
-      <TouchableOpacity
-        activeOpacity={0.9}
-        onPress={() => router.push(`/battle/${primaryBattle.id}` as any)}
-      >
-        <View style={styles.heroCard}>
-          {/* ヘッダー */}
-          <View style={styles.acHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.acTitle} numberOfLines={1}>{primaryBattle.title}</Text>
-              {days !== null && <Text style={styles.acDays}>残り {days} 日</Text>}
-            </View>
-            {myRank > 0 && <RankChip rank={myRank} total={totalTeams} totalUnit="陣営" />}
-          </View>
-
-          {hasVersus ? (
-            <>
-              <VersusGauge
-                left={{ label: myStat!.label, km: statValue(myStat!, rt), isMine: true }}
-                right={{ label: rivalStat!.label, km: statValue(rivalStat!, rt), isMine: false }}
-                size="md"
-              />
-
-              {/* 逆転／逃げ切りペース */}
-              {pace && !bothZero && (
-                <View style={styles.paceRow}>
-                  <Ionicons name="flash" size={14} color={Colors.accent} />
-                  <Text style={styles.paceText}>
-                    1日 {pace.kmPerDay.toFixed(1)}km 走れば{leading ? '逃げ切り' : '逆転'}
-                  </Text>
-                </View>
-              )}
-
-              {/* 貢献リング */}
-              {myStat && (
-                <View style={styles.contribRow}>
-                  <ProgressRing progress={share} size={52} strokeWidth={7}>
-                    <Text style={styles.ringPct}>{Math.round(share * 100)}%</Text>
-                  </ProgressRing>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.contribLabel}>あなたの貢献</Text>
-                    <Text style={styles.contribValue}>
-                      {myDist.toFixed(1)}km / {myStat.totalDistanceKm.toFixed(1)}km
-                    </Text>
-                  </View>
-                </View>
-              )}
-            </>
-          ) : (
-            /* 陣営データが不足（1陣営のみ等）: 自分の合計距離にフォールバック */
-            <View style={styles.fallbackRow}>
-              <StatBlock label="自分の合計距離" value={myDist.toFixed(1)} unit="km" hero />
-            </View>
-          )}
-
-          {/* 複数バトル参加中 */}
-          {activeBattles.length > 1 && (
-            <View style={styles.multiBattleBadge}>
-              <Ionicons name="flash" size={11} color={Colors.primary} />
-              <Text style={styles.multiBattleText}>
-                他 {activeBattles.length - 1} 件のバトルにも参加中
-              </Text>
-            </View>
-          )}
-        </View>
-      </TouchableOpacity>
-    );
+  function copyInvite(code: string) {
+    void Clipboard.setStringAsync(code);
+    Alert.alert('コピーしました', `招待コード: ${code}`);
   }
+
+  // ── 表示部品（小さいものは inline） ────────────────────────
+  const publicCard = (battle: Battle) => {
+    const membership = myMembershipFor(battle.id);
+    return (
+      <PublicBattleCard
+        key={battle.id}
+        battle={battle}
+        stats={categoryStatsMap[battle.id] ?? []}
+        myCategoryId={membership?.categoryId}
+        joined={!!membership}
+        seasonTitle={battle.seasonId ? seasons[battle.seasonId]?.title : undefined}
+        expanded={expandedBattles.has(battle.id)}
+        onToggleExpand={() => toggleExpanded(battle.id)}
+        onPress={() => router.push(`/battle/${battle.id}` as any)}
+        onPressJoin={() => setCategoryModalBattle(battle)}
+      />
+    );
+  };
+
+  const privateCard = (battle: Battle) => (
+    <PrivateBattleCard
+      key={battle.id}
+      battle={battle}
+      stats={categoryStatsMap[battle.id] ?? []}
+      myCategoryId={myMembershipFor(battle.id)?.categoryId}
+      expanded={expandedBattles.has(battle.id)}
+      onToggleExpand={() => toggleExpanded(battle.id)}
+      onPress={() => router.push(`/battle/${battle.id}` as any)}
+      onCopyInvite={copyInvite}
+    />
+  );
+
+  const createForm = (
+    <PrivateBattleCreateForm
+      title={createTitle}
+      desc={createDesc}
+      categories={createCategories}
+      rankingType={createRankingType}
+      startAt={createStartAt}
+      endAt={createEndAt}
+      creating={creating}
+      onChangeTitle={setCreateTitle}
+      onChangeDesc={setCreateDesc}
+      onAddCategory={addCategory}
+      onRemoveCategory={removeCategory}
+      onChangeCategoryLabel={updateCategoryLabel}
+      onChangeRankingType={setCreateRankingType}
+      onChangeStartAt={setCreateStartAt}
+      onChangeEndAt={setCreateEndAt}
+      onSubmit={handleCreateBattle}
+      onCancel={() => { setPrivateView('list'); resetCreateForm(); }}
+    />
+  );
+
+  const inviteJoinView = (view: 'join_code' | 'join_select') => (
+    <InviteCodeJoinView
+      view={view}
+      inviteCode={inviteCode}
+      onChangeInviteCode={setInviteCode}
+      searching={searching}
+      onSearch={handleSearchInviteCode}
+      onCancelCode={() => { setPrivateView('list'); setInviteCode(''); }}
+      foundBattle={foundBattle}
+      joining={joiningBattleId === foundBattle?.id}
+      onJoinCategory={(catId) => foundBattle && handleJoin(foundBattle, catId)}
+      onBackToCode={() => { setPrivateView('join_code'); setFoundBattle(null); }}
+    />
+  );
 
   function renderWeeklyCard() {
     return (
@@ -574,7 +400,6 @@ export default function BattleScreen() {
       : activeBattles.length > 1
         ? `参加中の${activeBattles.length}件のバトルに加算されます`
         : 'バトルへ加算されます';
-
     return (
       <View style={styles.runNowSection}>
         <TouchableOpacity
@@ -590,244 +415,59 @@ export default function BattleScreen() {
     );
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // パブリックランカード
-  // ────────────────────────────────────────────────────────────────
-  function renderPublicBattleCard(battle: Battle) {
-    const stats = categoryStatsMap[battle.id] ?? [];
-    const membership = myMembershipFor(battle.id);
-    const myCatId = membership?.categoryId;
-    const days = daysLeft(battle.endAt);
-    const sorted = sortedStats(stats, battle.rankingType);
-    const maxVal = maxStat(stats, battle.rankingType);
-
+  function renderJoinRecommendationCard() {
+    if (!recommendedBattle) return null;
+    const sorted = sortedStats(recommendedStats, recommendedBattle.rankingType);
+    const top = sorted[0];
+    const second = sorted[1];
+    const hasVs = !!top && !!second;
     return (
-      <TouchableOpacity
-        key={battle.id}
-        activeOpacity={0.85}
-        onPress={() => router.push(`/battle/${battle.id}` as any)}
-      >
-        <Card style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.battleTitle}>{battle.title}</Text>
-              <Text style={styles.battleMeta}>
-                {days !== null ? `残り ${days} 日` : ''}
-                {battle.seasonId && seasons[battle.seasonId]
-                  ? `　${seasons[battle.seasonId].title}` : ''}
-              </Text>
-            </View>
-            {membership && (
-              <View style={styles.joinedBadge}>
-                <Text style={styles.joinedBadgeText}>参加中</Text>
-              </View>
-            )}
+      <TouchableOpacity activeOpacity={0.9} onPress={() => setCategoryModalBattle(recommendedBattle)}>
+        <Card variant="highlight" style={styles.card}>
+          <View style={styles.recommendHeader}>
+            <Ionicons name="flash" size={16} color={Colors.accent} />
+            <Text style={styles.recommendHeaderText}>開催中の作戦に参加しよう</Text>
           </View>
-
-          {renderRankRows(battle, sorted, myCatId)}
-
-          {!membership && battle.categories.length > 0 && (
-            <View style={styles.joinSection}>
-              <Button
-                label="区分を選んで参加"
-                onPress={() => setCategoryModalBattle(battle)}
-                size="sm"
-                variant="secondary"
+          <Text style={styles.recommendTitle} numberOfLines={1}>{recommendedBattle.title}</Text>
+          {hasVs && (
+            <View style={{ marginTop: Spacing.md }}>
+              <VersusGauge
+                left={{ label: top.label, km: statValue(top, recommendedBattle.rankingType), isMine: false }}
+                right={{ label: second.label, km: statValue(second, recommendedBattle.rankingType), isMine: false }}
+                size="md"
               />
             </View>
           )}
+          {recommendedShortageCategory && (
+            <View style={styles.recommendShortageRow}>
+              <Text style={styles.recommendShortageText}>
+                「{recommendedShortageCategory.label}」は援軍募集中！
+              </Text>
+            </View>
+          )}
+          <View style={styles.recommendCta}>
+            <Text style={styles.recommendCtaText}>区分を選んで参加する</Text>
+            <Ionicons name="chevron-forward" size={16} color={Colors.accent} />
+          </View>
         </Card>
       </TouchableOpacity>
     );
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // 友達チャレンジカード
-  // ────────────────────────────────────────────────────────────────
-  function renderPrivateBattleCard(battle: Battle) {
-    const stats = categoryStatsMap[battle.id] ?? [];
-    const membership = myMembershipFor(battle.id);
-    const myCatId = membership?.categoryId;
-    const sorted = sortedStats(stats, battle.rankingType);
-    const maxVal = maxStat(stats, battle.rankingType);
-    const myRank = sorted.findIndex((s) => s.categoryId === myCatId) + 1;
-
-    return (
-      <TouchableOpacity
-        key={battle.id}
-        activeOpacity={0.85}
-        onPress={() => router.push(`/battle/${battle.id}` as any)}
-      >
-        <Card style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.battleTitle}>{battle.title}</Text>
-              {battle.inviteCode && (
-                <TouchableOpacity
-                  style={styles.inviteRow}
-                  onPress={() => {
-                    void Clipboard.setStringAsync(battle.inviteCode!);
-                    Alert.alert('コピーしました', `招待コード: ${battle.inviteCode}`);
-                  }}
-                  activeOpacity={0.7}
-                  hitSlop={{ top: 12, bottom: 12, left: 8, right: 12 }}
-                >
-                  <Text style={styles.inviteLabel}>招待コード: </Text>
-                  <Text style={styles.inviteCode}>{battle.inviteCode}</Text>
-                  <Text style={styles.inviteCopy}>📋</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-            {myRank > 0 && (
-              <View style={styles.rankBadge}>
-                <Text style={styles.rankBadgeText}>{myRank === 1 ? '👑 1位' : `${myRank}位`}</Text>
-              </View>
-            )}
-          </View>
-
-          {renderRankRows(battle, sorted, myCatId)}
-
-        </Card>
-      </TouchableOpacity>
-    );
-  }
-
-  // ────────────────────────────────────────────────────────────────
-  // 友達チャレンジ作成フォーム
-  // ────────────────────────────────────────────────────────────────
-  function renderCreateForm() {
-    return (
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <Card style={styles.card}>
-          <Text style={styles.formTitle}>新しい友達チャレンジを作る</Text>
-
-          <Text style={styles.inputLabel}>チャレンジ名 *</Text>
-          <TextInput style={styles.input} value={createTitle} onChangeText={setCreateTitle}
-            placeholder="例: 春の部活対決" placeholderTextColor={Colors.textTertiary} maxLength={40} />
-
-          <Text style={styles.inputLabel}>説明（任意）</Text>
-          <TextInput style={[styles.input, styles.inputMulti]} value={createDesc} onChangeText={setCreateDesc}
-            placeholder="チャレンジの説明..." placeholderTextColor={Colors.textTertiary} multiline maxLength={200} />
-
-          <Text style={styles.inputLabel}>区分リスト *（最低2つ）</Text>
-          {createCategories.map((cat, i) => (
-            <View key={i} style={styles.catInputRow}>
-              <TextInput
-                style={[styles.input, { flex: 1 }]}
-                value={cat.label}
-                onChangeText={(v) => updateCategoryLabel(i, v)}
-                placeholder={`区分 ${i + 1}（例: きのこの山）`}
-                placeholderTextColor={Colors.textTertiary}
-                maxLength={20}
-              />
-              {createCategories.length > 2 && (
-                <TouchableOpacity style={styles.catRemoveBtn} onPress={() => removeCategory(i)}>
-                  <Text style={styles.catRemoveText}>×</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          ))}
-          <TouchableOpacity style={styles.addCatBtn} onPress={addCategory}>
-            <Text style={styles.addCatText}>＋ 区分を追加</Text>
-          </TouchableOpacity>
-
-          <Text style={styles.inputLabel}>ランキング方式</Text>
-          <View style={styles.modeRow}>
-            {(['average', 'total'] as const).map((t) => (
-              <TouchableOpacity key={t}
-                style={[styles.modeBtn, createRankingType === t && styles.modeBtnActive]}
-                onPress={() => setCreateRankingType(t)}
-              >
-                <Text style={[styles.modeBtnText, createRankingType === t && styles.modeBtnTextActive]}>
-                  {t === 'average' ? '1人あたり平均' : '合計距離'}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={styles.inputLabel}>開始日 *（YYYY-MM-DD）</Text>
-          <TextInput style={styles.input} value={createStartAt} onChangeText={setCreateStartAt}
-            placeholder="例: 2026-06-01" placeholderTextColor={Colors.textTertiary} maxLength={10} />
-
-          <Text style={styles.inputLabel}>終了日 *（YYYY-MM-DD）</Text>
-          <TextInput style={styles.input} value={createEndAt} onChangeText={setCreateEndAt}
-            placeholder="例: 2026-06-30" placeholderTextColor={Colors.textTertiary} maxLength={10} />
-
-          <View style={styles.formActions}>
-            <Button label="キャンセル" onPress={() => { setPrivateView('list'); resetCreateForm(); }}
-              variant="ghost" style={styles.formBtn} />
-            <Button label="作成する" onPress={handleCreateBattle} loading={creating} style={styles.formBtn} />
-          </View>
-        </Card>
-      </KeyboardAvoidingView>
-    );
-  }
-
-  // ────────────────────────────────────────────────────────────────
-  // 招待コード検索フォーム
-  // ────────────────────────────────────────────────────────────────
-  function renderJoinCodeForm() {
-    return (
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <Card style={styles.card}>
-          <Text style={styles.formTitle}>招待コードで参加</Text>
-          <Text style={styles.inputLabel}>6桁の招待コード</Text>
-          <TextInput
-            style={[styles.input, styles.codeInput]}
-            value={inviteCode}
-            onChangeText={(v) => setInviteCode(v.toUpperCase())}
-            placeholder="例: A3F9KZ"
-            placeholderTextColor={Colors.textTertiary}
-            maxLength={6}
-            autoCapitalize="characters"
-          />
-          <View style={styles.formActions}>
-            <Button label="キャンセル"
-              onPress={() => { setPrivateView('list'); setInviteCode(''); }}
-              variant="ghost" style={styles.formBtn} />
-            <Button label="検索" onPress={handleSearchInviteCode} loading={searching} style={styles.formBtn} />
-          </View>
-        </Card>
-      </KeyboardAvoidingView>
-    );
-  }
-
-  function renderJoinSelectForm() {
-    if (!foundBattle) return null;
-    return (
-      <Card style={styles.card}>
-        <Text style={styles.formTitle}>{foundBattle.title}</Text>
-        {foundBattle.description ? (
-          <Text style={styles.battleMeta}>{foundBattle.description}</Text>
-        ) : null}
-
-        <Text style={[styles.inputLabel, { marginBottom: Spacing.sm }]}>区分を選んで参加</Text>
-        <View style={styles.catSelectList}>
-          {foundBattle.categories.map((cat) => (
-            <Button
-              key={cat.id}
-              label={cat.label}
-              onPress={() => handleJoin(foundBattle, cat.id)}
-              loading={joiningBattleId === foundBattle.id}
-              variant="secondary"
-              style={styles.catSelectBtn}
-            />
-          ))}
-        </View>
-        <Button label="戻る"
-          onPress={() => { setPrivateView('join_code'); setFoundBattle(null); }}
-          variant="ghost" style={{ marginTop: Spacing.md }} />
-      </Card>
-    );
-  }
-
-  // ────────────────────────────────────────────────────────────────
-  // State A: 参加中レイアウト
-  // ────────────────────────────────────────────────────────────────
+  // ── State A: 参加中レイアウト ──────────────────────────────
   function renderParticipatingView() {
     return (
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        {renderActiveChallengeCard()}
+        {primaryBattle && (
+          <ActiveBattleHero
+            battle={primaryBattle}
+            stats={categoryStatsMap[primaryBattle.id] ?? []}
+            myCategoryId={primaryCategoryId}
+            myDist={myDistancePerBattle[primaryBattle.id] ?? 0}
+            activeBattleCount={activeBattles.length}
+            onPress={() => router.push(`/battle/${primaryBattle.id}` as any)}
+          />
+        )}
         {renderWeeklyCard()}
         {renderRunNowButton()}
 
@@ -867,7 +507,7 @@ export default function BattleScreen() {
                 title="開催中のパブリックランがありません"
                 hint="友達チャレンジで仲間と競うこともできます"
               />
-            : publicBattles.map(renderPublicBattleCard)
+            : publicBattles.map(publicCard)
         ) : (
           <>
             {privateView === 'list' && (
@@ -879,7 +519,7 @@ export default function BattleScreen() {
                     hint="招待コードで友達チャレンジに参加できます"
                   />
                 )}
-                {privateBattles.map(renderPrivateBattleCard)}
+                {privateBattles.map(privateCard)}
                 <Button
                   label={userIsPro ? '＋ 新しいチャレンジを作る' : '＋ 新しいチャレンジを作る（Pro）'}
                   onPress={() => {
@@ -897,63 +537,16 @@ export default function BattleScreen() {
                   variant="secondary" style={{ marginTop: Spacing.sm }} />
               </>
             )}
-            {privateView === 'create' && renderCreateForm()}
-            {privateView === 'join_code' && renderJoinCodeForm()}
-            {privateView === 'join_select' && renderJoinSelectForm()}
+            {privateView === 'create' && createForm}
+            {privateView === 'join_code' && inviteJoinView('join_code')}
+            {privateView === 'join_select' && inviteJoinView('join_select')}
           </>
         )}
       </ScrollView>
     );
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // Day-0アクティベーション: 開催中の作戦に参加しようカード
-  // ────────────────────────────────────────────────────────────────
-  function renderJoinRecommendationCard() {
-    if (!recommendedBattle) return null;
-    const sorted = sortedStats(recommendedStats, recommendedBattle.rankingType);
-    const top = sorted[0];
-    const second = sorted[1];
-    const hasVs = !!top && !!second;
-    return (
-      <TouchableOpacity
-        activeOpacity={0.9}
-        onPress={() => setCategoryModalBattle(recommendedBattle)}
-      >
-        <Card variant="highlight" style={styles.card}>
-          <View style={styles.recommendHeader}>
-            <Ionicons name="flash" size={16} color={Colors.accent} />
-            <Text style={styles.recommendHeaderText}>開催中の作戦に参加しよう</Text>
-          </View>
-          <Text style={styles.recommendTitle} numberOfLines={1}>{recommendedBattle.title}</Text>
-          {hasVs && (
-            <View style={{ marginTop: Spacing.md }}>
-              <VersusGauge
-                left={{ label: top.label, km: statValue(top, recommendedBattle.rankingType), isMine: false }}
-                right={{ label: second.label, km: statValue(second, recommendedBattle.rankingType), isMine: false }}
-                size="md"
-              />
-            </View>
-          )}
-          {recommendedShortageCategory && (
-            <View style={styles.recommendShortageRow}>
-              <Text style={styles.recommendShortageText}>
-                「{recommendedShortageCategory.label}」は援軍募集中！
-              </Text>
-            </View>
-          )}
-          <View style={styles.recommendCta}>
-            <Text style={styles.recommendCtaText}>区分を選んで参加する</Text>
-            <Ionicons name="chevron-forward" size={16} color={Colors.accent} />
-          </View>
-        </Card>
-      </TouchableOpacity>
-    );
-  }
-
-  // ────────────────────────────────────────────────────────────────
-  // State B: 未参加レイアウト
-  // ────────────────────────────────────────────────────────────────
+  // ── State B: 未参加レイアウト ──────────────────────────────
   function renderNotParticipatingView() {
     return (
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
@@ -971,7 +564,7 @@ export default function BattleScreen() {
         {publicBattles.length > 0 && (
           <>
             <Text style={styles.sectionLabel}>パブリックラン</Text>
-            {publicBattles.map(renderPublicBattleCard)}
+            {publicBattles.map(publicCard)}
           </>
         )}
 
@@ -992,8 +585,8 @@ export default function BattleScreen() {
             <Button label="検索" onPress={handleSearchInviteCode} loading={searching} style={{ marginTop: Spacing.md }} />
           </Card>
         )}
-        {privateView === 'join_code' && renderJoinCodeForm()}
-        {privateView === 'join_select' && renderJoinSelectForm()}
+        {privateView === 'join_code' && inviteJoinView('join_code')}
+        {privateView === 'join_select' && inviteJoinView('join_select')}
 
         {/* チャレンジ作成（Proのみ） */}
         {privateView === 'list' && (
@@ -1010,14 +603,12 @@ export default function BattleScreen() {
             style={{ marginTop: Spacing.sm }}
           />
         )}
-        {privateView === 'create' && renderCreateForm()}
+        {privateView === 'create' && createForm}
       </ScrollView>
     );
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // JSX
-  // ────────────────────────────────────────────────────────────────
+  // ── JSX ────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
@@ -1059,7 +650,7 @@ export default function BattleScreen() {
 }
 
 // ────────────────────────────────────────────────────────────────
-// スタイル
+// スタイル（container 側で使う分のみ。カード等の見た目は各コンポーネントに移設済み）
 // ────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
@@ -1086,113 +677,8 @@ const styles = StyleSheet.create({
   notifBadgeText: { fontSize: 9, fontWeight: '800', color: Colors.textOnPrimary },
   scroll: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing['3xl'], gap: Spacing.lg },
 
-  // Hero card (VS ゲージ)
-  heroCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    gap: Spacing.lg,
-    ...Shadow.sm,
-  },
-  paceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: Colors.accentLight,
-    borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-  },
-  paceText: { fontSize: Typography.fontSize.sm, color: Colors.accent, fontWeight: Typography.fontWeight.bold, fontVariant: ['tabular-nums'] },
-  contribRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: Colors.borderLight,
-    paddingTop: Spacing.md,
-  },
-  ringPct: { fontSize: 14, fontWeight: '800', color: Colors.textPrimary, fontVariant: ['tabular-nums'] },
-  contribLabel: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary },
-  contribValue: { fontSize: Typography.fontSize.md, fontWeight: '800', color: Colors.textPrimary, fontVariant: ['tabular-nums'], marginTop: 2 },
-  fallbackRow: { paddingVertical: Spacing.sm },
+  card: { marginBottom: 0 },
   weekHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.md },
-
-  // 一覧カードの順位行
-  rankSection: { gap: Spacing.md, marginBottom: Spacing.sm },
-  rankRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  rankNum: { width: 16, fontSize: Typography.fontSize.sm, fontWeight: '700', color: Colors.textTertiary, textAlign: 'center', fontVariant: ['tabular-nums'] },
-  rankNumMine: { color: Colors.primary },
-  rankName: { width: 76, fontSize: Typography.fontSize.sm, color: Colors.textPrimary },
-  rankNameMine: { fontWeight: '800', color: Colors.primary },
-  rankBarArea: { flex: 1 },
-  rankValue: { width: 62, fontSize: Typography.fontSize.xs, color: Colors.textSecondary, textAlign: 'right', fontVariant: ['tabular-nums'] },
-  rankValueMine: { fontWeight: '800', color: Colors.textPrimary },
-  ellipsis: { fontSize: Typography.fontSize.sm, color: Colors.textTertiary, textAlign: 'center', marginTop: -4 },
-  collapseBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingTop: Spacing.xs },
-  collapseText: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, fontWeight: '600' },
-
-  // Active Challenge Card
-  activeChallengeCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    gap: Spacing.md,
-    ...Shadow.md,
-  },
-  acHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
-  acTitle: { fontSize: Typography.fontSize.xl, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
-  acDays: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary, marginTop: 2 },
-  acRankBadge: {
-    backgroundColor: Colors.primaryLight,
-    borderRadius: BorderRadius.full,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 3,
-  },
-  acRankText: { fontSize: Typography.fontSize.xs, color: Colors.primary, fontWeight: Typography.fontWeight.bold },
-  acDistRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  acDistLabel: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, marginBottom: 2 },
-  acDistNum: { fontSize: Typography.fontSize['3xl'], fontWeight: Typography.fontWeight.extrabold, color: Colors.textPrimary, letterSpacing: -1 },
-  acDistUnit: { fontSize: Typography.fontSize.md, color: Colors.textSecondary },
-  acOvertake: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: `${Colors.primary}14`,
-    borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 6,
-  },
-  acOvertakeText: { fontSize: Typography.fontSize.xs, color: Colors.primary, fontWeight: Typography.fontWeight.bold },
-  multiBattleBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: Colors.surfaceGray,
-    borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 5,
-  },
-  multiBattleText: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary },
-
-  // Weekly row
-  weeklyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  weeklyText: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary },
-  weeklyBold: { fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
 
   // Run Now
   runNowSection: { gap: Spacing.sm },
@@ -1230,36 +716,6 @@ const styles = StyleSheet.create({
   segmentActive: { backgroundColor: Colors.surface, ...Shadow.sm },
   segmentLabel: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary, fontWeight: Typography.fontWeight.medium },
   segmentLabelActive: { color: Colors.textPrimary, fontWeight: Typography.fontWeight.semibold },
-
-  // Battle cards (共通)
-  card: { marginBottom: 0 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: Spacing.md },
-  battleTitle: { fontSize: Typography.fontSize.xl, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
-  battleMeta: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary, marginTop: 2 },
-  joinedBadge: {
-    backgroundColor: Colors.primaryLight, borderRadius: BorderRadius.full,
-    paddingHorizontal: Spacing.sm, paddingVertical: 3,
-  },
-  joinedBadgeText: { fontSize: Typography.fontSize.xs, color: Colors.primary, fontWeight: Typography.fontWeight.semibold },
-  rankBadge: {
-    backgroundColor: Colors.accentYellow + '22', borderRadius: BorderRadius.full,
-    paddingHorizontal: Spacing.sm, paddingVertical: 3,
-  },
-  rankBadgeText: { fontSize: Typography.fontSize.xs, color: Colors.accentYellow, fontWeight: Typography.fontWeight.semibold },
-  statsSection: { gap: Spacing.md, marginBottom: Spacing.sm },
-  teamRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  teamName: { width: 80, fontSize: Typography.fontSize.sm, color: Colors.textPrimary },
-  teamNameMine: { fontWeight: Typography.fontWeight.bold, color: Colors.primary },
-  barArea: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  barTrack: { flex: 1, height: 8, backgroundColor: Colors.surfaceGray, borderRadius: BorderRadius.full, overflow: 'hidden' },
-  barFill: { height: 8, borderRadius: BorderRadius.full },
-  avgText: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary, width: 58 },
-  memberCount: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, width: 28 },
-  joinSection: { borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: Spacing.md, alignItems: 'flex-start' },
-  inviteRow: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.xs },
-  inviteLabel: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary },
-  inviteCode: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.primary, letterSpacing: 2 },
-  inviteCopy: { fontSize: Typography.fontSize.sm, marginLeft: Spacing.xs },
 
   // Empty state (State B)
   emptyStateCard: {
@@ -1300,7 +756,7 @@ const styles = StyleSheet.create({
   },
   recommendCtaText: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.accent },
 
-  // Forms
+  // State B のインライン招待コード入力カード
   formTitle: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.lg },
   inputLabel: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary, marginBottom: Spacing.xs, marginTop: Spacing.md },
   input: {
@@ -1309,46 +765,5 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.md, color: Colors.textPrimary,
     borderWidth: 1, borderColor: Colors.border,
   },
-  inputMulti: { height: 72, textAlignVertical: 'top' },
   codeInput: { fontSize: Typography.fontSize['2xl'], fontWeight: Typography.fontWeight.bold, textAlign: 'center', letterSpacing: 4 },
-  modeRow: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.xs },
-  modeBtn: {
-    flex: 1, paddingVertical: Spacing.sm, borderRadius: BorderRadius.sm,
-    backgroundColor: Colors.surfaceGray, borderWidth: 1, borderColor: Colors.border, alignItems: 'center',
-  },
-  modeBtnActive: { backgroundColor: Colors.primaryLight, borderColor: Colors.primary },
-  modeBtnText: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary },
-  modeBtnTextActive: { color: Colors.primary, fontWeight: Typography.fontWeight.semibold },
-  catInputRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.sm },
-  catRemoveBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.error + '15', alignItems: 'center', justifyContent: 'center' },
-  catRemoveText: { fontSize: Typography.fontSize.lg, color: Colors.error, fontWeight: Typography.fontWeight.bold },
-  addCatBtn: { marginTop: Spacing.sm, padding: Spacing.sm, alignItems: 'center' },
-  addCatText: { fontSize: Typography.fontSize.sm, color: Colors.primary, fontWeight: Typography.fontWeight.medium },
-  catSelectList: { gap: Spacing.sm },
-  catSelectBtn: { marginTop: 0 },
-  formActions: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.xl },
-  formBtn: { flex: 1 },
-});
-
-const modal = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  sheet: {
-    backgroundColor: Colors.surface,
-    borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl,
-    padding: Spacing.lg, paddingBottom: Spacing['4xl'],
-    maxHeight: '80%',
-  },
-  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.border, alignSelf: 'center', marginBottom: Spacing.lg },
-  title: { fontSize: Typography.fontSize.xl, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.xs },
-  subtitle: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary, marginBottom: Spacing.lg },
-  catBtn: {
-    paddingVertical: Spacing.md, paddingHorizontal: Spacing.lg,
-    borderRadius: BorderRadius.md, borderWidth: 1.5, borderColor: Colors.border,
-    backgroundColor: Colors.surfaceGray,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-  },
-  catBtnSelected: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight },
-  catLabel: { fontSize: Typography.fontSize.md, color: Colors.textPrimary, fontWeight: Typography.fontWeight.medium },
-  catLabelSelected: { color: Colors.primary, fontWeight: Typography.fontWeight.bold },
-  checkmark: { fontSize: Typography.fontSize.md, color: Colors.primary, fontWeight: Typography.fontWeight.bold },
 });

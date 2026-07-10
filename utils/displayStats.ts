@@ -4,7 +4,7 @@
  * ★重要: このファイルは純関数のみ。Firestore / store / 副作用の import を禁止する。
  * 入力は各画面が既に取得済みの Activity[] / CategoryStats[] / Battle のみ。
  */
-import type { Activity } from '../types';
+import type { Activity, CategoryStats } from '../types';
 
 const DAY_MS = 86_400_000;
 const WEEKDAY = ['日', '月', '火', '水', '木', '金', '土'] as const;
@@ -127,6 +127,40 @@ export function lastRun(activities: Activity[]): Activity | null {
     }
   }
   return best;
+}
+
+// ============================================================
+// バトルカードの陣営ランキング表示用（CategoryStats の純計算）
+// ============================================================
+
+export type RankingType = 'average' | 'total';
+
+/** rankingType に応じた比較値（total=合計 / average=1人あたり平均）。 */
+export function statValue(s: CategoryStats, rankingType: RankingType): number {
+  return rankingType === 'total' ? s.totalDistanceKm : s.avgDistanceKm;
+}
+
+/** 表示用の距離ラベル（total=「12.3km」/ average=「12.3km/人」）。 */
+export function statLabel(s: CategoryStats, rankingType: RankingType): string {
+  return rankingType === 'total'
+    ? `${s.totalDistanceKm.toFixed(1)}km`
+    : `${s.avgDistanceKm.toFixed(1)}km/人`;
+}
+
+/** 比較値の降順にソートした新配列を返す（元配列は変更しない）。 */
+export function sortedStats(stats: CategoryStats[], rankingType: RankingType): CategoryStats[] {
+  return [...stats].sort((a, b) => statValue(b, rankingType) - statValue(a, rankingType));
+}
+
+/** プログレスバーの分母に使う最大比較値（0 除算回避のため下限 0.01）。 */
+export function maxStat(stats: CategoryStats[], rankingType: RankingType): number {
+  return Math.max(...stats.map((s) => statValue(s, rankingType)), 0.01);
+}
+
+/** 終了日までの残り日数（0 未満は 0、endAt 空なら null）。 */
+export function daysLeft(endAt: string, now: Date = new Date()): number | null {
+  if (!endAt) return null;
+  return Math.max(0, Math.ceil((new Date(endAt).getTime() - now.getTime()) / DAY_MS));
 }
 
 /**
