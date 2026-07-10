@@ -10,7 +10,7 @@ interface Props {
 /**
  * 順位数字の丸バッジ。順位表示の統一部品（一覧・詳細・結果で共用）。
  * 1〜3 位は金銀銅の淡背景（rank1Bg/rank2Bg/rank3Bg）＋濃色数字、4 位以下は surfaceGray。
- * ※ rank 色（金 #FFB800 等）を数字色にすると淡背景上で判読できないため、
+ * ※ rank 色（金・銀・銅）を数字色にすると淡背景上で判読できないため、
  *   数字は textPrimary、地色で金銀銅を表現する。
  */
 export function RankBadge({ rank, size = 28 }: Props) {
