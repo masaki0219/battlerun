@@ -218,7 +218,7 @@ export default function RecordScreen() {
       <SafeAreaView style={s.root} edges={['top']}>
         <ScrollView contentContainerStyle={s.preScroll} showsVerticalScrollIndicator={false}>
           <View style={s.preHeader}>
-            <Text style={s.preEyebrow}>BATTLE RUN</Text>
+            <Text style={s.preEyebrow}>ORUNA</Text>
             <Text style={s.preTitle}>ラン</Text>
           </View>
 

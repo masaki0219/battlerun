@@ -1,6 +1,6 @@
 # HANDOFF
 
-最終更新: 2026-07-12
+最終更新: 2026-07-13
 
 ## プロジェクトの目的
 
@@ -8,13 +8,21 @@
 
 ## 現在の状態
 
-`feat/ui-consolidation` ブランチで作業中。inst_v3 のデザイン刷新に加え、リリース前レビューで見つかったプライバシー・記録保全・集計整合性・法務・UX修正が未コミットで乗っている。このブランチは origin へ push されていない。既存変更を破棄せず、この状態から継続すること。
+`feat/ui-consolidation` ブランチで作業中。アプリの表示ブランドを `ORUNA`、iOS Bundle Identifier を `com.masaki.oruna` へ変更した。Firebaseプロジェクト、RevenueCat商品ID、Expo slug、Android package、内部永続化キーは従来値を維持している。
 
 `inst_v3/BattleRunホーム画面作成.zip`（Figma Make のホーム画面デザイン・最終版）を反映し、パレットをディープパイン系に刷新した。レイアウトの作り直しはホームタブとランタブの2画面に限定し、他画面は `design_tokens.ts` 経由で色だけ追従している。
 
 ※ 同フォルダの `BattleRunホーム画面作成 (コピー).zip` は旧版。パレット（`theme.css`）は同一だが、ヒーローが2陣営のVSゲージで、チーム内ランキングが無い。**最終版はこちら（コピーでない方）**。
 
-## 最後に完了したこと（未コミット）
+## 最後に完了したこと
+
+### ORUNAへのブランド名変更
+
+- `app.json` の `expo.name` とiOSの表示名を `ORUNA`、iOS Bundle Identifierを `com.masaki.oruna` へ変更した。
+- アプリ内UI、共有テキスト・透かし、通知文、アプリ内法務ページの表示ブランドを `ORUNA` へ統一した。
+- Firebase Hosting用の利用規約・プライバシーポリシーHTMLを `ORUNA` 表記へ更新した。
+- `slug: battlerun`、`scheme: battlerun`、Android package `com.battlerun.app`、Firebaseプロジェクト `battlerun-75eb6` は変更していない。
+- `npx tsc --noEmit` はエラーなしで完了した。
 
 ### リリース前レビュー対応
 
@@ -52,10 +60,14 @@
 
 ## 次にやること
 
-Firebaseのstaging環境へ Functions / Firestore rules / indexes / Storage rules / Hosting をまとめてデプロイし、`RELEASE_TEST_CHECKLIST.md` のDay-0、GPS保存、再送、ランキング反映、アカウント削除を2アカウントの実機で通す。
+Masakiが `firebase deploy --only hosting` を実行し、ORUNA表記へ更新した利用規約・プライバシーポリシーを再公開する。
 
 ## その次の候補
 
+- `eas build --profile production --platform ios` で新しいBundle IDの本番ビルドを作成する
+- App Store ConnectでBundle ID `com.masaki.oruna` のアプリを新規登録する
+- RevenueCat側のアプリ設定を新しいBundle IDへ合わせる（商品IDは変更しない）
+- Firebaseのstaging環境へ Functions / Firestore rules / indexes / Storage rules をデプロイし、`RELEASE_TEST_CHECKLIST.md` のDay-0、GPS保存、再送、ランキング反映、アカウント削除を2アカウントの実機で通す
 - `feat/ui-consolidation` を origin へ push し、`main` へマージするか判断する
 - 使われていないブランチ `feat/ui-refresh` / `feat/ui-redesign` を整理する
 - `package.json` に `typecheck` / `lint` スクリプトを追加する（現在は `test:rules` のみ）

@@ -591,7 +591,7 @@ export default function BattleScreen() {
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerEyebrow}>BATTLE RUN</Text>
+          <Text style={styles.headerEyebrow}>ORUNA</Text>
           <Text style={styles.headerTitle}>チャレンジ</Text>
         </View>
         <TouchableOpacity

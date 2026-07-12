@@ -171,7 +171,7 @@ export default function BattleResultScreen() {
   async function handleShare() {
     const rankText = myRank ? `${myRank}位` : '参加';
     const kmText = myStats.totalKm.toFixed(1);
-    const message = `「${localBattle?.title ?? 'チャレンジ'}」で${rankText}！\n自分の貢献: ${kmText}km\n#BattleRun で走ろう`;
+    const message = `「${localBattle?.title ?? 'チャレンジ'}」で${rankText}！\n自分の貢献: ${kmText}km\n#ORUNA で走ろう`;
 
     try {
       if (shareCardRef.current && (await Sharing.isAvailableAsync())) {
@@ -360,11 +360,11 @@ export default function BattleResultScreen() {
               {myTeam?.label ? (
                 <Text style={s.sharePreviewTeam}>{myTeam.label}</Text>
               ) : null}
-              <Text style={s.sharePreviewTag}>#BattleRun</Text>
+              <Text style={s.sharePreviewTag}>#ORUNA</Text>
             </View>
             {!userIsPro && (
               <View style={s.watermarkBadge}>
-                <Text style={s.watermarkText}>BattleRun</Text>
+                <Text style={s.watermarkText}>ORUNA</Text>
               </View>
             )}
           </View>

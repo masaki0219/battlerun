@@ -36,7 +36,7 @@ export default function SignupScreen() {
     <SafeAreaView style={styles.safe}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.logo}>🏃 BattleRun</Text>
+          <Text style={styles.logo}>🏃 ORUNA</Text>
           <Text style={styles.tagline}>新規アカウント作成</Text>
         </View>
 

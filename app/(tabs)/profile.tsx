@@ -176,7 +176,7 @@ export default function ProfileScreen() {
     const enabled = await registerPushToken(user.id, true);
     Alert.alert(
       enabled ? '通知を有効にしました' : '通知を有効にできませんでした',
-      enabled ? '順位変動やチャレンジ終了をお知らせします。' : '端末の設定からBattleRunの通知を許可してください。',
+      enabled ? '順位変動やチャレンジ終了をお知らせします。' : '端末の設定からORUNAの通知を許可してください。',
     );
   }
 
@@ -326,7 +326,7 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <Text style={styles.headerEyebrow}>BATTLE RUN</Text>
+        <Text style={styles.headerEyebrow}>ORUNA</Text>
         <Text style={styles.headerTitle}>プロフィール</Text>
       </View>
 
@@ -395,7 +395,7 @@ export default function ProfileScreen() {
 
         <View>
           <View style={styles.sectionHead}>
-            <Text style={styles.sectionHeading}>BattleRun Pro</Text>
+            <Text style={styles.sectionHeading}>ORUNA Pro</Text>
             <View style={styles.freePlanBadge}><Text style={styles.freePlanText}>{userIsPro ? 'Proプラン' : 'Freeプラン'}</Text></View>
           </View>
           <View style={[styles.proCard, userIsPro && styles.proCardActive]}>
@@ -447,7 +447,7 @@ export default function ProfileScreen() {
           <View style={[styles.surfaceCard, styles.listCard]}>
             <ProfileRow icon="help-circle-outline" title="ヘルプ・お問い合わせ" onPress={() => router.push('/help' as any)} />
             <View style={styles.rowDivider} />
-            <ProfileRow icon="information-circle-outline" title="BattleRunについて" detail={`バージョン ${Constants.expoConfig?.version ?? '—'}`} onPress={() => Alert.alert('BattleRun', '仲間と距離を競うチーム対抗ランニング・ウォーキングアプリです。')} />
+            <ProfileRow icon="information-circle-outline" title="ORUNAについて" detail={`バージョン ${Constants.expoConfig?.version ?? '—'}`} onPress={() => Alert.alert('ORUNA', '仲間と距離を競うチーム対抗ランニング・ウォーキングアプリです。')} />
           </View>
         </View>
 
