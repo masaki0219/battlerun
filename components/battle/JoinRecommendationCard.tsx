@@ -24,31 +24,41 @@ export function JoinRecommendationCard({ battle, stats, shortageCategory, onPres
 
   return (
     <TouchableOpacity activeOpacity={0.9} onPress={onPress}>
-      <Card variant="highlight" style={styles.card}>
-        <View style={styles.recommendHeader}>
-          <Ionicons name="flash" size={16} color={Colors.accent} />
-          <Text style={styles.recommendHeaderText}>開催中の作戦に参加しよう</Text>
+      <Card variant="brand" style={styles.card}>
+        <View style={styles.header}>
+          <Ionicons name="location" size={16} color={Colors.primary} />
+          <Text style={styles.headerText}>開催中のチャレンジに参加しよう</Text>
         </View>
-        <Text style={styles.recommendTitle} numberOfLines={1}>{battle.title}</Text>
+
+        <View style={styles.titleRow}>
+          <Text style={styles.title} numberOfLines={2}>{battle.title}</Text>
+          {shortageCategory && (
+            <View style={styles.shortageBadge}>
+              <Text style={styles.shortageText}>援軍募集中</Text>
+            </View>
+          )}
+        </View>
+
+        {shortageCategory && (
+          <Text style={styles.shortageHint} numberOfLines={1}>
+            「{shortageCategory.label}」は人数が少なく、いま入ると効きやすい
+          </Text>
+        )}
+
         {hasVs && (
-          <View style={{ marginTop: Spacing.md }}>
+          <View style={styles.gauge}>
             <VersusGauge
               left={{ label: top.label, km: statValue(top, battle.rankingType), isMine: false }}
               right={{ label: second.label, km: statValue(second, battle.rankingType), isMine: false }}
               size="md"
+              unit={battle.rankingType === 'average' ? 'km/人' : 'km'}
             />
           </View>
         )}
-        {shortageCategory && (
-          <View style={styles.recommendShortageRow}>
-            <Text style={styles.recommendShortageText}>
-              「{shortageCategory.label}」は援軍募集中！
-            </Text>
-          </View>
-        )}
-        <View style={styles.recommendCta}>
-          <Text style={styles.recommendCtaText}>区分を選んで参加する</Text>
-          <Ionicons name="chevron-forward" size={16} color={Colors.accent} />
+
+        <View style={styles.cta}>
+          <Text style={styles.ctaText}>区分を選んで参加する</Text>
+          <Ionicons name="chevron-forward" size={16} color={Colors.textOnPrimary} />
         </View>
       </Card>
     </TouchableOpacity>
@@ -56,28 +66,58 @@ export function JoinRecommendationCard({ battle, stats, shortageCategory, onPres
 }
 
 const styles = StyleSheet.create({
-  card: { marginBottom: 0 },
-  recommendHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
-  recommendHeaderText: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.accentDark },
-  recommendTitle: { fontSize: Typography.fontSize.xl, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary, marginTop: Spacing.xs },
-  recommendShortageRow: {
-    alignSelf: 'flex-start',
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
+  // 画面側が左右パディングを持つので Card のデフォルト marginHorizontal は打ち消す
+  card: { marginBottom: 0, marginHorizontal: 0 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  headerText: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.primary,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
     marginTop: Spacing.md,
   },
-  recommendShortageText: { fontSize: Typography.fontSize.xs, fontWeight: Typography.fontWeight.bold, color: Colors.accent },
-  recommendCta: {
+  title: {
+    flex: 1,
+    fontSize: Typography.fontSize.lg,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.textPrimary,
+  },
+  // 不足陣営は「オレンジ＝競争の熱」で拾う
+  shortageBadge: {
+    backgroundColor: Colors.accentLight,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+  },
+  shortageText: {
+    fontSize: 10,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.accentDark,
+    letterSpacing: 0.4,
+  },
+  shortageHint: {
+    fontSize: Typography.fontSize.xs,
+    color: Colors.textSecondary,
+    marginTop: Spacing.xs,
+  },
+  gauge: { marginTop: Spacing.lg },
+  cta: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.xs,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.primary,
     borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.sm,
-    marginTop: Spacing.md,
+    paddingVertical: Spacing.md,
+    marginTop: Spacing.lg,
   },
-  recommendCtaText: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.accent },
+  ctaText: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.textOnPrimary,
+  },
 });

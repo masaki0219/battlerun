@@ -14,7 +14,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useBattleStore } from '../../stores/battleStore';
 import { useRecentActivities } from '../../hooks/useRecentActivities';
 import type { MeasurementType, RoutePoint } from '../../types';
-import { Colors, DarkColors, Spacing, BorderRadius, TextStyles } from '../../design_tokens';
+import { Colors, DarkColors, Spacing, BorderRadius, Shadow, TextStyles } from '../../design_tokens';
 import { MonoLabel } from '../../components/ui/MonoLabel';
 import { StatBlock } from '../../components/ui/StatBlock';
 import { SectionHeader } from '../../components/ui/SectionHeader';
@@ -144,6 +144,17 @@ export default function RecordScreen() {
     if (!isRecording) spokenKmRef.current = 0;
   }, [isRecording]);
 
+  async function handleStart() {
+    if (selectedMode === 'steps') {
+      const permission = await Pedometer.requestPermissionsAsync().catch(() => ({ status: 'denied' as const }));
+      if (permission.status !== 'granted') {
+        Alert.alert('モーション権限が必要です', '歩数モードを使うには、端末設定でモーションとフィットネスを許可してください。');
+        return;
+      }
+    }
+    startRecording(selectedMode);
+  }
+
   async function handleStop() {
     Alert.alert('記録を停止しますか？', '', [
       { text: 'キャンセル', style: 'cancel' },
@@ -165,29 +176,31 @@ export default function RecordScreen() {
                 { language: 'ja-JP', rate: 1.0 },
               );
             }
-            const activityId = await saveActivityToFirestore({
-              userId: user.id,
-              displayName: user.name,
+            const submitted = await saveActivityToFirestore({
               activity,
-              activeBattleIds: getActiveBattleIds(),
             });
             setSavedRoute(activity.route ?? []);
-            setSavedStats({ distanceKm: activity.distanceKm, durationSeconds: activity.durationSeconds });
+            const savedDistanceKm = submitted?.distanceKm ?? activity.distanceKm;
+            const savedDurationSeconds = submitted?.durationSeconds ?? activity.durationSeconds;
+            setSavedStats({ distanceKm: savedDistanceKm, durationSeconds: savedDurationSeconds });
             reset();
             // Navigate to summary
             router.push({
               pathname: '/record/summary' as any,
               params: {
-                activityId: activityId ?? '',
-                distanceKm: activity.distanceKm.toFixed(2),
-                durationSeconds: String(activity.durationSeconds),
-                steps: String(activity.steps ?? 0),
-                pace: formatPace(activity.distanceKm, activity.durationSeconds),
+                activityId: submitted?.activityId ?? '',
+                distanceKm: savedDistanceKm.toFixed(2),
+                durationSeconds: String(savedDurationSeconds),
+                steps: String(submitted?.steps ?? activity.steps ?? 0),
+                pace: formatPace(savedDistanceKm, savedDurationSeconds),
               },
             });
           } catch (e: any) {
-            Alert.alert('保存失敗', '記録の保存に失敗しました。通信状態を確認してください。',
-              [{ text: 'OK', onPress: () => reset() }]);
+            Alert.alert(
+              '端末に保存しました',
+              '通信できなかったため、記録を端末に保管しました。次回オンライン時に自動で再送します。',
+              [{ text: 'OK', onPress: () => reset() }],
+            );
             console.error('saveActivityToFirestore error:', e);
           } finally {
             setIsSaving(false);
@@ -205,6 +218,7 @@ export default function RecordScreen() {
       <SafeAreaView style={s.root} edges={['top']}>
         <ScrollView contentContainerStyle={s.preScroll} showsVerticalScrollIndicator={false}>
           <View style={s.preHeader}>
+            <Text style={s.preEyebrow}>BATTLE RUN</Text>
             <Text style={s.preTitle}>ラン</Text>
           </View>
 
@@ -223,6 +237,9 @@ export default function RecordScreen() {
                     }
                     setSelectedMode(mode);
                   }}
+                  accessibilityRole="radio"
+                  accessibilityLabel={mode === 'gps' ? 'GPSモード' : '歩数モード'}
+                  accessibilityState={{ selected: active }}
                 >
                   <Ionicons
                     name={mode === 'gps' ? 'navigate-outline' : 'footsteps-outline'}
@@ -256,8 +273,10 @@ export default function RecordScreen() {
               <Animated.View style={[s.startRing, { transform: [{ rotate: ringRotate }] }]} />
               <TouchableOpacity
                 style={s.startBtn}
-                onPress={() => startRecording(selectedMode)}
+                onPress={handleStart}
                 activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel="ランの記録を開始"
               >
                 <Text style={s.startLabel}>START</Text>
               </TouchableOpacity>
@@ -274,7 +293,7 @@ export default function RecordScreen() {
             ) : currentActiveBattles.length > 1 ? (
               <View style={s.contribBadge}>
                 <Text style={s.contribBadgeText}>
-                  このランは参加中の{currentActiveBattles.length}件のバトルに加算されます
+                  このランは参加中の{currentActiveBattles.length}件のチャレンジに加算されます
                 </Text>
               </View>
             ) : (
@@ -284,7 +303,7 @@ export default function RecordScreen() {
                 activeOpacity={0.7}
               >
                 <Text style={[s.contribBadgeText, { color: Colors.textTertiary }]}>
-                  バトルに参加するとこのランが加算されます
+                  チャレンジに参加するとこのランが加算されます
                 </Text>
               </TouchableOpacity>
             )}
@@ -376,7 +395,7 @@ export default function RecordScreen() {
           <Text style={s.hudContribText}>
             {currentActiveBattles.length === 1
               ? `+${distanceKm.toFixed(2)}km → 「${currentActiveBattles[0].title}」に加算`
-              : `+${distanceKm.toFixed(2)}km → 参加中の${currentActiveBattles.length}件のバトルに加算`}
+              : `+${distanceKm.toFixed(2)}km → 参加中の${currentActiveBattles.length}件のチャレンジに加算`}
           </Text>
         </View>
       )}
@@ -384,20 +403,26 @@ export default function RecordScreen() {
       {/* GPS追跡状態の警告バナー */}
       {measurementType === 'gps' && gpsWarning && (
         <View style={s.warnBanner}>
-          <Ionicons name="warning-outline" size={14} color={Colors.accent} />
+          <Ionicons name="warning-outline" size={14} color={DarkColors.accent} />
           <Text style={s.warnBannerText}>⚠ GPS信号が不安定です。画面を開いたまま走ってください</Text>
         </View>
       )}
       {measurementType === 'gps' && !gpsWarning && locationMode === 'foreground' && (
         <View style={s.warnBanner}>
-          <Ionicons name="warning-outline" size={14} color={Colors.accent} />
+          <Ionicons name="warning-outline" size={14} color={DarkColors.accent} />
           <Text style={s.warnBannerText}>アプリを閉じると記録が止まる可能性があります</Text>
         </View>
       )}
       {measurementType === 'gps' && locationMode === 'denied' && (
         <View style={s.warnBanner}>
-          <Ionicons name="warning-outline" size={14} color={Colors.accent} />
+          <Ionicons name="warning-outline" size={14} color={DarkColors.accent} />
           <Text style={s.warnBannerText}>位置情報の権限がありません。設定から許可してください</Text>
+        </View>
+      )}
+      {measurementType === 'steps' && (
+        <View style={s.warnBanner}>
+          <Ionicons name="information-circle-outline" size={14} color={DarkColors.accent} />
+          <Text style={s.warnBannerText}>歩数モードは画面を閉じると計測が止まる場合があります</Text>
         </View>
       )}
 
@@ -442,7 +467,13 @@ export default function RecordScreen() {
         {isSaving ? (
           <ActivityIndicator color={DarkColors.primary} size="large" />
         ) : (
-          <TouchableOpacity style={s.stopBtn} onPress={handleStop} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={s.stopBtn}
+            onPress={handleStop}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="ランの記録を停止"
+          >
             <View style={s.stopSquare} />
           </TouchableOpacity>
         )}
@@ -507,8 +538,12 @@ const s = StyleSheet.create({
   // Pre-recording (light)
   root: { flex: 1, backgroundColor: Colors.background },
   preScroll: { paddingBottom: 110 },
-  preHeader: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4, gap: 4 },
-  preTitle: { fontSize: 22, fontWeight: '900', color: Colors.textPrimary, marginTop: 2 },
+  preHeader: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4 },
+  preEyebrow: { fontSize: 10, fontWeight: '700', color: Colors.textTertiary, letterSpacing: 1.8 },
+  preTitle: {
+    marginTop: 2,
+    fontSize: 26, fontWeight: '800', color: Colors.textPrimary, letterSpacing: -0.5,
+  },
 
   voiceRow: {
     flexDirection: 'row' as const,
@@ -525,7 +560,7 @@ const s = StyleSheet.create({
   },
   modeToggle: {
     flexDirection: 'row', gap: 4, padding: 4,
-    backgroundColor: Colors.surfaceGray, borderRadius: BorderRadius.full,
+    backgroundColor: Colors.surfaceAlt, borderRadius: BorderRadius.full,
     marginHorizontal: 40, marginTop: 20,
   },
   modeBtn: {
@@ -534,8 +569,7 @@ const s = StyleSheet.create({
   },
   modeBtnActive: {
     backgroundColor: Colors.surface,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08, shadowRadius: 4, elevation: 2,
+    ...Shadow.sm,
   },
   modeBtnText: { fontSize: 12, fontWeight: '700', color: Colors.textTertiary },
   modeBtnTextActive: { color: Colors.textPrimary },
@@ -546,23 +580,23 @@ const s = StyleSheet.create({
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
     borderRadius: 90,
-    borderWidth: 2, borderColor: `${Colors.accent}55`,
+    borderWidth: 2, borderColor: Colors.primaryBorder,
     borderStyle: 'dashed',
   },
   startBtn: {
     width: 160, height: 160, borderRadius: 80,
     backgroundColor: Colors.accent,
     alignItems: 'center', justifyContent: 'center',
-    shadowColor: Colors.accent, shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.5, shadowRadius: 32, elevation: 12,
+    shadowColor: Colors.accentDark, shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.34, shadowRadius: 28, elevation: 12,
   },
   startLabel: { fontSize: 38, fontWeight: '900', color: Colors.textOnAccent, letterSpacing: 2 },
-  startHint: { fontSize: 13, color: Colors.textTertiary, fontWeight: '600' },
+  startHint: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
   contribBadge: {
-    backgroundColor: `${Colors.primary}22`, borderRadius: BorderRadius.full,
+    backgroundColor: Colors.primaryLight, borderRadius: BorderRadius.full,
     paddingHorizontal: 14, paddingVertical: 7,
   },
-  contribBadgeText: { fontSize: 11, fontWeight: '800', color: Colors.primaryDark, textAlign: 'center' },
+  contribBadgeText: { fontSize: 11, fontWeight: '800', color: Colors.primary, textAlign: 'center' },
 
   // 開始前 下段データ
   preData: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm, gap: Spacing.md },
@@ -585,7 +619,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 20, paddingVertical: 12,
   },
   recDot: {
-    width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.accent,
+    width: 8, height: 8, borderRadius: 4, backgroundColor: DarkColors.accent,
   },
   hudHero: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
   hudBigNum: {
@@ -595,17 +629,17 @@ const s = StyleSheet.create({
   hudUnit: { fontSize: 28, fontWeight: '700', color: DarkColors.textTertiary, letterSpacing: 1 },
   hudContribRow: {
     marginHorizontal: 20, marginBottom: 8,
-    backgroundColor: `${DarkColors.primary}18`,
+    backgroundColor: DarkColors.primarySoft,
     borderRadius: BorderRadius.sm, paddingHorizontal: 14, paddingVertical: 8,
   },
   hudContribText: { fontSize: 11, fontWeight: '700', color: DarkColors.primary, textAlign: 'center' },
   warnBanner: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     marginHorizontal: 20, marginBottom: 8, gap: 6,
-    backgroundColor: `${Colors.accent}18`,
+    backgroundColor: DarkColors.accentSoft,
     borderRadius: BorderRadius.sm, paddingHorizontal: 14, paddingVertical: 8,
   },
-  warnBannerText: { fontSize: 11, fontWeight: '700', color: Colors.accent, textAlign: 'center' },
+  warnBannerText: { fontSize: 11, fontWeight: '700', color: DarkColors.accent, textAlign: 'center' },
   hudStatsRow: {
     flexDirection: 'row',
     marginHorizontal: 20, marginBottom: 12,

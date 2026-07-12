@@ -11,3 +11,6 @@ export { rankChangeScheduler } from './rankChangeScheduler';
 export { onReactionCreated, onUserTitlesUpdated } from './notifications';
 export { validateBattleTitleOnCreate } from './battleTitleValidation';
 export { onUserDeleted } from './onUserDeleted';
+export { submitActivity } from './submitActivity';
+export { awardBadgesOnActivityAggregated, syncMyBadges } from './badges';
+export { lookupBattleByInviteCode } from './lookupBattle';

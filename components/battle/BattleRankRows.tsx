@@ -23,19 +23,21 @@ export function BattleRankRows({ battle, sorted, myCatId, expanded, onToggleExpa
   if (sorted.length === 0) return null;
   const rt = battle.rankingType;
   const maxVal = maxStat(sorted, rt);
+  const allZero = sorted.every((item) => statValue(item, rt) <= 0);
   const myIdx = sorted.findIndex((s) => s.categoryId === myCatId);
   const showMyExtra = !expanded && myIdx >= 3;
   const visible = expanded ? sorted : sorted.slice(0, 3);
   const hiddenCount = sorted.length - 3;
 
-  const row = (s: CategoryStats, rank: number) => {
+  const row = (s: CategoryStats) => {
     const isMine = s.categoryId === myCatId;
+    const rank = allZero ? null : 1 + sorted.filter((item) => statValue(item, rt) > statValue(s, rt)).length;
     const barColor = isMine
       ? Colors.primary
-      : Colors.teamColors[Math.min(rank - 1, Colors.teamColors.length - 1)];
+      : Colors.teamColors[Math.min((rank ?? 1) - 1, Colors.teamColors.length - 1)];
     return (
       <View key={s.categoryId} style={styles.rankRow}>
-        <Text style={[styles.rankNum, isMine && styles.rankNumMine]}>{rank}</Text>
+        <Text style={[styles.rankNum, isMine && styles.rankNumMine]}>{rank ?? '—'}</Text>
         <Text style={[styles.rankName, isMine && styles.rankNameMine]} numberOfLines={1}>
           {s.label}
         </Text>
@@ -49,11 +51,11 @@ export function BattleRankRows({ battle, sorted, myCatId, expanded, onToggleExpa
 
   return (
     <View style={styles.rankSection}>
-      {visible.map((s, i) => row(s, i + 1))}
+      {visible.map((s) => row(s))}
       {showMyExtra && (
         <>
           <Text style={styles.ellipsis}>⋯</Text>
-          {row(sorted[myIdx], myIdx + 1)}
+          {row(sorted[myIdx])}
         </>
       )}
       {hiddenCount > 0 && (

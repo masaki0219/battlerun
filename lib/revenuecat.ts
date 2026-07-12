@@ -34,7 +34,7 @@ function getPurchases(): any {
   }
 }
 
-export function initRevenueCat(userId: string): void {
+export async function initRevenueCat(userId: string): Promise<void> {
   if (isExpoGo || !API_KEY) return;
   const Purchases = getPurchases();
   if (!Purchases) return;
@@ -42,9 +42,12 @@ export function initRevenueCat(userId: string): void {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { LOG_LEVEL } = require('react-native-purchases');
     Purchases.setLogLevel(LOG_LEVEL.WARN);
-    Purchases.configure({ apiKey: API_KEY, appUserID: userId });
-    // app_user_id が Firebase の uid と一致していることを保証する
-    Purchases.logIn(userId);
+    if (Purchases.isConfigured()) {
+      // アカウント切替時は既存SDKセッションへ明示的にログインする。
+      await Purchases.logIn(userId);
+    } else {
+      Purchases.configure({ apiKey: API_KEY, appUserID: userId });
+    }
   } catch (e) {
     console.warn('[RevenueCat] 初期化エラー:', e);
   }

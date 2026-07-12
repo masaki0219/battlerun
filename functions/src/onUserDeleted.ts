@@ -1,6 +1,7 @@
 import * as functionsV1 from 'firebase-functions/v1';
 import { logger } from 'firebase-functions/v2';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getStorage } from 'firebase-admin/storage';
 
 const BATCH_SIZE = 500;
 
@@ -29,6 +30,8 @@ export const onUserDeleted = functionsV1.auth.user().onDelete(async (user) => {
   const uid = user.uid;
   const db = getFirestore();
   logger.info('onUserDeleted: start', { uid });
+  const userSnap = await db.doc(`users/${uid}`).get();
+  const knownBattleIds = (userSnap.data()?.['battleIds'] as string[] | undefined) ?? [];
 
   // 1. 本人のactivities（GPSルート含む）と、そのreactionsサブコレクション
   const activitiesSnap = await db.collection('activities').where('userId', '==', uid).get();
@@ -36,9 +39,17 @@ export const onUserDeleted = functionsV1.auth.user().onDelete(async (user) => {
   for (const activityDoc of activitiesSnap.docs) {
     const reactionsSnap = await activityDoc.ref.collection('reactions').get();
     reactionsSnap.docs.forEach((r) => activityAndReactionRefs.push(r.ref));
+    const routeChunksSnap = await db
+      .collection(`users/${uid}/activityRoutes/${activityDoc.id}/chunks`)
+      .get();
+    routeChunksSnap.docs.forEach((chunk) => activityAndReactionRefs.push(chunk.ref));
     activityAndReactionRefs.push(activityDoc.ref);
   }
   await batchDelete(db, activityAndReactionRefs);
+
+  // 本人が他ユーザーの活動へ付けたリアクションも削除する。
+  const authoredReactionsSnap = await db.collectionGroup('reactions').where('userId', '==', uid).get();
+  await batchDelete(db, authoredReactionsSnap.docs.map((doc) => doc.ref));
 
   // 2. 各バトルの participants/{uid}
   //    users/{uid}.battleIds はクライアント側の削除処理で users/{uid} 自体が
@@ -49,7 +60,13 @@ export const onUserDeleted = functionsV1.auth.user().onDelete(async (user) => {
     .collectionGroup('participants')
     .where('userId', '==', uid)
     .get();
-  await batchDelete(db, participantsSnap.docs.map((d) => d.ref));
+  const participantRefs = new Map<string, FirebaseFirestore.DocumentReference>();
+  participantsSnap.docs.forEach((doc) => participantRefs.set(doc.ref.path, doc.ref));
+  knownBattleIds.forEach((battleId) => {
+    const ref = db.doc(`battles/${battleId}/participants/${uid}`);
+    participantRefs.set(ref.path, ref);
+  });
+  await batchDelete(db, [...participantRefs.values()]);
   // participants の削除は participantCounter (onDocumentWritten) をトリガーし、
   // category_stats.participantCount / avgDistanceKm を自動補正する。
 
@@ -64,13 +81,22 @@ export const onUserDeleted = functionsV1.auth.user().onDelete(async (user) => {
   ]);
 
   // 4. users/{uid} 本体（クライアント側削除が何らかの理由で失敗していた場合の保険）
-  await db.doc(`users/${uid}`).delete();
+  await Promise.all([
+    db.doc(`users/${uid}`).delete(),
+    db.doc(`publicProfiles/${uid}`).delete(),
+  ]);
+
+  // 5. Storageのプロフィール画像。クライアント削除に失敗しても残さない。
+  await getStorage().bucket().file(`avatars/${uid}`).delete({ ignoreNotFound: true }).catch((error) => {
+    logger.warn('onUserDeleted: avatar deletion failed', { uid, error: (error as Error).message });
+  });
 
   logger.info('onUserDeleted: done', {
     uid,
     deletedActivities: activitiesSnap.size,
-    deletedParticipants: participantsSnap.size,
+    deletedParticipants: participantRefs.size,
     deletedNotifications: notificationsSnap.size,
     deletedBadges: badgesSnap.size,
+    deletedAuthoredReactions: authoredReactionsSnap.size,
   });
 });

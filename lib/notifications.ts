@@ -48,24 +48,28 @@ export async function requestNotificationPermission(): Promise<boolean> {
  *
  * サーバーサイド（Cloud Functions）からプッシュ通知を送る際に使用する。
  */
-export async function registerPushToken(userId: string): Promise<void> {
-  if (!Device.isDevice) return;
-
-  const granted = await requestNotificationPermission();
-  if (!granted) return;
+export async function registerPushToken(userId: string, askPermission = false): Promise<boolean> {
+  if (!Device.isDevice) return false;
+  const current = await Notifications.getPermissionsAsync();
+  const granted = current.status === 'granted'
+    ? true
+    : askPermission ? await requestNotificationPermission() : false;
+  if (!granted) return false;
 
   const projectId =
     (Constants.expoConfig?.extra as Record<string, any>)?.eas?.projectId as string | undefined;
   if (!projectId) {
     console.warn('[Notifications] EAS projectId が未設定のため Push Token を取得できません');
-    return;
+    return false;
   }
 
   try {
     const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
     await updateDoc(doc(db, 'users', userId), { expoPushToken: token });
+    return true;
   } catch (e) {
     console.warn('[Notifications] Push Token の取得・保存に失敗:', e);
+    return false;
   }
 }
 
@@ -87,7 +91,7 @@ export async function scheduleBattleEndNotification(battle: Battle): Promise<str
       content: {
         title: '🏃 チャレンジ終了まで24時間！',
         body: `「${battle.title}」の終了が近づいています。最後の追い込みを！`,
-        data: { battleId: battle.id },
+        data: { relatedBattleId: battle.id },
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -113,7 +117,7 @@ export async function scheduleBattleEnd1hNotification(battle: Battle): Promise<s
       content: {
         title: '⚡ チャレンジ終了まで1時間！',
         body: `「${battle.title}」があと1時間で終了します。最後の一走りを！`,
-        data: { battleId: battle.id },
+        data: { relatedBattleId: battle.id },
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -134,4 +138,3 @@ export async function cancelScheduledNotification(notificationId: string): Promi
 export async function getScheduledNotifications() {
   return Notifications.getAllScheduledNotificationsAsync();
 }
-

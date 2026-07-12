@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, getDoc, query, orderBy, limit as firestoreLimit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
 /** battles/{id}/participants/{uid} を表示用に整形した1件 */
@@ -30,33 +30,33 @@ export function useBattleParticipants(
       setLoading(false);
       return;
     }
-    let cancelled = false;
     setLoading(true);
-    (async () => {
+    const participantsQuery = query(
+      collection(db, 'battles', battleId, 'participants'),
+      orderBy('totalDistanceKm', 'desc'),
+      firestoreLimit(limit),
+    );
+    const unsubscribe = onSnapshot(participantsQuery, async (partSnap) => {
       try {
-        const partSnap = await getDocs(collection(db, 'battles', battleId, 'participants'));
-        const parts: BattleParticipant[] = [];
-        await Promise.all(
-          partSnap.docs.slice(0, limit).map(async (d) => {
+        const parts = await Promise.all(
+          partSnap.docs.map(async (d) => {
             const uid = d.id;
             const km = (d.data()['totalDistanceKm'] as number) ?? 0;
             const activityCount = (d.data()['activityCount'] as number | undefined) ?? null;
-            const userSnap = await getDoc(doc(db, 'users', uid));
+            const userSnap = await getDoc(doc(db, 'publicProfiles', uid));
             const name = (userSnap.data()?.['name'] as string) ?? 'メンバー';
-            parts.push({ userId: uid, displayName: name, totalDistanceKm: km, activityCount });
+            return { userId: uid, displayName: name, totalDistanceKm: km, activityCount };
           }),
         );
         parts.sort((a, b) => b.totalDistanceKm - a.totalDistanceKm);
-        if (!cancelled) setParticipants(parts);
+        setParticipants(parts);
       } catch {
-        if (!cancelled) setParticipants([]);
+        setParticipants([]);
       } finally {
-        if (!cancelled) setLoading(false);
+        setLoading(false);
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    }, () => { setParticipants([]); setLoading(false); });
+    return unsubscribe;
   }, [battleId, enabled, limit]);
 
   return { participants, loading };

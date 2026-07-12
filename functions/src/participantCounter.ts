@@ -27,6 +27,8 @@ export const participantCounter = onDocumentWritten(
       | string
       | null
       | undefined;
+    const oldDistance = (before?.exists ? before.data()?.['totalDistanceKm'] : 0) as number | undefined;
+    const newDistance = (after?.exists ? after.data()?.['totalDistanceKm'] : 0) as number | undefined;
 
     if ((oldCategoryId ?? null) === (newCategoryId ?? null)) {
       // カテゴリに変化がない（無関係フィールドの更新、またはカテゴリ未所属のまま作成/削除）
@@ -35,9 +37,9 @@ export const participantCounter = onDocumentWritten(
 
     const db = getFirestore();
 
-    const targets: { categoryId: string; delta: 1 | -1 }[] = [];
-    if (oldCategoryId) targets.push({ categoryId: oldCategoryId, delta: -1 });
-    if (newCategoryId) targets.push({ categoryId: newCategoryId, delta: 1 });
+    const targets: { categoryId: string; countDelta: 1 | -1; distanceDelta: number }[] = [];
+    if (oldCategoryId) targets.push({ categoryId: oldCategoryId, countDelta: -1, distanceDelta: -Math.max(oldDistance ?? 0, 0) });
+    if (newCategoryId) targets.push({ categoryId: newCategoryId, countDelta: 1, distanceDelta: Math.max(newDistance ?? 0, 0) });
     if (targets.length === 0) return;
 
     await db.runTransaction(async (tx) => {
@@ -58,11 +60,13 @@ export const participantCounter = onDocumentWritten(
         }
         const stats = snap.data()!;
         const currentCount = (stats['participantCount'] as number) ?? 0;
-        const newCount = Math.max(currentCount + target.delta, 0);
+        const newCount = Math.max(currentCount + target.countDelta, 0);
         const totalDistanceKm = (stats['totalDistanceKm'] as number) ?? 0;
+        const newTotalDistanceKm = Math.max(totalDistanceKm + target.distanceDelta, 0);
         tx.update(refs[i], {
           participantCount: newCount,
-          avgDistanceKm: totalDistanceKm / Math.max(newCount, 1),
+          totalDistanceKm: newTotalDistanceKm,
+          avgDistanceKm: newTotalDistanceKm / Math.max(newCount, 1),
         });
       });
     });

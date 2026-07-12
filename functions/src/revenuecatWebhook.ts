@@ -8,7 +8,10 @@ import { getFirestore } from 'firebase-admin/firestore';
 const REVENUECAT_WEBHOOK_AUTH = defineSecret('REVENUECAT_WEBHOOK_AUTH');
 
 // Pro化するイベント
-const PRO_EVENT_TYPES = new Set(['INITIAL_PURCHASE', 'RENEWAL', 'UNCANCELLATION', 'PRODUCT_CHANGE']);
+const PRO_EVENT_TYPES = new Set([
+  'INITIAL_PURCHASE', 'RENEWAL', 'UNCANCELLATION', 'PRODUCT_CHANGE',
+  'SUBSCRIPTION_EXTENDED', 'TEMPORARY_ENTITLEMENT_GRANT',
+]);
 // Free化するイベント（CANCELLATIONは解約予約のため期限まではPro維持＝何もしない）
 const FREE_EVENT_TYPES = new Set(['EXPIRATION']);
 
@@ -27,19 +30,27 @@ export const revenuecatWebhook = onRequest(
       return;
     }
 
-    const event = req.body?.event as { type?: string; app_user_id?: string } | undefined;
+    const event = req.body?.event as {
+      id?: string;
+      type?: string;
+      app_user_id?: string;
+      event_timestamp_ms?: number;
+      expiration_at_ms?: number | null;
+      entitlement_ids?: string[];
+    } | undefined;
     const eventType = event?.type;
     const appUserId = event?.app_user_id;
 
     if (!eventType || !appUserId) {
-      logger.warn('revenuecatWebhook: invalid payload', { body: req.body });
+      logger.warn('revenuecatWebhook: invalid payload');
       res.status(200).send('ignored');
       return;
     }
 
     let plan: 'pro' | 'free' | null = null;
-    if (PRO_EVENT_TYPES.has(eventType)) plan = 'pro';
-    else if (FREE_EVENT_TYPES.has(eventType)) plan = 'free';
+    const hasProEntitlement = !event.entitlement_ids || event.entitlement_ids.includes('pro');
+    if (PRO_EVENT_TYPES.has(eventType) && hasProEntitlement) plan = 'pro';
+    else if (FREE_EVENT_TYPES.has(eventType) && (event.expiration_at_ms ?? 0) <= Date.now()) plan = 'free';
 
     if (plan === null) {
       logger.info('revenuecatWebhook: no-op event type', { eventType, appUserId });
@@ -56,7 +67,26 @@ export const revenuecatWebhook = onRequest(
       return;
     }
 
-    await userRef.update({ plan });
+    const incomingAt = event.event_timestamp_ms ?? Date.now();
+    const applied = await getFirestore().runTransaction(async (tx) => {
+      const fresh = await tx.get(userRef);
+      if (!fresh.exists) return false;
+      const previousAt = (fresh.data()?.['revenuecatLastEventAtMs'] as number | undefined) ?? 0;
+      const previousId = fresh.data()?.['revenuecatLastEventId'] as string | undefined;
+      if (incomingAt < previousAt || (event.id && event.id === previousId)) return false;
+      tx.update(userRef, {
+        plan,
+        revenuecatLastEventAtMs: incomingAt,
+        revenuecatLastEventId: event.id ?? null,
+        revenuecatExpirationAtMs: event.expiration_at_ms ?? null,
+      });
+      return true;
+    });
+    if (!applied) {
+      logger.info('revenuecatWebhook: stale or duplicate event ignored', { appUserId, eventType, eventId: event.id });
+      res.status(200).send('ignored');
+      return;
+    }
     logger.info('revenuecatWebhook: plan updated', { appUserId, plan, eventType });
     res.status(200).send('ok');
   },

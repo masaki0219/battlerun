@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuthStore } from '../stores/authStore';
 import type { Activity, MeasurementType, RoutePoint } from '../types';
@@ -42,8 +42,8 @@ export function useRecentActivities(limitCount = 50): {
       orderBy('startedAt', 'desc'),
       limit(limitCount),
     );
-    getDocs(q)
-      .then((snap) => {
+    const unsubscribe = onSnapshot(q,
+      (snap) => {
         if (cancelled) return;
         const items: Activity[] = snap.docs.map((d) => {
           const data = d.data() as any;
@@ -61,15 +61,14 @@ export function useRecentActivities(limitCount = 50): {
           };
         });
         setActivities(items);
-      })
-      .catch(() => {
+        setLoading(false);
+      }, () => {
         if (!cancelled) setActivities([]);
-      })
-      .finally(() => {
         if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, [user, limitCount]);
 

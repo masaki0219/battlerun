@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, Animated, StyleSheet } from 'react-native';
-import { Colors, Spacing, Animation } from '../../design_tokens';
+import { Colors, Spacing, BorderRadius, Animation } from '../../design_tokens';
 
 export interface WeeklyBarChartDay {
   label: string;
@@ -17,6 +17,8 @@ interface Props {
   height?: number;
   /** true: ラベル・数値を省略（ランタブのミニ表示用） */
   compact?: boolean;
+  /** 「今週合計 ◯km」行の表示。default は compact の逆。カード側が合計を大きく出すなら false */
+  showTotal?: boolean;
 }
 
 const MIN_BAR = 3;
@@ -24,11 +26,13 @@ const MIN_BAR = 3;
 /**
  * 直近7日の日別距離バーチャート。View のみ（依存ゼロ）。
  * バトルタブ・ランタブ・stats で共用。マウント時に高さを 0→実値へアニメーション。
+ * 各バーは下地トラック（レーン）の中で伸びる。今日のバーだけ accent。
  */
-export function WeeklyBarChart({ days, maxKm, height = 64, compact = false }: Props) {
+export function WeeklyBarChart({ days, maxKm, height = 64, compact = false, showTotal }: Props) {
   const peak = Math.max(1, maxKm ?? Math.max(...days.map((d) => d.km), 0));
   const totalKm = days.reduce((sum, d) => sum + d.km, 0);
   const allZero = totalKm <= 0;
+  const withTotal = showTotal ?? !compact;
 
   const grow = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -42,7 +46,7 @@ export function WeeklyBarChart({ days, maxKm, height = 64, compact = false }: Pr
 
   return (
     <View>
-      {!compact ? (
+      {withTotal ? (
         <View style={styles.headerRow}>
           <Text style={styles.totalText}>
             今週合計 <Text style={styles.totalNum}>{totalKm.toFixed(1)}</Text>km
@@ -53,26 +57,22 @@ export function WeeklyBarChart({ days, maxKm, height = 64, compact = false }: Pr
       <View style={[styles.barsRow, { height }]}>
         {days.map((d, i) => {
           const target = d.km > 0 ? Math.max(MIN_BAR, (d.km / peak) * height) : MIN_BAR;
-          const barColor = d.isToday
-            ? d.km > 0
-              ? Colors.chartToday
-              : Colors.chartBarInactive
-            : d.km > 0
-            ? Colors.chartBarActive
-            : Colors.chartBarInactive;
+          const barColor = d.km <= 0
+            ? Colors.chartBarInactive
+            : d.isToday
+            ? Colors.chartToday
+            : Colors.chartBarActive;
           const barHeight = grow.interpolate({
             inputRange: [0, 1],
             outputRange: [MIN_BAR, target],
           });
           return (
             <View key={i} style={styles.barSlot}>
-              <Animated.View
-                style={[styles.bar, { height: barHeight, backgroundColor: barColor }]}
-              >
-                {d.isToday && d.km === 0 ? (
-                  <View style={styles.todayUnderline} />
-                ) : null}
-              </Animated.View>
+              <View style={[styles.track, { height }]}>
+                <Animated.View
+                  style={[styles.bar, { height: barHeight, backgroundColor: barColor }]}
+                />
+              </View>
             </View>
           );
         })}
@@ -126,21 +126,22 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'stretch',
   },
+  // バーが伸びる下地レーン。v3 の「棒＋トラック」表現
+  track: {
+    width: '100%',
+    justifyContent: 'flex-end',
+    backgroundColor: Colors.chartTrack,
+    borderRadius: BorderRadius.sm,
+    overflow: 'hidden',
+  },
   bar: {
     width: '100%',
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 4,
-    justifyContent: 'flex-end',
-  },
-  todayUnderline: {
-    height: 2,
-    backgroundColor: Colors.chartToday,
-    borderRadius: 1,
+    borderRadius: BorderRadius.sm,
   },
   labelsRow: {
     flexDirection: 'row',
     gap: Spacing.sm,
-    marginTop: Spacing.xs,
+    marginTop: Spacing.sm,
   },
   dayLabel: {
     fontSize: 10,
@@ -148,7 +149,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   dayLabelToday: {
-    color: Colors.accent,
+    color: Colors.accentDark,
     fontWeight: '700',
   },
   emptyOverlay: {

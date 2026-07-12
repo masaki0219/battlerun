@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, StyleSheet,
+  View, Text, TextInput, StyleSheet, TouchableOpacity,
   KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -69,6 +69,12 @@ export default function SignupScreen() {
 
           <Button label="アカウントを作成" onPress={handleSignup} loading={isLoading} style={styles.btn} />
           <Button label="ログインに戻る" onPress={() => router.back()} variant="ghost" />
+          <Text style={styles.consent}>登録すると、以下の内容に同意したものとみなされます。</Text>
+          <View style={styles.legalRow}>
+            <TouchableOpacity onPress={() => router.push('/legal/terms')} accessibilityRole="link"><Text style={styles.legalText}>利用規約</Text></TouchableOpacity>
+            <Text style={styles.legalDivider}>・</Text>
+            <TouchableOpacity onPress={() => router.push('/legal/privacy')} accessibilityRole="link"><Text style={styles.legalText}>プライバシーポリシー</Text></TouchableOpacity>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -93,4 +99,8 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   btn: { marginTop: Spacing.sm },
+  consent: { textAlign: 'center', fontSize: Typography.fontSize.xs, color: Colors.textTertiary, marginTop: Spacing.sm },
+  legalRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
+  legalText: { fontSize: Typography.fontSize.xs, color: Colors.primary },
+  legalDivider: { marginHorizontal: Spacing.sm, color: Colors.textTertiary },
 });

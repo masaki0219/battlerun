@@ -17,7 +17,7 @@ export default function RootLayout() {
   const router = useRouter();
   const [onboardingChecked, setOnboardingChecked] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const [resultChecked, setResultChecked] = useState(false);
+  const [resultCheckedUserId, setResultCheckedUserId] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = initAuthListener();
@@ -33,31 +33,39 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (!user) return;
-    initRevenueCat(user.id);
-    registerPushToken(user.id);
+    void initRevenueCat(user.id);
+    void registerPushToken(user.id, false);
     checkProEntitlement().then((active) => useAuthStore.getState().setProEntitlement(active));
   }, [user?.id]);
 
   // バトル終了後の自動表示: ログイン後に一度だけチェック
   useEffect(() => {
-    if (!user || resultChecked) return;
-    setResultChecked(true);
+    if (!user || resultCheckedUserId === user.id) return;
+    setResultCheckedUserId(user.id);
     checkFinishedBattles(user.id, router);
-  }, [user?.id]);
+  }, [user?.id, resultCheckedUserId]);
 
   // プッシュ通知タップ時、data の relatedBattleId / relatedActivityId で該当画面へ遷移する
   useEffect(() => {
-    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+    const openNotification = (response: Notifications.NotificationResponse | null) => {
+      if (!response) return;
       const data = response.notification.request.content.data as {
+        type?: string;
         relatedBattleId?: string;
         relatedActivityId?: string;
       };
       if (data?.relatedActivityId) {
         router.push(`/activity/${data.relatedActivityId}` as any);
       } else if (data?.relatedBattleId) {
-        router.push(`/battle/${data.relatedBattleId}` as any);
+        if (data.type === 'battle_ended' || data.type === 'title_earned') {
+          router.push(`/battle/result/${data.relatedBattleId}` as any);
+        } else {
+          router.push(`/battle/${data.relatedBattleId}` as any);
+        }
       }
-    });
+    };
+    void Notifications.getLastNotificationResponseAsync().then(openNotification);
+    const sub = Notifications.addNotificationResponseReceivedListener(openNotification);
     return () => sub.remove();
   }, []);
 
@@ -66,9 +74,10 @@ export default function RootLayout() {
     if (isLoading || !onboardingChecked) return;
     const inAuth = segments[0] === 'auth';
     const inOnboarding = segments[0] === 'onboarding';
+    const inPublicInfo = segments[0] === 'legal' || segments[0] === 'help';
 
     if (!user) {
-      if (!inAuth && !inOnboarding) {
+      if (!inAuth && !inOnboarding && !inPublicInfo) {
         if (showOnboarding) {
           router.replace('/onboarding');
         } else {
@@ -96,6 +105,9 @@ export default function RootLayout() {
         <Stack.Screen name="badges" />
         <Stack.Screen name="activity/[id]" />
         <Stack.Screen name="admin" />
+        <Stack.Screen name="legal/terms" />
+        <Stack.Screen name="legal/privacy" />
+        <Stack.Screen name="help" />
       </Stack>
     </>
   );
@@ -107,7 +119,8 @@ export default function RootLayout() {
  */
 async function checkFinishedBattles(userId: string, router: ReturnType<typeof useRouter>) {
   try {
-    const seenRaw = await AsyncStorage.getItem(SEEN_RESULTS_KEY);
+    const seenKey = `${SEEN_RESULTS_KEY}:${userId}`;
+    const seenRaw = await AsyncStorage.getItem(seenKey);
     const seen: string[] = seenRaw ? JSON.parse(seenRaw) : [];
 
     // 参加しているfinishedバトルを取得
@@ -127,7 +140,7 @@ async function checkFinishedBattles(userId: string, router: ReturnType<typeof us
 
       // 初回表示: 既読マーク → 結果画面へ
       const newSeen = [...seen, bid];
-      await AsyncStorage.setItem(SEEN_RESULTS_KEY, JSON.stringify(newSeen));
+      await AsyncStorage.setItem(seenKey, JSON.stringify(newSeen));
 
       // 少し遅延させてルーターが初期化されてから遷移
       setTimeout(() => {

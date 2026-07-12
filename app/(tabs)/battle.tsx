@@ -14,8 +14,7 @@ import { useBattleStore } from '../../stores/battleStore';
 import { useUnreadNotifications } from '../../hooks/useUnreadNotifications';
 import { useRecentActivities } from '../../hooks/useRecentActivities';
 import { useBattleCategoryStats } from '../../hooks/useBattleCategoryStats';
-import { isPro } from '../../lib/pro';
-import { scheduleBattleEndNotification, scheduleBattleEnd1hNotification } from '../../lib/notifications';
+import { registerPushToken, scheduleBattleEndNotification, scheduleBattleEnd1hNotification } from '../../lib/notifications';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -28,8 +27,10 @@ import { PrivateBattleCard } from '../../components/battle/PrivateBattleCard';
 import { PrivateBattleCreateForm } from '../../components/battle/PrivateBattleCreateForm';
 import { InviteCodeJoinView } from '../../components/battle/InviteCodeJoinView';
 import { JoinRecommendationCard } from '../../components/battle/JoinRecommendationCard';
-import { weeklyBuckets, streakDays } from '../../utils/displayStats';
-import { Colors, Typography, Spacing, BorderRadius, Shadow, TextStyles } from '../../design_tokens';
+import { TeamRankingCard } from '../../components/battle/TeamRankingCard';
+import { useTeamRanking } from '../../hooks/useTeamRanking';
+import { weeklyBuckets, streakDays, weekOverWeek, weekStartLabel } from '../../utils/displayStats';
+import { Colors, Typography, Spacing, BorderRadius, Shadow } from '../../design_tokens';
 import type { Battle, Category, CategoryStats } from '../../types';
 
 type Tab = 'public' | 'private';
@@ -39,8 +40,8 @@ type PrivateView = 'list' | 'create' | 'join_code' | 'join_select';
 // メイン画面（state・購読・handler を集約。表示は components/battle/* に委譲）
 // ────────────────────────────────────────────────────────────────
 export default function BattleScreen() {
-  const { user, proEntitlement } = useAuthStore();
-  const userIsPro = isPro(user?.plan, proEntitlement);
+  const { user } = useAuthStore();
+  const userIsPro = user?.plan === 'pro';
   const unreadNotifications = useUnreadNotifications();
   const {
     publicBattles, privateBattles, myMemberships, seasons, isLoading,
@@ -87,6 +88,7 @@ export default function BattleScreen() {
   const { activities: recentActivities } = useRecentActivities(50);
   const weekBuckets = weeklyBuckets(recentActivities);
   const streak = streakDays(recentActivities);
+  const week = weekOverWeek(recentActivities);
 
   function toggleExpanded(id: string) {
     setExpandedBattles((prev) => {
@@ -132,6 +134,9 @@ export default function BattleScreen() {
     : null;
   const primaryCategoryId = primaryMembership?.categoryId ?? null;
 
+  // 自分の陣営内での立ち位置（ヒーローのフッターとチーム内ランキングで共用）
+  const teamRanking = useTeamRanking(primaryBattle?.id, primaryCategoryId, user?.id);
+
   // Day-0アクティベーション: 未参加ユーザーに開催中のパブリックランを1件だけ強く提示する
   const recommendedBattle = publicBattles.find(
     (b) => b.status === 'active' && !myMemberships.some((m) => m.battleId === b.id),
@@ -170,15 +175,16 @@ export default function BattleScreen() {
     setJoiningBattleId(battle.id);
     try {
       await joinBattle(battle.id, categoryId, user.id);
+      void registerPushToken(user.id, true);
       void scheduleBattleEndNotification(battle);
       void scheduleBattleEnd1hNotification(battle);
       setCategoryModalBattle(null);
       Alert.alert(
         '参加完了',
-        `「${battle.categories.find((c) => c.id === categoryId)?.label}」として参加しました。最初の出撃で陣営に貢献しよう`,
+        `「${battle.categories.find((c) => c.id === categoryId)?.label}」として参加しました。最初のランで陣営に貢献しよう`,
         [
           { text: 'あとで', style: 'cancel' },
-          { text: '出撃する', onPress: () => router.push('/(tabs)/record' as any) },
+          { text: 'ランを始める', onPress: () => router.push('/(tabs)/record' as any) },
         ],
       );
     } catch (e: any) {
@@ -342,23 +348,52 @@ export default function BattleScreen() {
   );
 
   function renderWeeklyCard() {
+    const up = week.changeRatio != null && week.changeRatio >= 0;
     return (
-      <Card style={styles.card}>
-        <View style={styles.weekHead}>
-          <Text style={TextStyles.sectionTitle}>今週の走り</Text>
-          <StreakChip days={streak} />
+      <View>
+        <View style={styles.sectionHead}>
+          <Text style={styles.sectionTitle}>今週の走り</Text>
+          <Text style={styles.sectionNote}>{weekStartLabel()}</Text>
         </View>
-        <WeeklyBarChart days={weekBuckets} height={56} />
-      </Card>
+        <Card style={styles.card}>
+          <View style={styles.weekHead}>
+            <View>
+              <Text style={styles.weekLabel}>週合計距離</Text>
+              <View style={styles.weekValueRow}>
+                <Text style={styles.weekValue}>{week.thisWeekKm.toFixed(1)}</Text>
+                <Text style={styles.weekUnit}>km</Text>
+              </View>
+            </View>
+            {week.changeRatio != null && (
+              <View style={[styles.deltaChip, !up && styles.deltaChipDown]}>
+                <Text style={[styles.deltaText, !up && styles.deltaTextDown]}>
+                  先週比 {up ? '+' : ''}{Math.round(week.changeRatio * 100)}%
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.weekChart}>
+            <WeeklyBarChart days={weekBuckets} height={70} showTotal={false} />
+          </View>
+
+          <View style={styles.weekFoot}>
+            <StreakChip days={streak} />
+            {week.lastWeekKm > 0 && (
+              <Text style={styles.weekFootNote}>先週 {week.lastWeekKm.toFixed(1)} km</Text>
+            )}
+          </View>
+        </Card>
+      </View>
     );
   }
 
   function renderRunNowButton() {
     const label = activeBattles.length === 1
-      ? `「${primaryBattle?.title}」に加算されます`
+      ? `今回の走行距離は「${primaryBattle?.title}」に加算されます`
       : activeBattles.length > 1
-        ? `参加中の${activeBattles.length}件のバトルに加算されます`
-        : 'バトルへ加算されます';
+        ? `今回の走行距離は参加中の${activeBattles.length}件のチャレンジに加算されます`
+        : 'チャレンジに参加すると今回の距離が加算されます';
     return (
       <View style={styles.runNowSection}>
         <TouchableOpacity
@@ -366,7 +401,7 @@ export default function BattleScreen() {
           onPress={() => router.push('/(tabs)/record' as any)}
           activeOpacity={0.85}
         >
-          <Ionicons name="walk" size={20} color={Colors.textOnAccent} />
+          <Ionicons name="walk" size={21} color={Colors.textOnAccent} />
           <Text style={styles.runNowLabel}>今すぐ走る</Text>
         </TouchableOpacity>
         <Text style={styles.runNowHint}>{label}</Text>
@@ -383,48 +418,66 @@ export default function BattleScreen() {
             battle={primaryBattle}
             stats={categoryStatsMap[primaryBattle.id] ?? []}
             myCategoryId={primaryCategoryId}
-            myDist={myDistancePerBattle[primaryBattle.id] ?? 0}
+            myDist={teamRanking.teamSize > 0 ? teamRanking.myKm : (myDistancePerBattle[primaryBattle.id] ?? 0)}
+            teamRank={
+              teamRanking.myRank > 0
+                ? {
+                    myRank: teamRanking.myRank,
+                    teamSize: teamRanking.teamSize,
+                    gapToNextKm: teamRanking.gapToNextKm,
+                  }
+                : undefined
+            }
             activeBattleCount={activeBattles.length}
             onPress={() => router.push(`/battle/${primaryBattle.id}` as any)}
           />
         )}
         {renderWeeklyCard()}
+
+        {/* チーム内ランキング（自分の陣営の中での順位） */}
+        {primaryBattle && teamRanking.top.length > 0 && (
+          <View>
+            <Text style={styles.sectionTitle}>チーム内ランキング</Text>
+            <TeamRankingCard
+              ranking={teamRanking}
+              onPressMore={() => router.push(`/battle/${primaryBattle.id}` as any)}
+            />
+          </View>
+        )}
+
         {renderRunNowButton()}
 
         {/* 他のバトル セクション */}
-        <View style={styles.sectionDivider}>
-          <View style={styles.sectionDividerLine} />
-          <Text style={styles.sectionDividerLabel}>他のバトル</Text>
-          <View style={styles.sectionDividerLine} />
-        </View>
-
-        <View style={styles.segmentRow}>
-          {(['public', 'private'] as Tab[]).map((tab) => {
-            const active = activeTab === tab;
-            return (
-              <TouchableOpacity
-                key={tab}
-                style={[styles.segment, active && styles.segmentActive]}
-                onPress={() => { setActiveTab(tab); setPrivateView('list'); }}
-              >
-                <Ionicons
-                  name={tab === 'public' ? 'trophy-outline' : 'lock-closed-outline'}
-                  size={14}
-                  color={active ? Colors.textPrimary : Colors.textTertiary}
-                />
-                <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]}>
-                  {tab === 'public' ? 'パブリックラン' : '友達チャレンジ'}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+        <View style={styles.otherSection}>
+          <Text style={styles.sectionTitle}>他のチャレンジ</Text>
+          <View style={styles.segmentRow}>
+            {(['public', 'private'] as Tab[]).map((tab) => {
+              const active = activeTab === tab;
+              return (
+                <TouchableOpacity
+                  key={tab}
+                  style={[styles.segment, active && styles.segmentActive]}
+                  onPress={() => { setActiveTab(tab); setPrivateView('list'); }}
+                >
+                  <Ionicons
+                    name={tab === 'public' ? 'trophy-outline' : 'lock-closed-outline'}
+                    size={14}
+                    color={active ? Colors.textPrimary : Colors.textTertiary}
+                  />
+                  <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]}>
+                    {tab === 'public' ? '公開チャレンジ' : '友達チャレンジ'}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
 
         {activeTab === 'public' ? (
           publicBattles.length === 0
             ? <EmptyState
                 icon="trophy-outline"
-                title="開催中のパブリックランがありません"
+                title="開催中の公開チャレンジがありません"
                 hint="友達チャレンジで仲間と競うこともできます"
               />
             : publicBattles.map(publicCard)
@@ -481,14 +534,14 @@ export default function BattleScreen() {
           <View style={styles.emptyStateCard}>
             <Ionicons name="trophy-outline" size={40} color={Colors.textTertiary} />
             <Text style={styles.emptyStateTitle}>参加中のチャレンジはありません</Text>
-            <Text style={styles.emptyStateHint}>下のバトルに参加して距離を競おう！</Text>
+            <Text style={styles.emptyStateHint}>下のチャレンジに参加して距離を競おう！</Text>
           </View>
         )}
 
         {/* パブリックバトル一覧 */}
         {publicBattles.length > 0 && (
           <>
-            <Text style={styles.sectionLabel}>パブリックラン</Text>
+            <Text style={styles.sectionTitle}>公開チャレンジ</Text>
             {publicBattles.map(publicCard)}
           </>
         )}
@@ -537,13 +590,19 @@ export default function BattleScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>チャレンジ</Text>
+        <View>
+          <Text style={styles.headerEyebrow}>BATTLE RUN</Text>
+          <Text style={styles.headerTitle}>チャレンジ</Text>
+        </View>
         <TouchableOpacity
           onPress={() => router.push('/notifications' as any)}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           style={styles.notifBtn}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel={unreadNotifications > 0 ? `通知、未読${unreadNotifications}件` : '通知'}
         >
-          <Ionicons name="notifications-outline" size={22} color={Colors.textPrimary} />
+          <Ionicons name="notifications-outline" size={20} color={Colors.textPrimary} />
           {unreadNotifications > 0 && (
             <View style={styles.notifBadge}>
               <Text style={styles.notifBadgeText}>
@@ -579,35 +638,102 @@ export default function BattleScreen() {
 // ────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
+  // ヘッダーは背景と地続き（境界線なし）。小さなブランド行＋大見出しの2段組
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.md,
+    backgroundColor: Colors.background,
   },
-  headerTitle: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.semibold, color: Colors.textPrimary },
-  notifBtn: { position: 'relative' },
+  headerEyebrow: {
+    fontSize: 10,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.textTertiary,
+    letterSpacing: 1.8,
+  },
+  headerTitle: {
+    marginTop: 2,
+    fontSize: 26,
+    fontWeight: Typography.fontWeight.extrabold,
+    color: Colors.textPrimary,
+    letterSpacing: -0.5,
+  },
+  notifBtn: {
+    position: 'relative',
+    width: 44,
+    height: 44,
+    borderRadius: BorderRadius.lg,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Shadow.sm,
+  },
   notifBadge: {
-    position: 'absolute', top: -4, right: -6,
+    position: 'absolute', top: 5, right: 5,
     minWidth: 16, height: 16, borderRadius: 8,
     paddingHorizontal: 3,
     backgroundColor: Colors.accent,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5, borderColor: Colors.surface,
   },
-  notifBadgeText: { fontSize: 9, fontWeight: '800', color: Colors.textOnPrimary },
-  scroll: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing['3xl'], gap: Spacing.lg },
+  notifBadgeText: { fontSize: 9, fontWeight: '800', color: Colors.textOnAccent },
+  scroll: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing['3xl'], gap: Spacing.xl },
 
-  card: { marginBottom: 0 },
-  weekHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.md },
+  card: { marginBottom: 0, marginHorizontal: 0 },
+  sectionHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
+  sectionTitle: {
+    fontSize: Typography.fontSize.lg,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.textPrimary,
+    marginBottom: Spacing.md,
+  },
+  sectionNote: {
+    fontSize: Typography.fontSize.xs,
+    fontWeight: Typography.fontWeight.medium,
+    color: Colors.primary,
+    marginBottom: Spacing.md,
+  },
+
+  // 今週の走り
+  weekHead: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  weekLabel: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary, fontWeight: Typography.fontWeight.medium },
+  weekValueRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 4 },
+  weekValue: {
+    fontSize: 27,
+    fontWeight: Typography.fontWeight.extrabold,
+    color: Colors.textPrimary,
+    letterSpacing: -0.5,
+    fontVariant: ['tabular-nums'],
+  },
+  weekUnit: { marginLeft: 4, fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.textSecondary },
+  deltaChip: {
+    backgroundColor: Colors.primaryLight,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 5,
+  },
+  deltaChipDown: { backgroundColor: Colors.surfaceGray },
+  deltaText: { fontSize: Typography.fontSize.xs, fontWeight: Typography.fontWeight.bold, color: Colors.primary, fontVariant: ['tabular-nums'] },
+  deltaTextDown: { color: Colors.textSecondary },
+  weekChart: { marginTop: Spacing.xl },
+  weekFoot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: Spacing.lg,
+    paddingTop: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderLight,
+  },
+  weekFootNote: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, fontVariant: ['tabular-nums'] },
 
   // Run Now
   runNowSection: { gap: Spacing.sm },
-  runNowHint: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, textAlign: 'center' },
+  runNowHint: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary, textAlign: 'center' },
   runNowBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -615,32 +741,29 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     backgroundColor: Colors.accent,
     borderRadius: BorderRadius.lg,
-    paddingVertical: Spacing.md,
-    ...Shadow.md,
+    paddingVertical: Spacing.lg,
+    shadowColor: Colors.accentDark,
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    elevation: 6,
   },
   runNowLabel: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.extrabold, color: Colors.textOnAccent },
 
-  // Section divider
-  sectionDivider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    marginVertical: Spacing.xs,
-  },
-  sectionDividerLine: { flex: 1, height: 1, backgroundColor: Colors.border },
-  sectionDividerLabel: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, fontWeight: Typography.fontWeight.semibold },
+  // 他のバトル
+  otherSection: { gap: 0 },
 
   // Segment tabs
   segmentRow: {
     flexDirection: 'row',
-    backgroundColor: Colors.surfaceGray,
+    backgroundColor: Colors.surfaceAlt,
     borderRadius: BorderRadius.md,
     padding: 4,
   },
   segment: { flex: 1, flexDirection: 'row', gap: 5, paddingVertical: Spacing.sm, alignItems: 'center', justifyContent: 'center', borderRadius: BorderRadius.sm },
   segmentActive: { backgroundColor: Colors.surface, ...Shadow.sm },
   segmentLabel: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary, fontWeight: Typography.fontWeight.medium },
-  segmentLabelActive: { color: Colors.textPrimary, fontWeight: Typography.fontWeight.semibold },
+  segmentLabelActive: { color: Colors.textPrimary, fontWeight: Typography.fontWeight.bold },
 
   // Empty state (State B)
   emptyStateCard: {
@@ -654,7 +777,6 @@ const styles = StyleSheet.create({
   },
   emptyStateTitle: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.semibold, color: Colors.textSecondary },
   emptyStateHint: { fontSize: Typography.fontSize.sm, color: Colors.textTertiary, textAlign: 'center' },
-  sectionLabel: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
 
   // State B のインライン招待コード入力カード
   formTitle: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.lg },

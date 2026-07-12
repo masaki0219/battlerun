@@ -44,7 +44,7 @@ export async function finishBattle(battleId: string): Promise<void> {
   // ── 称号対象の算出（クエリはトランザクション外で行う）──
   const categories =
     (battle['categories'] as Array<{ id: string; label: string }> | undefined) ?? [];
-  const awardedAt = new Date().toISOString();
+  const awardedAt = battle['endAt']?.toDate?.()?.toISOString?.() ?? new Date().toISOString();
   const seasonId = (battle['seasonId'] as string | null) ?? '';
   const battleTitle = battle['title'] as string;
   const isIndividual = battle['mode'] === 'individual' || categories.length === 0;
@@ -55,20 +55,23 @@ export async function finishBattle(battleId: string): Promise<void> {
     const topSnap = await battleRef
       .collection('participants')
       .orderBy('totalDistanceKm', 'desc')
-      .limit(2)
       .get();
-    topSnap.docs.forEach((p, i) => {
-      const totalDistanceKm = (p.data()['totalDistanceKm'] as number) ?? 0;
-      if (totalDistanceKm <= 0) return;
+    const rankedParticipants = topSnap.docs.map((p) => ({
+      doc: p,
+      value: (p.data()['totalDistanceKm'] as number) ?? 0,
+    })).filter((item) => item.value > 0);
+    rankedParticipants.forEach(({ doc: p, value: totalDistanceKm }) => {
+      const rank = 1 + rankedParticipants.filter((other) => other.value > totalDistanceKm).length;
+      if (rank > 2) return;
       titleUpdates.push({
         userRef: db.doc(`users/${p.id}`),
-        title: { seasonId, battleId, battleTitle, teamName: '', rank: i + 1, awardedAt },
+        title: { seasonId, battleId, battleTitle, teamName: '', rank, awardedAt },
       });
     });
   } else {
     const rankingType = (battle['rankingType'] as string | undefined) ?? 'total';
     const statsSnap = await battleRef.collection('category_stats').get();
-    const rankedCategories = statsSnap.docs
+    const valuedCategories = statsSnap.docs
       .map((s) => ({
         categoryId: s.id,
         value:
@@ -77,8 +80,13 @@ export async function finishBattle(battleId: string): Promise<void> {
             : (s.data()['totalDistanceKm'] as number)) ?? 0,
       }))
       .filter((c) => c.value > 0)
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 2);
+      .sort((a, b) => b.value - a.value || a.categoryId.localeCompare(b.categoryId));
+    const rankedCategories = valuedCategories
+      .map((category) => ({
+        ...category,
+        rank: 1 + valuedCategories.filter((other) => other.value > category.value).length,
+      }))
+      .filter((category) => category.rank <= 2);
 
     if (rankedCategories.length > 0) {
       const participantsSnap = await battleRef
@@ -87,7 +95,7 @@ export async function finishBattle(battleId: string): Promise<void> {
         .get();
       participantsSnap.docs.forEach((p) => {
         const categoryId = p.data()['categoryId'] as string;
-        const rank = rankedCategories.findIndex((c) => c.categoryId === categoryId) + 1;
+        const rank = rankedCategories.find((c) => c.categoryId === categoryId)?.rank ?? 0;
         const teamName = categories.find((c) => c.id === categoryId)?.label ?? '';
         titleUpdates.push({
           userRef: db.doc(`users/${p.id}`),
@@ -97,27 +105,22 @@ export async function finishBattle(battleId: string): Promise<void> {
     }
   }
 
-  // ── フラグ確認 → 確定 をトランザクションでアトミックに ──
-  // reads を writes より前に行う制約を守るため、battleRef の get のみ txn 内で行う。
+  // Firestoreトランザクションの500書き込み上限を超えないよう分割する。
+  // titleのawardedAtは終了日時から決めた固定値なので、並行実行でもarrayUnionが重複しない。
+  for (let index = 0; index < titleUpdates.length; index += 400) {
+    const batch = db.batch();
+    for (const { userRef, title } of titleUpdates.slice(index, index + 400)) {
+      batch.update(userRef, { titles: FieldValue.arrayUnion(title) });
+    }
+    await batch.commit();
+  }
+
   const claimed = await db.runTransaction(async (tx) => {
     const fresh = await tx.get(battleRef);
-    if (fresh.data()?.['titlesAwardedAt']) {
-      // 別実行が先に確定済み。status だけ保証して撤退。
-      if (fresh.data()?.['status'] !== 'finished') {
-        tx.update(battleRef, { status: 'finished' });
-      }
-      return false;
-    }
-    tx.update(battleRef, {
-      status: 'finished',
-      titlesAwardedAt: FieldValue.serverTimestamp(),
-    });
-    for (const { userRef, title } of titleUpdates) {
-      tx.update(userRef, { titles: FieldValue.arrayUnion(title) });
-    }
+    if (fresh.data()?.['titlesAwardedAt']) return false;
+    tx.update(battleRef, { status: 'finished', titlesAwardedAt: FieldValue.serverTimestamp() });
     return true;
   });
-
   if (!claimed) return;
 
   // ── 終了通知（確定した実行のみ送る）──

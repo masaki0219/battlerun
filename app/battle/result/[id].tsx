@@ -118,14 +118,37 @@ export default function BattleResultScreen() {
     );
   }
 
+  if (localBattle.status !== 'finished') {
+    return (
+      <SafeAreaView style={s.root}>
+        <View style={s.nav}>
+          <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="戻る">
+            <Ionicons name="chevron-back" size={20} color={Colors.textSecondary} />
+          </TouchableOpacity>
+          <MonoLabel color={Colors.textTertiary} size={9}>チャレンジ結果</MonoLabel>
+          <View style={{ width: 28 }} />
+        </View>
+        <View style={s.center}>
+          <Ionicons name="time-outline" size={40} color={Colors.textTertiary} />
+          <Text style={{ color: Colors.textPrimary, fontSize: 17, fontWeight: '800' }}>まだ開催中です</Text>
+          <Text style={{ color: Colors.textSecondary, fontSize: 13 }}>終了後に最終結果を確認できます</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   const rankType = localBattle.rankingType ?? 'total';
   const sorted = [...stats].sort((a, b) =>
-    rankType === 'total' ? b.totalDistanceKm - a.totalDistanceKm : b.avgDistanceKm - a.avgDistanceKm
+    (rankType === 'total' ? b.totalDistanceKm - a.totalDistanceKm : b.avgDistanceKm - a.avgDistanceKm)
+      || a.categoryId.localeCompare(b.categoryId)
   );
+  const allZero = sorted.every((item) => (rankType === 'total' ? item.totalDistanceKm : item.avgDistanceKm) <= 0);
+  const valOf = (st: CategoryStats) => (rankType === 'total' ? st.totalDistanceKm : st.avgDistanceKm);
   const myTeamIdx = sorted.findIndex((s) => s.categoryId === myCatId);
   const myTeam = myTeamIdx >= 0 ? sorted[myTeamIdx] : null;
-  const myRank = myTeamIdx >= 0 ? myTeamIdx + 1 : null;
-  const valOf = (st: CategoryStats) => (rankType === 'total' ? st.totalDistanceKm : st.avgDistanceKm);
+  const myRank = myTeam && !allZero
+    ? 1 + sorted.filter((item) => valOf(item) > valOf(myTeam)).length
+    : null;
 
   // 最終 VS ゲージ用（自陣営 vs 直上、未参加なら上位2陣営）
   const rival = myTeamIdx > 0 ? sorted[myTeamIdx - 1] : myTeamIdx === 0 ? sorted[1] : undefined;
@@ -148,7 +171,7 @@ export default function BattleResultScreen() {
   async function handleShare() {
     const rankText = myRank ? `${myRank}位` : '参加';
     const kmText = myStats.totalKm.toFixed(1);
-    const message = `「${localBattle?.title ?? 'バトル'}」で${rankText}！\n自分の貢献: ${kmText}km\n#BattleRun で走ろう`;
+    const message = `「${localBattle?.title ?? 'チャレンジ'}」で${rankText}！\n自分の貢献: ${kmText}km\n#BattleRun で走ろう`;
 
     try {
       if (shareCardRef.current && (await Sharing.isAvailableAsync())) {
@@ -174,10 +197,10 @@ export default function BattleResultScreen() {
     <SafeAreaView style={s.root} edges={['top']}>
       {/* Nav */}
       <View style={s.nav}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel="戻る">
           <Ionicons name="chevron-back" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
-        <MonoLabel color={Colors.textTertiary} size={9}>バトル結果</MonoLabel>
+        <MonoLabel color={Colors.textTertiary} size={9}>チャレンジ結果</MonoLabel>
         <View style={{ width: 28 }} />
       </View>
 
@@ -192,6 +215,7 @@ export default function BattleResultScreen() {
                 right={{ label: gaugeRight.label, km: valOf(gaugeRight), isMine: false }}
                 size="lg"
                 dark
+                unit={rankType === 'average' ? 'km/人' : 'km'}
               />
             </View>
           </View>
@@ -199,7 +223,7 @@ export default function BattleResultScreen() {
 
         {/* ── Hero ── */}
         <View style={s.heroCard}>
-          <MonoLabel color={Colors.textTertiary} size={9}>BATTLE RESULT / バトル終了</MonoLabel>
+          <MonoLabel color={Colors.textTertiary} size={9}>RESULT / チャレンジ終了</MonoLabel>
           <Text style={s.heroTitle}>{localBattle.title}</Text>
           <Text style={s.heroDates}>{startDate} 〜 {endDate}</Text>
 
@@ -232,7 +256,7 @@ export default function BattleResultScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={s.titleName}>{titleName}</Text>
                 <Text style={s.titleDesc}>
-                  {myTitle?.teamName ? `「${myTitle.teamName}」として出撃した仲間に贈られる称号` : '陣営として勝ち取った称号'}
+                  {myTitle?.teamName ? `「${myTitle.teamName}」として走った仲間に贈られる称号` : '陣営として勝ち取った称号'}
                 </Text>
               </View>
               <View style={s.titleNewChip}><Text style={s.titleNew}>NEW</Text></View>
@@ -281,14 +305,15 @@ export default function BattleResultScreen() {
               {sorted.map((cat, i) => {
                 const isMe = cat.categoryId === myCatId;
                 const val = rankType === 'total' ? cat.totalDistanceKm : cat.avgDistanceKm;
+                const displayRank = allZero ? null : 1 + sorted.filter((item) => valOf(item) > val).length;
                 return (
                   <View key={cat.categoryId} style={[s.rankRow, isMe && s.rankRowMe, i > 0 && s.rankRowBorder]}>
-                    <RankBadge rank={i + 1} />
+                    {displayRank ? <RankBadge rank={displayRank} /> : <Text style={s.rankKm}>—</Text>}
                     <Text style={[s.rankName, isMe && { color: Colors.primary, fontWeight: '900' }]} numberOfLines={1}>
                       {cat.label}{isMe ? ' （あなた）' : ''}
                     </Text>
                     <Text style={[s.rankKm, isMe && { color: Colors.primary }]}>
-                      {val.toFixed(1)}<Text style={s.rankKmUnit}> km</Text>
+                      {val.toFixed(1)}<Text style={s.rankKmUnit}>{rankType === 'average' ? ' km/人' : ' km'}</Text>
                     </Text>
                   </View>
                 );
@@ -304,9 +329,12 @@ export default function BattleResultScreen() {
             <View style={s.rankCard}>
               {participants.slice(0, 5).map((p, i) => {
                 const isMe = p.userId === user?.id;
+                const participantRank = p.totalDistanceKm > 0
+                  ? 1 + participants.filter((item) => item.totalDistanceKm > p.totalDistanceKm).length
+                  : null;
                 return (
                   <View key={p.userId} style={[s.rankRow, isMe && s.rankRowMe, i > 0 && s.rankRowBorder]}>
-                    <RankBadge rank={i + 1} />
+                    {participantRank ? <RankBadge rank={participantRank} /> : <Text style={s.rankKm}>—</Text>}
                     <Text style={[s.rankName, isMe && { color: Colors.primary, fontWeight: '900' }]} numberOfLines={1}>
                       {p.displayName}{isMe ? ' （あなた）' : ''}
                     </Text>
@@ -361,7 +389,7 @@ export default function BattleResultScreen() {
               activeOpacity={0.85}
             >
               <Ionicons name="search-outline" size={18} color={Colors.textPrimary} />
-              <Text style={s.nextBtnText}>次のバトルを探す</Text>
+              <Text style={s.nextBtnText}>次のチャレンジを探す</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[s.nextBtn, userIsPro && s.nextBtnPro]}
@@ -370,7 +398,7 @@ export default function BattleResultScreen() {
             >
               <Ionicons name="add-circle-outline" size={18} color={userIsPro ? Colors.primary : Colors.textPrimary} />
               <Text style={[s.nextBtnText, userIsPro && { color: Colors.primary }]}>
-                バトルを作る{!userIsPro ? ' (Pro)' : ''}
+                チャレンジを作る{!userIsPro ? ' (Pro)' : ''}
               </Text>
             </TouchableOpacity>
           </View>

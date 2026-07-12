@@ -9,7 +9,6 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
-import { isPro } from '../../lib/pro';
 import type { BattleTheme } from '../../types';
 import { Colors, BorderRadius } from '../../design_tokens';
 
@@ -28,7 +27,7 @@ const THEMES: ThemeDef[] = [
     name: 'スポーツ大会風',
     desc: '王道・競技感',
     emoji: '🏟️',
-    colors: { primary: '#00D9A3', bg: '#F0FBF8' },
+    colors: { primary: '#087B73', bg: '#E9F6F3' },
     proOnly: false,
   },
   {
@@ -83,11 +82,11 @@ const THEMES: ThemeDef[] = [
 
 export default function BattleThemeScreen() {
   const { id: battleId } = useLocalSearchParams<{ id?: string }>();
-  const { user, proEntitlement } = useAuthStore();
+  const { user } = useAuthStore();
   const [selected, setSelected] = useState<BattleTheme>('sports');
   const [saving, setSaving] = useState(false);
 
-  const userIsPro = isPro(user?.plan, proEntitlement);
+  const userIsPro = user?.plan === 'pro';
 
   async function handleSave() {
     if (!battleId) { router.back(); return; }
@@ -139,7 +138,7 @@ export default function BattleThemeScreen() {
       )}
 
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
-        <Text style={s.subtitle}>テーマはバトル詳細・ランキング・結果画面・共有画像に反映されます。</Text>
+        <Text style={s.subtitle}>テーマはチャレンジ詳細・ランキング・結果画面・共有画像に反映されます。</Text>
 
         {THEMES.map((theme) => {
           const isSelected = selected === theme.id;

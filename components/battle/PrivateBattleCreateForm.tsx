@@ -98,7 +98,8 @@ export function PrivateBattleCreateForm({
 }
 
 const styles = StyleSheet.create({
-  card: { marginBottom: 0 },
+  // 画面側が左右パディングを持つので Card のデフォルト marginHorizontal は打ち消す
+  card: { marginBottom: 0, marginHorizontal: 0 },
   formTitle: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.lg },
   inputLabel: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary, marginBottom: Spacing.xs, marginTop: Spacing.md },
   input: {

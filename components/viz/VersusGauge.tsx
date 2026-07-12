@@ -17,6 +17,7 @@ interface Props {
   size?: 'md' | 'lg';
   /** ダーク演出内で使う場合 */
   dark?: boolean;
+  unit?: 'km' | 'km/人';
 }
 
 /**
@@ -24,7 +25,7 @@ interface Props {
  * 左陣営(primary) と 右陣営(accent) が1本のトラックを取り合う。
  * 比率 = leftKm / (leftKm + rightKm)、両方0なら 0.5。
  */
-export function VersusGauge({ left, right, size = 'md', dark = false }: Props) {
+export function VersusGauge({ left, right, size = 'md', dark = false, unit = 'km' }: Props) {
   const isLg = size === 'lg';
   const trackHeight = isLg ? 16 : 12;
 
@@ -52,9 +53,11 @@ export function VersusGauge({ left, right, size = 'md', dark = false }: Props) {
   const txtPrimary = dark ? DarkColors.textPrimary : Colors.textPrimary;
   const txtSecondary = dark ? DarkColors.textSecondary : Colors.textSecondary;
   const trackBg = dark ? DarkColors.line : Colors.surfaceGray;
-  const sepColor = dark ? DarkColors.background : Colors.surface;
+  const sepColor = dark ? DarkColors.marker : Colors.surface;
   const leftColor = dark ? DarkColors.primary : Colors.primary;
   const rightColor = dark ? DarkColors.accent : Colors.accent;
+  const aheadColor = dark ? DarkColors.primary : Colors.primary;
+  const behindColor = dark ? DarkColors.accent : Colors.accent;
 
   return (
     <View>
@@ -68,7 +71,7 @@ export function VersusGauge({ left, right, size = 'md', dark = false }: Props) {
           numberOfLines={1}
         >
           {left.label}{' '}
-          <Text style={styles.km}>{left.km.toFixed(1)}km</Text>
+          <Text style={styles.km}>{left.km.toFixed(1)}{unit}</Text>
         </Text>
         <Text
           style={[
@@ -78,7 +81,7 @@ export function VersusGauge({ left, right, size = 'md', dark = false }: Props) {
           ]}
           numberOfLines={1}
         >
-          <Text style={styles.km}>{right.km.toFixed(1)}km</Text>{' '}
+          <Text style={styles.km}>{right.km.toFixed(1)}{unit}</Text>{' '}
           {right.label}
         </Text>
       </View>
@@ -114,14 +117,14 @@ export function VersusGauge({ left, right, size = 'md', dark = false }: Props) {
         <Text
           style={[
             styles.diffText,
-            { color: leading ? (dark ? DarkColors.primary : Colors.primary) : Colors.accent },
+            { color: leading ? aheadColor : behindColor },
           ]}
         >
           {total <= 0
             ? 'まだ勝負は始まっていない'
             : leading
-            ? `+${diff.toFixed(1)}km リード`
-            : `あと ${diff.toFixed(1)}km`}
+            ? `+${diff.toFixed(1)}${unit} リード`
+            : `あと ${diff.toFixed(1)}${unit}`}
         </Text>
       </View>
     </View>

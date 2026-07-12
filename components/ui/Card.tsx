@@ -2,7 +2,7 @@ import React from 'react';
 import { View, StyleSheet, ViewStyle, StyleProp } from 'react-native';
 import { Colors, DarkColors, BorderRadius, Shadow, Spacing, ComponentSize } from '../../design_tokens';
 
-type Variant = 'default' | 'outlined' | 'dark' | 'highlight';
+type Variant = 'default' | 'outlined' | 'dark' | 'highlight' | 'brand';
 
 interface Props {
   children: React.ReactNode;
@@ -49,5 +49,11 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.accentLight,
     borderWidth: 1,
     borderColor: Colors.accent,
+  },
+  // ブランド面（誘導カード）。primaryLight の淡ティール＋同系ボーダー
+  brand: {
+    backgroundColor: Colors.primaryLight,
+    borderWidth: 1,
+    borderColor: Colors.primaryBorder,
   },
 });

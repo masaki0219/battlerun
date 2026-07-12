@@ -15,6 +15,8 @@ export interface User {
   createdAt: string;
   titles?: UserTitle[];
   battleIds: string[];   // 未参加なら [] （authListener が常に配列を返す）
+  totalDistanceKm?: number;
+  activityCount?: number;
 }
 
 export interface Event {

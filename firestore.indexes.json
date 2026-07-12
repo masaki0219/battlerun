@@ -12,6 +12,14 @@
       "collectionGroup": "battles",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "type", "order": "ASCENDING" },
+        { "fieldPath": "inviteCode", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "battles",
+      "queryScope": "COLLECTION",
+      "fields": [
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "startAt", "order": "ASCENDING" }
       ]
@@ -37,6 +45,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "battleIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "visibility", "order": "ASCENDING" },
         { "fieldPath": "startedAt", "order": "DESCENDING" }
       ]
     }
@@ -44,6 +53,16 @@
   "fieldOverrides": [
     {
       "collectionGroup": "participants",
+      "fieldPath": "userId",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" },
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "reactions",
       "fieldPath": "userId",
       "indexes": [
         { "order": "ASCENDING", "queryScope": "COLLECTION" },

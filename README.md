@@ -20,8 +20,6 @@ npx expo start
 |---|---|
 | `EXPO_PUBLIC_FIREBASE_*` | Firebase プロジェクト設定 |
 | `EXPO_PUBLIC_REVENUECAT_API_KEY` | RevenueCat iOS APIキー |
-| `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` | Google サインイン用 Web クライアントID |
-| `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` | Google サインイン用 iOS クライアントID |
 
 ---
 
@@ -107,15 +105,7 @@ Expo Push通知を送信する（リアクション・バトル終了・称号�
 
 ---
 
-## Google / Apple サインイン
-
-### Google サインイン
-Firebase Console → Authentication → Sign-in method → Google を有効化し、
-Web クライアントID と iOS クライアントID を `.env` に設定してください。
-
-### Apple サインイン
-Firebase Console → Authentication → Sign-in method → Apple を有効化してください。
-Apple サインインは実機（iOS デバイス）での動作確認が必要です。
+現在の認証UIはメールアドレスとパスワードに対応しています。
 
 ---
 
@@ -131,4 +121,10 @@ firebase deploy --only firestore:indexes
 
 ```bash
 firebase deploy --only firestore:rules
+```
+
+Storageルールと法務ページも同時に反映する場合:
+
+```bash
+firebase deploy --only storage,hosting
 ```

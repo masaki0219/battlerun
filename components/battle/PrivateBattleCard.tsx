@@ -63,7 +63,8 @@ export function PrivateBattleCard({
 }
 
 const styles = StyleSheet.create({
-  card: { marginBottom: 0 },
+  // 画面側が左右パディングを持つので Card のデフォルト marginHorizontal は打ち消す
+  card: { marginBottom: 0, marginHorizontal: 0 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: Spacing.md },
   battleTitle: { fontSize: Typography.fontSize.xl, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
   inviteRow: { flexDirection: 'row', alignItems: 'center', marginTop: Spacing.xs },

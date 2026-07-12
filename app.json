@@ -15,12 +15,10 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.battlerun.app",
-      "usesAppleSignIn": true,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "ランニング・ウォーキングの走行距離を計測し、参加中のバトルに貢献距離として反映するために位置情報を使用します。",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "アプリを閉じている間も走行距離の計測を続けるために使用します。計測は記録中のみ行われます。",
-        "NSHealthShareUsageDescription": "歩数データを読み取るためにHealthKitを使用します。",
-        "NSHealthUpdateUsageDescription": "運動データを記録するためにHealthKitを使用します。",
+        "NSLocationWhenInUseUsageDescription": "ランニング・ウォーキングの走行距離を計測し、参加中のチャレンジへ反映するために位置情報を使用します。",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "記録中にアプリがバックグラウンドへ移動しても走行距離の計測を続けるために使用します。",
+        "NSMotionUsageDescription": "歩数モードで歩数と推定距離を計測するためにモーションデータを使用します。",
         "ITSAppUsesNonExemptEncryption": false,
         "UIBackgroundModes": [
           "location"
@@ -34,7 +32,11 @@
       },
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "ACTIVITY_RECOGNITION"
       ],
       "package": "com.battlerun.app"
     },
@@ -44,19 +46,20 @@
     },
     "plugins": [
       "expo-router",
-      "expo-apple-authentication",
       [
         "expo-notifications",
         {
           "icon": "./assets/icon.png",
-          "color": "#00C49A",
+          "color": "#087B73",
           "sounds": []
         }
       ],
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "アプリを閉じている間も走行距離の計測を続けるために使用します。計測は記録中のみ行われます。"
+          "locationAlwaysAndWhenInUsePermission": "記録中にアプリがバックグラウンドへ移動しても走行距離の計測を続けるために使用します。",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true
         }
       ],
       "expo-task-manager",

@@ -11,98 +11,113 @@ import { Platform, TextStyle } from 'react-native';
 // ============================================================
 
 export const Colors = {
-  // ブランドカラー（メインの緑系ティール。BR世代の #00D9A3 に一本化）
-  primary: '#00D9A3',        // 明るい背景上のブランド色・ボタン・プログレスバー
-  primaryBright: '#00D9A3',  // 後方互換（primary と同値。ダーク背景上のティール）
-  primaryLight: '#E6FAF6',   // 背景ハイライト・選択状態
-  primaryDark: '#00A07D',    // 白背景上の小さなテキスト色・プレスド状態
+  // ブランドカラー（ディープパイン・ティール。inst_v3 世代）
+  primary: '#087B73',        // 明るい背景上のブランド色・ボタン・プログレスバー
+  primaryBright: '#4FD0C2',  // ダーク背景上で使う明るいティール（ダーク面のゲージ・アイコン）
+  primaryLight: '#E9F6F3',   // 背景ハイライト・選択状態
+  primaryBorder: '#B8D9D4',  // primaryLight 面のボーダー（ブランド強調カード）
+  primaryDark: '#066B64',    // プレスド状態・白背景上の小さなテキスト
 
-  // アクセントカラー（ランキング・競争要素。BR世代の #FF5C2B に一本化）
-  accent: '#FF5C2B',         // 1位・強調・UP矢印
-  accentDark: '#E0431A',     // アクセントのプレスド状態
-  accentLight: '#FFEDE5',    // accent の淡背景（チップ・バッジ・強調カード）
-  accentYellow: '#FFB800',   // 王冠アイコン・ゴールド・称号
+  // アクセントカラー（CTA・今日・競争要素）
+  accent: '#EF7136',         // 主 CTA・今日のバー・1位強調
+  accentDark: '#D65E25',     // アクセントのプレスド状態
+  accentLight: '#FFF0E7',    // accent の淡背景（チップ・バッジ・強調カード）
+  accentYellow: '#E5A13A',   // 王冠アイコン・ゴールド・称号
 
   // Pro（サブスク）
-  pro: '#7C3AED',            // Pro バッジ・特別感
+  pro: '#6B4FC9',            // Pro バッジ・特別感
 
   // セマンティックカラー
-  success: '#00D9A3',        // 達成・完了（primaryと同じ）
-  warning: '#FFB800',
-  error: '#EF4444',
-  info: '#4A90E2',
+  success: '#0F9187',        // 達成・完了（ブランドのティール系）
+  warning: '#E5A13A',
+  error: '#D92D20',
+  info: '#3A86FF',
 
-  // テキスト
-  textPrimary: '#111827',    // メイン文字（純白背景でのコントラスト最適化。旧 #1A1A2E）
-  textSecondary: '#6B7280',  // サブ文字（グレー）
-  textTertiary: '#9CA3AF',   // プレースホルダー・補足
+  // テキスト（パイン寄りのインク。ニュートラルグレーより背景と馴染む）
+  textPrimary: '#112523',    // メイン文字
+  textSecondary: '#60716F',  // サブ文字
+  textTertiary: '#8FA09D',   // プレースホルダー・補足
   textOnPrimary: '#FFFFFF',  // primaryカラー上の文字
   textOnAccent: '#FFFFFF',   // accentカラー上の文字（CTA）
 
-  // 背景（白ベースのミニマル基調。旧・温かいベージュから移行）
-  background: '#F7F8FA',     // アプリ全体の背景（旧 #F4F2EC / #F8FAFB を統一）
+  // 背景（ごくわずかに緑に振ったオフホワイト）
+  background: '#F3F6F5',     // アプリ全体の背景
   surface: '#FFFFFF',        // カード・モーダルの背景
-  surfaceGray: '#F1F3F5',    // 入力フィールド・非アクティブ背景
+  surfaceGray: '#EDF2F1',    // 入力フィールド・非アクティブ背景・セグメントのトラック
   /** @deprecated 温かいインセット面。白ベース移行に伴いクールグレーへ。新規は surfaceGray を使う */
-  surfaceAlt: '#EEF1F5',
+  surfaceAlt: '#E6EDEB',
 
   // ボーダー
-  border: '#E5E7EB',         // 通常のボーダー
-  borderLight: '#F1F3F5',    // 薄いセパレーター
+  border: '#DBE5E3',         // 通常のボーダー
+  borderLight: '#E9EFED',    // 薄いセパレーター
 
   // チームランキング用（競争感を出す色）
-  rank1: '#FFB800',          // 1位 ゴールド
-  rank2: '#9CA3AF',          // 2位 シルバー
-  rank3: '#CD7F32',          // 3位 ブロンズ
+  rank1: '#E5A13A',          // 1位 ゴールド
+  rank2: '#9AAAA7',          // 2位 シルバー
+  rank3: '#C08552',          // 3位 ブロンズ
   // 金銀銅の淡背景（RankBadge の 1〜3 位バッジ地）
-  rank1Bg: '#FFF4D6',
-  rank2Bg: '#F1F3F5',
-  rank3Bg: '#F6E8DC',
+  rank1Bg: '#FDF3E2',
+  rank2Bg: '#EDF2F1',
+  rank3Bg: '#F6EAE0',
 
   // 陣営バー用。自陣営は常に primary、敵陣営の筆頭は accent（VS の緊張感を色で作る）
   // 7 陣営目以降は各利用箇所で配列を循環させる
   teamColors: [
-    '#00D9A3',  // 自陣営（primary）
-    '#FF5C2B',  // 敵筆頭（accent）
-    '#4A90E2',
-    '#9B59B6',
-    '#F59E0B',
-    '#64748B',
+    '#087B73',  // 自陣営（primary）
+    '#EF7136',  // 敵筆頭（accent）
+    '#3A86FF',
+    '#9B5CFF',
+    '#E5A13A',
+    '#5E7C77',
   ],
 
   // 陣営識別カラー（バトル詳細・一覧で最大6陣営を色分け）
   teamPalette: [
+    '#0F9187',
+    '#EF7136',
     '#3A86FF',
-    '#FF4757',
-    '#FFC23C',
     '#9B5CFF',
-    '#00D9A3',
-    '#FF5C2B',
+    '#E5A13A',
+    '#5E7C77',
   ],
 
   // チャート用（WeeklyBarChart）
-  chartBarActive: '#00D9A3',    // データありの日
-  chartBarInactive: '#E5E7EB',  // データ 0 の日・プレースホルダー
-  chartToday: '#FF5C2B',        // 今日のバーだけアクセント
+  chartBarActive: '#168D83',    // データありの日
+  chartBarInactive: '#DDE5E3',  // データ 0 の日・プレースホルダー
+  chartToday: '#F07A3E',        // 今日のバーだけアクセント
+  chartTrack: '#EDF2F1',        // バーの下地トラック（棒の背景レーン）
 } as const;
 
 // ============================================================
-// ダーク HUD 用カラー（記録中・結果・バトル詳細のダーク部）
-// record.tsx / battle/result/[id].tsx の現行多数派の実値を採用
+// ダーク面用カラー（記録中HUD・結果・ホームのヒーローカード）
+// inst_v3 のディープパイン系。ライト面のブランド色と地続きの色相にする
 // ============================================================
 
 export const DarkColors = {
-  background: '#0A0E1A',                    // ダーク画面の背景
-  surface: '#161D33',                       // ダークカード（旧 BR.darkCard）
-  surfaceAlt: '#11172A',                    // ダークパネル（旧 BR.darkPanel）
-  line: 'rgba(255,255,255,0.08)',           // 区切り線（旧 BR.darkLine）
-  lineStrong: 'rgba(255,255,255,0.14)',     // 強めの区切り線（旧 BR.darkLine2）
-  textPrimary: '#FFFFFF',                   // メイン文字（旧 BR.paper）
-  textSecondary: 'rgba(255,255,255,0.68)',  // サブ文字（旧 BR.paper2）
-  textTertiary: 'rgba(255,255,255,0.40)',   // 補足文字（旧 BR.paper3）
-  primary: '#00D9A3',                       // ダーク上の明るいティール
-  accent: '#FF5C2B',                        // アクセント（ブランド統一色）
-  stop: '#FF3D58',                          // STOP ボタン
+  background: '#0B2724',                    // ダーク画面の背景（記録中HUD・結果）
+  surface: '#123B37',                       // ダークカード・ヒーローカードの地
+  surfaceAlt: '#103530',                    // ダークパネル・ヒーローのフッター帯
+  surfaceDeep: '#0C2D2A',                   // ダーク面のさらに沈んだ帯（ヒーロー内のインサイト行）
+  chip: 'rgba(255,255,255,0.10)',           // ダーク面のチップ・ピル背景
+  marker: 'rgba(255,255,255,0.75)',         // ダーク面のゲージ境界線
+  decor: '#1D5C55',                         // 装飾リング（太）
+  decorLine: '#57938B',                     // 装飾リング（細）
+  line: 'rgba(255,255,255,0.10)',           // 区切り線
+  lineStrong: 'rgba(255,255,255,0.16)',     // 強めの区切り線
+  textPrimary: '#FFFFFF',                   // メイン文字
+  textSecondary: '#B7DAD5',                 // サブ文字（ティール寄りの淡色）
+  textTertiary: '#7FA9A3',                  // 補足文字
+  primary: '#4FD0C2',                       // ダーク上の明るいティール
+  primaryTint: '#8EF1E6',                   // 自陣営の数値・ラベル（primary より明るい）
+  primaryRing: 'rgba(142,241,230,0.35)',    // 自陣営バーのリング
+  primarySoft: 'rgba(79,208,194,0.14)',     // primary の淡背景（貢献バナー）
+  accent: '#F08648',                        // アクセント（ダーク上で沈まないオレンジ）
+  accentTint: '#F5B080',                    // ダーク面の淡いオレンジ文字（次順位までの差）
+  accentSoft: 'rgba(240,134,72,0.16)',      // accent の淡背景（警告バナー）
+  barMuted: '#779490',                      // 他陣営のバー（陣営カラム）
+  markStrong: '#BAF4EC',                    // 自陣営マークの地
+  markStrongText: '#0C514A',                // 自陣営マークの文字
+  stop: '#FF5A5F',                          // STOP ボタン
 } as const;
 
 // ============================================================
@@ -208,6 +223,7 @@ export const BorderRadius = {
   md: 12,
   lg: 16,
   xl: 20,
+  '2xl': 22,   // ヒーローカード（ホームの参加中バトル）
   full: 9999,  // 完全な丸（ボタン・アイコン）
 } as const;
 
@@ -215,26 +231,27 @@ export const BorderRadius = {
 // シャドウ
 // ============================================================
 
+// 影は黒ではなくパイン系のインクで落とす（背景の緑みと喧嘩しない）
 export const Shadow = {
   sm: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
+    shadowColor: '#112523',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
     elevation: 2,
   },
   md: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowColor: '#112523',
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.08,
-    shadowRadius: 12,
+    shadowRadius: 16,
     elevation: 4,
   },
   lg: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 20,
+    shadowColor: '#0B423C',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.16,
+    shadowRadius: 26,
     elevation: 8,
   },
 } as const;

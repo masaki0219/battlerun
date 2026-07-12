@@ -50,6 +50,42 @@ export function weeklyBuckets(activities: Activity[], now: Date = new Date()): W
   return buckets.map(({ label, km, isToday }) => ({ label, km, isToday }));
 }
 
+/** 直近7日の起点（6日前）を「4月15日〜」形式で返す。週間カードの見出し用 */
+export function weekStartLabel(now: Date = new Date()): string {
+  const from = startOfDay(now);
+  from.setDate(from.getDate() - 6);
+  return `${from.getMonth() + 1}月${from.getDate()}日〜`;
+}
+
+/**
+ * 直近7日 と その前の7日 の合計km、および増減率。
+ * - 前週が 0km のときは比較できないので changeRatio は null（呼び出し側でチップを出さない）。
+ * - 入力は取得済みの直近アクティビティのみ。14日分に満たなければその範囲での比較になる。
+ */
+export function weekOverWeek(
+  activities: Activity[],
+  now: Date = new Date(),
+): { thisWeekKm: number; lastWeekKm: number; changeRatio: number | null } {
+  const today0 = startOfDay(now).getTime();
+  const thisWeekFrom = today0 - 6 * DAY_MS; // 今日を含む7日
+  const lastWeekFrom = today0 - 13 * DAY_MS;
+
+  let thisWeekKm = 0;
+  let lastWeekKm = 0;
+  for (const a of activities) {
+    const d = parseDate(a.startedAt);
+    if (!d) continue;
+    const day = startOfDay(d).getTime();
+    if (day >= thisWeekFrom && day <= today0) thisWeekKm += a.distanceKm || 0;
+    else if (day >= lastWeekFrom && day < thisWeekFrom) lastWeekKm += a.distanceKm || 0;
+  }
+  return {
+    thisWeekKm,
+    lastWeekKm,
+    changeRatio: lastWeekKm > 0 ? (thisWeekKm - lastWeekKm) / lastWeekKm : null,
+  };
+}
+
 /**
  * 連続記録日数。今日走っていれば今日から、走っていなければ昨日から遡る。
  * - 同日複数ランは1日と数える。
@@ -75,31 +111,6 @@ export function streakDays(activities: Activity[], now: Date = new Date()): numb
     cursor.setDate(cursor.getDate() - 1);
   }
   return count;
-}
-
-/**
- * 逆転（または逃げ切り）に必要な1日あたり距離。
- * - daysLeft = ceil((endAt - now) / 1日)、0以下なら null（終了済み）。
- * - isLeading=false（ビハインド）: 差を埋める距離 + 0.01km バッファ（並ぶでなく抜く）を daysLeft で割る。
- * - isLeading=true（リード中）: リードを守る「1日◯kmの貯金」= (mine - rival)/daysLeft を返す（0にしない）。
- */
-export function dailyPaceToOvertake(params: {
-  myTeamKm: number;
-  rivalTeamKm: number;
-  endAt: string;
-  isLeading: boolean;
-  now?: Date;
-}): { kmPerDay: number; daysLeft: number } | null {
-  const { myTeamKm, rivalTeamKm, endAt, isLeading, now = new Date() } = params;
-  const end = parseDate(endAt);
-  if (!end) return null;
-  const daysLeft = Math.ceil((end.getTime() - now.getTime()) / DAY_MS);
-  if (daysLeft <= 0) return null;
-
-  const kmPerDay = isLeading
-    ? Math.max(0, myTeamKm - rivalTeamKm) / daysLeft
-    : (Math.max(0, rivalTeamKm - myTeamKm) + 0.01) / daysLeft;
-  return { kmPerDay, daysLeft };
 }
 
 /**
@@ -159,8 +170,9 @@ export function maxStat(stats: CategoryStats[], rankingType: RankingType): numbe
 
 /** 終了日までの残り日数（0 未満は 0、endAt 空なら null）。 */
 export function daysLeft(endAt: string, now: Date = new Date()): number | null {
-  if (!endAt) return null;
-  return Math.max(0, Math.ceil((new Date(endAt).getTime() - now.getTime()) / DAY_MS));
+  const end = parseDate(endAt);
+  if (!end) return null;
+  return Math.max(0, Math.ceil((end.getTime() - now.getTime()) / DAY_MS));
 }
 
 /**

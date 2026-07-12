@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
-import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, query, orderBy } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import { db } from '../../lib/firebase';
@@ -83,11 +83,22 @@ export default function ActivityDetailScreen() {
         const startMs: number = d['startedAt']?.toMillis?.() ?? (d['startedAt']?.seconds ? d['startedAt'].seconds * 1000 : Date.now());
         const endMs: number = d['endedAt']?.toMillis?.() ?? (d['endedAt']?.seconds ? d['endedAt'].seconds * 1000 : Date.now());
 
-        const route: RoutePoint[] = ((d['route'] as any[]) ?? []).map((p: any) => ({
+        let route: RoutePoint[] = ((d['route'] as any[]) ?? []).map((p: any) => ({
           lat: p['lat'] as number,
           lng: p['lng'] as number,
           timestamp: p['timestamp'] as number,
         }));
+        if ((d['userId'] as string) === user.id && route.length === 0) {
+          const chunks = await getDocs(query(
+            collection(db, 'users', user.id, 'activityRoutes', id, 'chunks'),
+            orderBy('index', 'asc'),
+          ));
+          route = chunks.docs.flatMap((chunk) => ((chunk.data()['points'] as any[]) ?? []).map((p: any) => ({
+            lat: p['lat'] as number,
+            lng: p['lng'] as number,
+            timestamp: p['timestamp'] as number,
+          })));
+        }
 
         const battleIds = ((d['battleIds'] as string[] | undefined) ?? []);
 
@@ -108,8 +119,8 @@ export default function ActivityDetailScreen() {
         // 反映先バトル名を全件取得（複数バトル参加中の場合すべて表示する）
         const contributions = await Promise.all(
           battleIds.map(async (bid) => {
-            const bSnap = await getDoc(doc(db, 'battles', bid));
-            return bSnap.exists() ? { battleId: bid, battleTitle: bSnap.data()['title'] as string } : null;
+            const bSnap = await getDoc(doc(db, 'battles', bid)).catch(() => null);
+            return bSnap?.exists() ? { battleId: bid, battleTitle: bSnap.data()['title'] as string } : null;
           })
         );
         setBattleContributions(contributions.filter((c): c is BattleContribution => c !== null));
@@ -129,6 +140,8 @@ export default function ActivityDetailScreen() {
           isMine: counts[r.type]?.isMine ?? false,
         }));
         setReactions(rc);
+      } catch {
+        setActivity(null);
       } finally {
         setLoading(false);
       }
@@ -195,7 +208,7 @@ export default function ActivityDetailScreen() {
     <SafeAreaView style={s.root} edges={['top']}>
       {/* Header */}
       <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel="戻る">
           <Ionicons name="chevron-back" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
@@ -262,7 +275,7 @@ export default function ActivityDetailScreen() {
         {/* ── Battle contribution ── */}
         {battleContributions.length > 0 && (
           <View style={s.section}>
-            <Text style={TextStyles.sectionTitle}>バトル貢献</Text>
+            <Text style={TextStyles.sectionTitle}>チャレンジへの貢献</Text>
             {battleContributions.map((c) => (
               <TouchableOpacity
                 key={c.battleId}

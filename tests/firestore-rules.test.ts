@@ -15,7 +15,7 @@ import {
   RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
 import {
-  doc, setDoc, updateDoc, addDoc, deleteDoc, collection, Timestamp,
+  doc, setDoc, updateDoc, addDoc, deleteDoc, collection, Timestamp, getDoc,
 } from 'firebase/firestore';
 
 const PROJECT_ID = 'battlerun-rules-test';
@@ -45,6 +45,18 @@ async function seed() {
     const db = context.firestore();
 
     // バトル1: チーム戦、teamAは集計済みのcategory_stats
+    await setDoc(doc(db, 'battles/battle1'), {
+      type: 'private', status: 'active', createdBy: 'alice', title: 'test', description: '',
+      categories: [{ id: 'teamA', label: 'A' }, { id: 'teamB', label: 'B' }],
+      categoryIds: ['teamA', 'teamB'], rankingType: 'total', startAt: Timestamp.now(),
+      endAt: Timestamp.fromMillis(Date.now() + 86400000), inviteCode: 'ABC123', seasonId: null,
+    });
+    await setDoc(doc(db, 'battles/battle2'), {
+      type: 'public', status: 'active', createdBy: 'admin', title: 'public', description: '',
+      categories: [{ id: 'teamA', label: 'A' }, { id: 'teamB', label: 'B' }],
+      categoryIds: ['teamA', 'teamB'], rankingType: 'total', startAt: Timestamp.now(),
+      endAt: Timestamp.fromMillis(Date.now() + 86400000), inviteCode: null, seasonId: null,
+    });
     await setDoc(doc(db, 'battles/battle1/category_stats/teamA'), {
       label: 'チームA',
       totalDistanceKm: 10,
@@ -62,10 +74,12 @@ async function seed() {
     // alice の既存アクティビティ（update/delete拒否確認用）
     await setDoc(doc(db, 'activities/act1'), {
       userId: 'alice',
+      visibility: 'public',
       distanceKm: 5,
       battleIds: ['battle1'],
       startedAt: Timestamp.now(),
       endedAt: Timestamp.now(),
+      route: [{ lat: 35, lng: 139, timestamp: Date.now() }],
     });
 
     // alice のユーザードキュメント（plan/role/titles自己変更拒否確認用）
@@ -75,6 +89,13 @@ async function seed() {
       role: 'user',
       titles: [],
     });
+    await setDoc(doc(db, 'users/bob'), { name: 'Bob', plan: 'free', role: 'user', titles: [] });
+    await setDoc(doc(db, 'publicProfiles/alice'), { name: 'Alice', avatarUrl: null, avatarEmoji: null, updatedAt: Timestamp.now() });
+    await setDoc(doc(db, 'activities/publicAct'), {
+      userId: 'alice', visibility: 'public_v2', distanceKm: 2, battleIds: ['battle1'],
+      startedAt: Timestamp.now(), endedAt: Timestamp.now(), durationSeconds: 1200,
+    });
+    await setDoc(doc(db, 'users/alice/badges/first_run'), { badgeId: 'first_run', name: '初陣ランナー' });
   });
 }
 
@@ -88,6 +109,7 @@ async function run() {
   await seed();
 
   const aliceDb = testEnv.authenticatedContext('alice').firestore();
+  const bobDb = testEnv.authenticatedContext('bob').firestore();
 
   // ── category_stats ────────────────────────────────────────────────
   await check(
@@ -101,23 +123,23 @@ async function run() {
     'fail',
   );
   await check(
-    'category_stats: ゼロ値での新規作成は許可',
+    'category_stats: 作成者によるゼロ値の新規作成は許可',
     setDoc(doc(aliceDb, 'battles/battle1/category_stats/teamB'), {
-      label: 'チームB', totalDistanceKm: 0, avgDistanceKm: 0, participantCount: 0,
+      totalDistanceKm: 0, avgDistanceKm: 0, participantCount: 0,
     }),
     'succeed',
   );
   await check(
     'category_stats: 非ゼロ値での新規作成は拒否',
     setDoc(doc(aliceDb, 'battles/battle1/category_stats/teamC'), {
-      label: 'チームC', totalDistanceKm: 5, avgDistanceKm: 5, participantCount: 0,
+      totalDistanceKm: 5, avgDistanceKm: 5, participantCount: 0,
     }),
     'fail',
   );
   await check(
     'category_stats: participantCount非ゼロでの新規作成は拒否',
     setDoc(doc(aliceDb, 'battles/battle1/category_stats/teamD'), {
-      label: 'チームD', totalDistanceKm: 0, avgDistanceKm: 0, participantCount: 1,
+      totalDistanceKm: 0, avgDistanceKm: 0, participantCount: 1,
     }),
     'fail',
   );
@@ -138,7 +160,7 @@ async function run() {
     'fail',
   );
   await check(
-    'participants: totalDistanceKm:0での新規参加は許可',
+    'participants: 本人が有効な陣営へtotalDistanceKm:0で参加できる',
     setDoc(doc(aliceDb, 'battles/battle2/participants/alice'), {
       userId: 'alice', categoryId: 'teamA', totalDistanceKm: 0, activityCount: 0,
     }),
@@ -165,21 +187,52 @@ async function run() {
     'fail',
   );
   await check(
-    'activities: aggregatedなしの新規作成は許可',
+    'activities: クライアントからの新規作成は拒否（Callableのみ）',
     addDoc(collection(aliceDb, 'activities'), {
       userId: 'alice', distanceKm: 3, battleIds: ['battle1'],
       startedAt: Timestamp.now(), endedAt: Timestamp.now(),
     }),
-    'succeed',
+    'fail',
   );
   await check(
     'activities: 既存ドキュメントのupdateは拒否',
     updateDoc(doc(aliceDb, 'activities/act1'), { distanceKm: 999 }),
     'fail',
   );
+
+  await check(
+    'activities: 本人はGPSルートを含む旧形式を読める',
+    getDoc(doc(aliceDb, 'activities/act1')),
+    'succeed',
+  );
+  await check(
+    'activities: 他人はGPSルートを含む活動を読めない',
+    getDoc(doc(bobDb, 'activities/act1')),
+    'fail',
+  );
+  await check(
+    'activities: 他人でもrouteのない公開活動は読める',
+    getDoc(doc(bobDb, 'activities/publicAct')),
+    'succeed',
+  );
   await check(
     'activities: 既存ドキュメントのdeleteは拒否',
     deleteDoc(doc(aliceDb, 'activities/act1')),
+    'fail',
+  );
+  await check(
+    'users/{uid}: 他人の非公開ユーザードキュメントは読めない',
+    getDoc(doc(bobDb, 'users/alice')),
+    'fail',
+  );
+  await check(
+    'publicProfiles: 認証済みユーザーは公開プロフィールを読める',
+    getDoc(doc(bobDb, 'publicProfiles/alice')),
+    'succeed',
+  );
+  await check(
+    'private battle: 作成者でもtypeをpublicへ変更できない',
+    updateDoc(doc(aliceDb, 'battles/battle1'), { type: 'public' }),
     'fail',
   );
 
@@ -189,6 +242,16 @@ async function run() {
     updateDoc(doc(aliceDb, 'users/alice'), {
       titles: [{ seasonId: '', battleId: 'battle1', battleTitle: 't', teamName: 'teamA', rank: 1, awardedAt: '' }],
     }),
+    'fail',
+  );
+  await check(
+    'badges: 本人はサーバー付与済みバッジを読める',
+    getDoc(doc(aliceDb, 'users/alice/badges/first_run')),
+    'succeed',
+  );
+  await check(
+    'badges: 本人でもバッジを自己付与できない',
+    setDoc(doc(aliceDb, 'users/alice/badges/fake'), { name: 'fake' }),
     'fail',
   );
   await check(

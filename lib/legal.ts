@@ -1,14 +1,7 @@
-/**
- * 法的情報・App Store審査対応まわりの文言を集約する定数ファイル。
- *
- * URLはプレースホルダー。Masakiが正式な利用規約・プライバシーポリシーの
- * URLに差し替えること。プライバシーポリシーには、位置情報（GPSルート・歩数）と
- * 購入情報（RevenueCat経由のサブスクリプション状態）の取り扱いについて
- * 記載する必要がある（App Store審査ガイドライン 5.1.1 対応）。
- */
+/** Firebase Hostingへ公開する法務ページ。アプリ内では同内容のネイティブ画面を表示する。 */
 export const LEGAL_URLS = {
-  termsOfService: 'https://battlerun.app/legal/terms',
-  privacyPolicy: 'https://battlerun.app/legal/privacy',
+  termsOfService: 'https://battlerun-75eb6.web.app/legal/terms.html',
+  privacyPolicy: 'https://battlerun-75eb6.web.app/legal/privacy.html',
 };
 
 /**

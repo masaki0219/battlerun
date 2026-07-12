@@ -77,6 +77,15 @@ export default function LoginScreen() {
 
           <Text style={styles.or}>アカウントをお持ちでない方</Text>
           <Button label="新規登録はこちら" onPress={() => router.push('/auth/signup')} variant="ghost" />
+          <View style={styles.legalRow}>
+            <TouchableOpacity onPress={() => router.push('/legal/terms')} accessibilityRole="link">
+              <Text style={styles.legalText}>利用規約</Text>
+            </TouchableOpacity>
+            <Text style={styles.legalDivider}>・</Text>
+            <TouchableOpacity onPress={() => router.push('/legal/privacy')} accessibilityRole="link">
+              <Text style={styles.legalText}>プライバシーポリシー</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -99,4 +108,7 @@ const styles = StyleSheet.create({
   forgotBtn: { alignSelf: 'center' },
   forgotText: { fontSize: Typography.fontSize.sm, color: Colors.primary },
   or: { textAlign: 'center', fontSize: Typography.fontSize.sm, color: Colors.textSecondary, marginTop: Spacing.sm },
+  legalRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: Spacing.sm },
+  legalText: { fontSize: Typography.fontSize.xs, color: Colors.primary },
+  legalDivider: { marginHorizontal: Spacing.sm, color: Colors.textTertiary },
 });

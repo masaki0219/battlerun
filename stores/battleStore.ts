@@ -1,9 +1,11 @@
 import { create } from 'zustand';
 import {
   collection, query, where, getDocs, getDoc,
-  doc, setDoc, updateDoc, serverTimestamp, addDoc, Timestamp, arrayUnion, runTransaction,
+  doc, serverTimestamp, Timestamp, arrayUnion, runTransaction, writeBatch,
 } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, functions } from '../lib/firebase';
+import { httpsCallable } from 'firebase/functions';
+import * as Crypto from 'expo-crypto';
 import { useAuthStore } from './authStore';
 import { validateBattleTitle } from '../lib/validation/battleTitle';
 import type { Battle, CategoryStats, Season, Category, BattleParticipation } from '../types';
@@ -175,21 +177,6 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
   },
 
   joinBattle: async (battleId, categoryId, userId) => {
-    // 参加人数上限チェック (Freeバトル: 上限10名) — トランザクション外で事前確認
-    const battleSnap = await getDoc(doc(db, 'battles', battleId));
-    if (battleSnap.exists()) {
-      const bData = battleSnap.data();
-      if (bData['type'] !== 'public' && bData['createdBy']) {
-        const creatorSnap = await getDoc(doc(db, 'users', bData['createdBy'])).catch(() => null);
-        if ((creatorSnap?.data()?.['plan'] ?? 'free') === 'free') {
-          const partCount = (await getDocs(collection(db, 'battles', battleId, 'participants'))).size;
-          if (partCount >= 10) {
-            throw new Error('PARTICIPANT_LIMIT: このバトルは定員（10名）に達しています。バトル作成者がProにアップグレードすると上限が拡大されます。');
-          }
-        }
-      }
-    }
-
     const participantRef = doc(db, 'battles', battleId, 'participants', userId);
     const userRef = doc(db, 'users', userId);
 
@@ -210,6 +197,11 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
           joinedAt: serverTimestamp(),
         });
       } else if (categoryChanged) {
+        const currentDistance = (participantSnap.data()['totalDistanceKm'] as number | undefined) ?? 0;
+        const currentActivities = (participantSnap.data()['activityCount'] as number | undefined) ?? 0;
+        if (currentDistance > 0 || currentActivities > 0) {
+          throw new Error('一度記録した後は陣営を変更できません。');
+        }
         transaction.update(participantRef, { categoryId: categoryId ?? null });
       }
 
@@ -247,7 +239,7 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
       throw new Error('PRO_REQUIRED: プライベートチャレンジの作成にはProプランが必要です。');
     }
 
-    const inviteCode = isPublic ? null : Math.random().toString(36).substring(2, 8).toUpperCase();
+    const inviteCode = isPublic ? null : Crypto.randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase();
 
     // 区分IDを確定（ラベルから毎回生成し、重複ラベルには連番を付与）。
     // 呼び出し側が渡した cat.id は無視する。
@@ -255,12 +247,15 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
 
     // 開始日が未来なら upcoming で作成し、スケジューラの upcoming→active に委ねる。
     const status = startAt.getTime() <= Date.now() ? 'active' : 'upcoming';
-    const battleRef = await addDoc(collection(db, 'battles'), {
+    const battleRef = doc(collection(db, 'battles'));
+    const batch = writeBatch(db);
+    batch.set(battleRef, {
       type: isPublic ? 'public' : 'private',
       seasonId: seasonId ?? null,
       title,
       description,
       categories: resolvedCategories,
+      categoryIds: resolvedCategories.map((category) => category.id),
       rankingType,
       startAt: Timestamp.fromDate(startAt),
       endAt: Timestamp.fromDate(endAt),
@@ -271,30 +266,22 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
     });
 
     // category_stats の初期ドキュメントを作成
-    await Promise.all(
-      resolvedCategories.map((cat) =>
-        setDoc(doc(db, 'battles', battleRef.id, 'category_stats', cat.id), {
+    resolvedCategories.forEach((cat) =>
+        batch.set(doc(db, 'battles', battleRef.id, 'category_stats', cat.id), {
           totalDistanceKm: 0,
           avgDistanceKm: 0,
           participantCount: 0,
         })
-      )
     );
+    await batch.commit();
 
     return battleRef.id;
   },
 
   findBattleByInviteCode: async (inviteCode: string) => {
-    const q = query(
-      collection(db, 'battles'),
-      where('inviteCode', '==', inviteCode.toUpperCase().trim())
-    );
-    const snap = await getDocs(q);
-    if (snap.empty) throw new Error('招待コードが見つかりません');
-    const d = snap.docs[0];
-    const battle = mapDocToBattle(d.id, d.data());
-    if (!battle) throw new Error('招待コードが見つかりません');
-    return battle;
+    const callable = httpsCallable(functions, 'lookupBattleByInviteCode');
+    const result = await callable({ inviteCode });
+    return result.data as Battle;
   },
 
   getActiveBattleIds: () => {

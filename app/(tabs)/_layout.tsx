@@ -1,19 +1,18 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useAuthStore } from '../../stores/authStore';
-import { useRecordStore } from '../../stores/recordStore';
+import { useRecordStore, hydrateRecordingSession, flushPendingActivities } from '../../stores/recordStore';
 import { useLocation } from '../../hooks/useLocation';
 import '../../lib/locationTask';
 import { useStepCounter } from '../../hooks/useStepCounter';
-import { Colors } from '../../design_tokens';
+import { Colors, Shadow } from '../../design_tokens';
 
 const PRIMARY = Colors.primary;
 const ACCENT  = Colors.accent;
-const INK     = Colors.textPrimary;
 const INK3    = Colors.textTertiary;
 const LINE    = Colors.border;
 
@@ -26,7 +25,7 @@ const TAB_ITEMS: {
   iconFocused?: IconName;
   primary?: boolean;
 }[] = [
-  { name: 'battle',  label: 'バトル',       icon: 'trophy-outline',    iconFocused: 'trophy' },
+  { name: 'battle',  label: 'チャレンジ',   icon: 'trophy-outline',    iconFocused: 'trophy' },
   { name: 'record',  label: 'ラン',         icon: 'walk-outline',      primary: true },
   { name: 'stats',   label: '記録',         icon: 'bar-chart-outline', iconFocused: 'bar-chart' },
   { name: 'profile', label: 'プロフィール', icon: 'person-outline',    iconFocused: 'person' },
@@ -56,10 +55,19 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
         if (item.primary) {
           return (
             <View key={route.key} style={tb.centerWrap}>
-              <TouchableOpacity style={tb.centerBtn} onPress={onPress} activeOpacity={0.8}>
-                <Ionicons name="walk-outline" size={26} color="#fff" />
+              <TouchableOpacity
+                style={[tb.centerBtn, !focused && tb.centerBtnInactive]}
+                onPress={onPress}
+                activeOpacity={0.8}
+                accessibilityRole="tab"
+                accessibilityLabel={item.label}
+                accessibilityState={{ selected: focused }}
+              >
+                <Ionicons name="walk" size={24} color={focused ? Colors.textOnAccent : Colors.textSecondary} />
               </TouchableOpacity>
-              <Text style={[tb.label, { color: INK, fontWeight: '700' }]}>{item.label}</Text>
+              <Text style={[tb.label, { color: focused ? Colors.accentDark : INK3, fontWeight: focused ? '700' : '500' }]}>
+                {item.label}
+              </Text>
             </View>
           );
         }
@@ -68,7 +76,15 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
         const iconName = focused ? (item.iconFocused ?? item.icon) : item.icon;
 
         return (
-          <TouchableOpacity key={route.key} style={tb.tab} onPress={onPress} activeOpacity={0.7}>
+          <TouchableOpacity
+            key={route.key}
+            style={tb.tab}
+            onPress={onPress}
+            activeOpacity={0.7}
+            accessibilityRole="tab"
+            accessibilityLabel={item.label}
+            accessibilityState={{ selected: focused }}
+          >
             <Ionicons name={iconName} size={22} color={color} />
             <Text style={[tb.label, { color, fontWeight: focused ? '700' : '500' }]}>
               {item.label}
@@ -83,7 +99,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
 const tb = StyleSheet.create({
   bar: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.97)',
+    backgroundColor: Colors.surface,
     borderTopWidth: 1,
     borderTopColor: LINE,
     paddingTop: 10,
@@ -91,10 +107,10 @@ const tb = StyleSheet.create({
     justifyContent: 'space-around',
     ...Platform.select({
       ios: {
-        shadowColor: '#000',
+        shadowColor: Shadow.md.shadowColor,
         shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.04,
-        shadowRadius: 12,
+        shadowOpacity: 0.05,
+        shadowRadius: 14,
       },
       android: { elevation: 8 },
     }),
@@ -111,25 +127,33 @@ const tb = StyleSheet.create({
   centerWrap: {
     flex: 1,
     alignItems: 'center',
-    marginTop: -22,
-    gap: 3,
+    marginTop: -26,
+    gap: 4,
   },
+  // 浮いた主 CTA。背景色のリングでタブバーから切り抜かれたように見せる
   centerBtn: {
     width: 56,
     height: 56,
     borderRadius: 28,
     backgroundColor: ACCENT,
+    borderWidth: 4,
+    borderColor: Colors.background,
     alignItems: 'center',
     justifyContent: 'center',
     ...Platform.select({
       ios: {
-        shadowColor: ACCENT,
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.45,
-        shadowRadius: 16,
+        shadowColor: Colors.accentDark,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.32,
+        shadowRadius: 14,
       },
       android: { elevation: 10 },
     }),
+  },
+  centerBtnInactive: {
+    backgroundColor: Colors.surfaceAlt,
+    borderColor: Colors.background,
+    shadowOpacity: 0.08,
   },
 });
 
@@ -137,6 +161,11 @@ export default function TabLayout() {
   const { user, isLoading } = useAuthStore();
   const isRecording = useRecordStore((s) => s.isRecording);
   const measurementType = useRecordStore((s) => s.measurementType);
+
+  useEffect(() => {
+    void hydrateRecordingSession();
+    if (user) void flushPendingActivities();
+  }, [user?.id]);
 
   useLocation({ enabled: isRecording });
   useStepCounter({ enabled: isRecording && measurementType === 'steps' });

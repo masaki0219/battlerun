@@ -1,52 +1,78 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
-  ScrollView, ActivityIndicator, Modal, FlatList, Pressable, Platform, Linking,
+  ScrollView, ActivityIndicator, Modal, FlatList, Pressable, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import {
   EmailAuthProvider,
   reauthenticateWithCredential,
   deleteUser,
 } from 'firebase/auth';
-import { auth, db, storage } from '../../lib/firebase';
+import { auth, db, storage, functions } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import { purchasePro, restorePurchases, getProPackageInfo, type ProPackageInfo } from '../../lib/revenuecat';
 import { isPro } from '../../lib/pro';
-import { LEGAL_URLS, SUBSCRIPTION_DISCLAIMER } from '../../lib/legal';
+import { SUBSCRIPTION_DISCLAIMER } from '../../lib/legal';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '../../components/ui/Avatar';
-import { Card } from '../../components/ui/Card';
-import { Button } from '../../components/ui/Button';
-import { MonoLabel } from '../../components/ui/MonoLabel';
-import { StatBlock } from '../../components/ui/StatBlock';
-import { ListRow } from '../../components/ui/ListRow';
 import { useRecentActivities } from '../../hooks/useRecentActivities';
 import { streakDays } from '../../utils/displayStats';
-import { Colors, DarkColors, Typography, Spacing, BorderRadius } from '../../design_tokens';
+import { Colors, DarkColors, Typography, Spacing, BorderRadius, Shadow } from '../../design_tokens';
 import type { UserTitle } from '../../types';
+import { httpsCallable } from 'firebase/functions';
+import { registerPushToken } from '../../lib/notifications';
+import Constants from 'expo-constants';
 
-function TitleBadge({ title }: { title: UserTitle }) {
-  const rankLabel = title.rank === 1 ? '👑 MVP' : `TOP ${title.rank}`;
+function TitleBadge({ title, selected }: { title: UserTitle; selected: boolean }) {
+  const rankLabel = title.rank === 1 ? '優勝陣営メンバー' : title.rank === 2 ? '準優勝陣営メンバー' : `${title.rank}位陣営メンバー`;
   const awardedDate = new Date(title.awardedAt).toLocaleDateString('ja-JP', {
     year: 'numeric', month: 'short',
   });
   return (
     <View style={styles.titleBadge}>
-      <View style={styles.titleRankWrap}>
-        <Text style={styles.titleRank}>{rankLabel}</Text>
+      <View style={[styles.titleRankWrap, selected && styles.titleRankWrapSelected]}>
+        <Text style={[styles.titleRank, selected && styles.titleRankSelected]}>{title.rank === 1 ? '👑' : title.rank}</Text>
       </View>
       <View style={styles.titleInfo}>
-        <Text style={styles.titleName} numberOfLines={1}>
-          {title.battleTitle}　{title.teamName}
+        <View style={styles.titleNameRow}>
+          <Text style={styles.titleName}>{rankLabel}</Text>
+          {selected && <Text style={styles.titleSelectedLabel}>表示中</Text>}
+        </View>
+        <Text style={styles.titleBattle} numberOfLines={1}>{title.battleTitle}</Text>
+        <Text style={styles.titleSeason} numberOfLines={1}>
+          {[title.teamName, title.seasonId, `${awardedDate}獲得`].filter(Boolean).join(' ・ ')}
         </Text>
-        <Text style={styles.titleSeason}>{title.seasonId}　{awardedDate}</Text>
       </View>
     </View>
+  );
+}
+
+function ProfileStat({ label, value, unit, accent = false }: { label: string; value: string; unit: string; accent?: boolean }) {
+  return (
+    <View style={styles.statItem}>
+      <Text style={styles.statLabel}>{label}</Text>
+      <Text style={[styles.statValue, accent && styles.statValueAccent]}>{value}<Text style={styles.statUnit}>{unit}</Text></Text>
+    </View>
+  );
+}
+
+function ProfileRow({ icon, title, detail, onPress }: {
+  icon: React.ComponentProps<typeof Ionicons>['name']; title: string; detail?: string; onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={styles.profileRow} onPress={onPress} activeOpacity={0.7}>
+      <View style={styles.profileRowIcon}><Ionicons name={icon} size={18} color={Colors.primaryDark} /></View>
+      <View style={styles.profileRowBody}>
+        <Text style={styles.profileRowTitle}>{title}</Text>
+        {detail && <Text style={styles.profileRowDetail}>{detail}</Text>}
+      </View>
+      <Ionicons name="chevron-forward" size={17} color={Colors.textTertiary} />
+    </TouchableOpacity>
   );
 }
 
@@ -63,11 +89,12 @@ export default function ProfileScreen() {
   const [deleting, setDeleting] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [proPackageInfo, setProPackageInfo] = useState<ProPackageInfo | null>(null);
+  const [serverStats, setServerStats] = useState<{ totalDistanceKm: number; activityCount: number } | null>(null);
 
   // 自分の戦績（累計距離・ラン回数・ストリーク）
   const { activities } = useRecentActivities(50);
-  const totalKm = activities.reduce((sum, a) => sum + a.distanceKm, 0);
-  const totalRuns = activities.length;
+  const totalKm = serverStats?.totalDistanceKm ?? user?.totalDistanceKm ?? activities.reduce((sum, a) => sum + a.distanceKm, 0);
+  const totalRuns = serverStats?.activityCount ?? user?.activityCount ?? activities.length;
   const streak = streakDays(activities);
 
   useEffect(() => {
@@ -75,6 +102,20 @@ export default function ProfileScreen() {
       getProPackageInfo().then(setProPackageInfo);
     }
   }, [user?.plan, proEntitlement]);
+
+  useEffect(() => {
+    if (!user) return;
+    setServerStats(null);
+    httpsCallable(functions, 'syncMyBadges')({})
+      .then((result) => {
+        const data = result.data as { stats?: { totalDistanceKm?: number; activityCount?: number } };
+        if (data.stats) setServerStats({
+          totalDistanceKm: data.stats.totalDistanceKm ?? 0,
+          activityCount: data.stats.activityCount ?? 0,
+        });
+      })
+      .catch(() => {});
+  }, [user?.id]);
 
   function handleAvatarOptions() {
     Alert.alert('アイコンを変更', undefined, [
@@ -88,7 +129,12 @@ export default function ProfileScreen() {
     if (!user) return;
     setShowEmojiPicker(false);
     try {
-      await updateDoc(doc(db, 'users', user.id), { avatarEmoji: emoji, avatarUrl: null });
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'users', user.id), { avatarEmoji: emoji, avatarUrl: null });
+      batch.set(doc(db, 'publicProfiles', user.id), {
+        name: user.name, avatarEmoji: emoji, avatarUrl: null, updatedAt: serverTimestamp(),
+      }, { merge: true });
+      await batch.commit();
       useAuthStore.setState((s) => ({
         user: s.user ? { ...s.user, avatarEmoji: emoji, avatarUrl: undefined } : null,
       }));
@@ -125,6 +171,15 @@ export default function ProfileScreen() {
     }
   }
 
+  async function handleEnableNotifications() {
+    if (!user) return;
+    const enabled = await registerPushToken(user.id, true);
+    Alert.alert(
+      enabled ? '通知を有効にしました' : '通知を有効にできませんでした',
+      enabled ? '順位変動やチャレンジ終了をお知らせします。' : '端末の設定からBattleRunの通知を許可してください。',
+    );
+  }
+
   async function handleAvatarPick() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
@@ -158,7 +213,12 @@ export default function ProfileScreen() {
       await uploadBytes(storageRef, blob);
       const url = await getDownloadURL(storageRef);
 
-      await updateDoc(doc(db, 'users', user!.id), { avatarUrl: url, avatarEmoji: null });
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'users', user!.id), { avatarUrl: url, avatarEmoji: null });
+      batch.set(doc(db, 'publicProfiles', user!.id), {
+        name: user!.name, avatarUrl: url, avatarEmoji: null, updatedAt: serverTimestamp(),
+      }, { merge: true });
+      await batch.commit();
       useAuthStore.setState((s) => ({
         user: s.user ? { ...s.user, avatarUrl: url, avatarEmoji: undefined } : null,
       }));
@@ -258,16 +318,20 @@ export default function ProfileScreen() {
   const titles = [...(user.titles ?? [])].sort(
     (a, b) => new Date(b.awardedAt).getTime() - new Date(a.awardedAt).getTime()
   );
+  const profileTitle = titles[0]
+    ? `称号：${titles[0].rank === 1 ? '優勝陣営メンバー' : titles[0].rank === 2 ? '準優勝陣営メンバー' : `${titles[0].rank}位陣営メンバー`}`
+    : 'チャレンジで称号を獲得しよう';
+  const userIsPro = isPro(user.plan, proEntitlement);
 
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
+        <Text style={styles.headerEyebrow}>BATTLE RUN</Text>
         <Text style={styles.headerTitle}>プロフィール</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        {/* 自分の戦績カード */}
-        <Card style={styles.card}>
+        <View style={styles.profileCard}>
           <View style={styles.userRow}>
             <TouchableOpacity onPress={handleAvatarOptions} disabled={uploading}>
               {uploading ? (
@@ -278,117 +342,124 @@ export default function ProfileScreen() {
                 <View>
                   <Avatar name={user.name} uri={user.avatarUrl} emoji={user.avatarEmoji} size="lg" />
                   <View style={styles.editBadge}>
-                    <Text style={styles.editBadgeText}>編集</Text>
+                    <Ionicons name="pencil" size={10} color={Colors.textOnPrimary} />
                   </View>
                 </View>
               )}
             </TouchableOpacity>
             <View style={styles.userInfo}>
-              <Text style={styles.userName}>{user.name}</Text>
-              {isPro(user.plan, proEntitlement) && (
-                <View style={[styles.planBadge, styles.planBadgePro]}>
-                  <Ionicons name="sparkles" size={11} color={Colors.accentYellow} />
-                  <Text style={[styles.planText, styles.planTextPro]}>Pro</Text>
+              <View style={styles.userNameRow}>
+                <Text style={styles.userName} numberOfLines={1}>{user.name}</Text>
+                <View style={[styles.planBadge, userIsPro && styles.planBadgePro]}>
+                  {userIsPro && <Ionicons name="sparkles" size={10} color={Colors.accentYellow} />}
+                  <Text style={[styles.planText, userIsPro && styles.planTextPro]}>{userIsPro ? 'Pro' : 'Free'}</Text>
                 </View>
-              )}
+              </View>
+              <Text style={styles.profileTitle}>{profileTitle}</Text>
             </View>
+            <TouchableOpacity style={styles.profileEditButton} onPress={handleAvatarOptions} activeOpacity={0.7}>
+              <Ionicons name="pencil" size={16} color={Colors.textSecondary} />
+            </TouchableOpacity>
           </View>
 
           <View style={styles.statTrio}>
-            <StatBlock label="累計距離" value={totalKm.toFixed(1)} unit="km" align="center" style={styles.statItem} />
+            <ProfileStat label="累計距離" value={totalKm.toFixed(1)} unit="km" />
             <View style={styles.statDivider} />
-            <StatBlock label="ラン回数" value={totalRuns} unit="回" align="center" style={styles.statItem} />
+            <ProfileStat label="ラン回数" value={String(totalRuns)} unit="回" />
             <View style={styles.statDivider} />
-            <StatBlock label="連続日数" value={streak} unit="日" align="center" style={styles.statItem} />
+            <ProfileStat label="連続日数" value={String(streak)} unit="日" accent />
           </View>
-        </Card>
-
-        {/* サブスク管理 */}
-        {isPro(user.plan, proEntitlement) ? (
-          <Card style={styles.card}>
-            <Text style={styles.sectionTitle}>サブスクリプション</Text>
-            <View style={styles.proRow}>
-              <View style={styles.proActiveRow}>
-                <Ionicons name="sparkles" size={16} color={Colors.accentYellow} />
-                <Text style={styles.proLabel}>Proプラン 有効中</Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => Alert.alert('サブスク管理', 'App Store の設定からサブスクリプションを管理してください。')}
-              >
-                <Text style={styles.manageLink}>管理する</Text>
-              </TouchableOpacity>
-            </View>
-          </Card>
-        ) : (
-          <Card variant="dark" style={styles.card}>
-            <MonoLabel color={Colors.accentYellow} size={10}>BATTLERUN PRO</MonoLabel>
-            <Text style={styles.proUpsellTitle}>Proにアップグレード</Text>
-            <Text style={styles.freeDescDark}>
-              友達チャレンジの作成が無制限になり、バトルテーマや透かしなし共有が使えます。
-            </Text>
-            {proPackageInfo && (
-              <Text style={styles.priceTextDark}>
-                {proPackageInfo.periodLabel} {proPackageInfo.priceString}（自動更新）
-              </Text>
-            )}
-            <Button
-              label={purchasing ? '処理中...' : 'Proにアップグレード'}
-              onPress={handlePurchasePro}
-              loading={purchasing}
-              variant="accent"
-              style={{ marginTop: Spacing.md }}
-            />
-            <TouchableOpacity onPress={handleRestore} style={{ alignSelf: 'center', marginTop: Spacing.sm }}>
-              <Text style={{ fontSize: Typography.fontSize.xs, color: DarkColors.textTertiary }}>購入を復元する</Text>
-            </TouchableOpacity>
-            <Text style={styles.subscriptionDisclaimerDark}>{SUBSCRIPTION_DISCLAIMER}</Text>
-          </Card>
-        )}
-
-        {/* 利用規約・プライバシーポリシー */}
-        <View style={styles.legalRow}>
-          <TouchableOpacity onPress={() => Linking.openURL(LEGAL_URLS.termsOfService)}>
-            <Text style={styles.legalLink}>利用規約</Text>
-          </TouchableOpacity>
-          <Text style={styles.legalSeparator}>・</Text>
-          <TouchableOpacity onPress={() => Linking.openURL(LEGAL_URLS.privacyPolicy)}>
-            <Text style={styles.legalLink}>プライバシーポリシー</Text>
-          </TouchableOpacity>
         </View>
 
-        {/* 設定リスト */}
-        <Card style={styles.card} padding={Spacing.lg}>
-          <ListRow
-            icon="ribbon"
-            iconColor={Colors.accentYellow}
-            iconBg={Colors.accentYellow + '20'}
-            title="バッジ・称号"
-            subtitle={titles.length > 0 ? `称号 ${titles.length}件獲得済み` : '走ってバッジを集めよう'}
-            onPress={() => router.push('/badges' as any)}
-          />
-          <View style={styles.rowDivider} />
-          <ListRow
-            icon="notifications-outline"
-            title="通知"
-            onPress={() => router.push('/notifications' as any)}
-          />
-        </Card>
+        <View>
+          <View style={styles.sectionHead}>
+            <Text style={styles.sectionHeading}>獲得称号</Text>
+            <TouchableOpacity style={styles.showAllButton} onPress={() => router.push('/badges' as any)} activeOpacity={0.7}>
+              <Text style={styles.showAllText}>すべて見る</Text>
+              <Ionicons name="chevron-forward" size={15} color={Colors.primaryDark} />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.surfaceCard}>
+            {titles.length === 0 ? (
+              <Text style={styles.emptyText}>まだ称号がありません。チャレンジで上位入賞しよう！</Text>
+            ) : (
+              titles.map((title, index) => (
+                <React.Fragment key={`${title.battleId}_${index}`}>
+                  {index > 0 && <View style={styles.titleDivider} />}
+                  <TitleBadge title={title} selected={index === 0} />
+                </React.Fragment>
+              ))
+            )}
+          </View>
+        </View>
 
-        {/* 獲得称号 */}
-        <Card style={styles.card}>
-          <Text style={styles.sectionTitle}>獲得称号</Text>
-          {titles.length === 0 ? (
-            <Text style={styles.emptyText}>
-              まだ称号がありません。チャレンジで上位入賞しよう！
-            </Text>
-          ) : (
-            <View style={styles.titleList}>
-              {titles.map((t, i) => (
-                <TitleBadge key={`${t.battleId}_${i}`} title={t} />
-              ))}
-            </View>
-          )}
-        </Card>
+        <View>
+          <View style={styles.sectionHead}>
+            <Text style={styles.sectionHeading}>BattleRun Pro</Text>
+            <View style={styles.freePlanBadge}><Text style={styles.freePlanText}>{userIsPro ? 'Proプラン' : 'Freeプラン'}</Text></View>
+          </View>
+          <View style={[styles.proCard, userIsPro && styles.proCardActive]}>
+            {userIsPro ? (
+              <View style={styles.proRow}>
+                <View style={styles.proActiveRow}>
+                  <Ionicons name="sparkles" size={16} color={Colors.accentYellow} />
+                  <Text style={styles.proLabel}>Proプラン 有効中</Text>
+                </View>
+                <TouchableOpacity onPress={() => Linking.openURL('https://apps.apple.com/account/subscriptions')} accessibilityRole="link">
+                  <Text style={styles.manageLink}>管理する</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
+                <View style={styles.proIntro}>
+                  <View style={styles.proIcon}><Ionicons name="diamond-outline" size={20} color={Colors.accentDark} /></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.proUpsellTitle}>もっと走りを楽しむ</Text>
+                    <Text style={styles.freeDesc}>友達チャレンジ作成、バトルテーマ、透かしなし共有を利用できます。</Text>
+                  </View>
+                </View>
+                {proPackageInfo && <Text style={styles.priceText}>{proPackageInfo.periodLabel} {proPackageInfo.priceString}（自動更新）</Text>}
+                <TouchableOpacity style={styles.proStartButton} onPress={handlePurchasePro} disabled={purchasing} activeOpacity={0.85}>
+                  {purchasing ? <ActivityIndicator color={Colors.textOnAccent} /> : <><Text style={styles.proStartText}>Proをはじめる</Text><Ionicons name="chevron-forward" size={16} color={Colors.textOnAccent} /></>}
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleRestore} style={styles.restoreButton}><Text style={styles.restoreText}>購入を復元する</Text></TouchableOpacity>
+                <Text style={styles.subscriptionDisclaimer}>{SUBSCRIPTION_DISCLAIMER}</Text>
+              </>
+            )}
+          </View>
+        </View>
+
+        <View>
+          <Text style={styles.sectionHeading}>設定</Text>
+          <View style={[styles.surfaceCard, styles.listCard]}>
+            <ProfileRow icon="notifications-outline" title="通知センター" detail="チャレンジ・ランの通知を確認する" onPress={() => router.push('/notifications' as any)} />
+            <View style={styles.rowDivider} />
+            <ProfileRow icon="notifications-circle-outline" title="プッシュ通知を有効にする" detail="順位変動や終了時刻を受け取る" onPress={handleEnableNotifications} />
+            <View style={styles.rowDivider} />
+            <ProfileRow icon="medal-outline" title="表示中の称号" detail={profileTitle.replace('称号：', '')} onPress={() => router.push('/badges' as any)} />
+            <View style={styles.rowDivider} />
+            <ProfileRow icon="person-outline" title="アカウント" detail="プロフィール画像を変更" onPress={handleAvatarOptions} />
+          </View>
+        </View>
+
+        <View>
+          <Text style={styles.sectionHeading}>ヘルプ・アプリ情報</Text>
+          <View style={[styles.surfaceCard, styles.listCard]}>
+            <ProfileRow icon="help-circle-outline" title="ヘルプ・お問い合わせ" onPress={() => router.push('/help' as any)} />
+            <View style={styles.rowDivider} />
+            <ProfileRow icon="information-circle-outline" title="BattleRunについて" detail={`バージョン ${Constants.expoConfig?.version ?? '—'}`} onPress={() => Alert.alert('BattleRun', '仲間と距離を競うチーム対抗ランニング・ウォーキングアプリです。')} />
+          </View>
+        </View>
+
+        <View style={styles.legalRow}>
+          <TouchableOpacity style={styles.legalButton} onPress={() => router.push('/legal/terms' as any)}>
+            <Text style={styles.legalLink}>利用規約</Text><Ionicons name="open-outline" size={11} color={Colors.textSecondary} />
+          </TouchableOpacity>
+          <Text style={styles.legalSeparator}>|</Text>
+          <TouchableOpacity style={styles.legalButton} onPress={() => router.push('/legal/privacy' as any)}>
+            <Text style={styles.legalLink}>プライバシーポリシー</Text><Ionicons name="open-outline" size={11} color={Colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
 
         {/* 管理者リンク */}
         {user.role === 'admin' && (
@@ -401,29 +472,10 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         )}
 
-        {/* 開発用: 本番ビルドには含まれない */}
-        {__DEV__ && (
-          <TouchableOpacity
-            style={styles.devToggle}
-            onPress={async () => {
-              const next = user.plan === 'pro' ? 'free' : 'pro';
-              await updateDoc(doc(db, 'users', user.id), { plan: next });
-              useAuthStore.setState((s) => ({
-                user: s.user ? { ...s.user, plan: next } : null,
-              }));
-            }}
-          >
-            <Text style={styles.devToggleText}>
-              [DEV] {user.plan === 'pro' ? 'Free に戻す' : 'Pro を有効にする'}
-            </Text>
-          </TouchableOpacity>
-        )}
-
-        <Button
-          label="ログアウト"
-          onPress={handleSignOut}
-          variant="danger"
-        />
+        <TouchableOpacity style={styles.logoutButton} onPress={handleSignOut} activeOpacity={0.8}>
+          <Ionicons name="log-out-outline" size={17} color={Colors.primaryDark} />
+          <Text style={styles.logoutText}>ログアウト</Text>
+        </TouchableOpacity>
 
         <TouchableOpacity
           onPress={handleDeleteAccount}
@@ -477,17 +529,14 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   header: {
     paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm, paddingBottom: Spacing.md,
-    backgroundColor: Colors.surface, borderBottomWidth: 1, borderBottomColor: Colors.border,
+    backgroundColor: Colors.background,
     gap: 2,
   },
-  headerSub: {
-    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
-    fontSize: 9, fontWeight: '700' as const, letterSpacing: 2,
-    color: Colors.textTertiary, textTransform: 'uppercase' as const,
-  },
-  headerTitle: { fontSize: 22, fontWeight: '900' as const, color: Colors.textPrimary },
-  scroll: { padding: Spacing.lg, gap: Spacing['2xl'] },
+  headerEyebrow: { fontSize: 10, fontWeight: Typography.fontWeight.bold, letterSpacing: 1.8, color: Colors.textSecondary },
+  headerTitle: { fontSize: 26, fontWeight: '900' as const, color: Colors.textPrimary },
+  scroll: { paddingHorizontal: Spacing.lg, paddingBottom: 110, gap: Spacing['2xl'] },
   card: { marginBottom: 0 },
+  profileCard: { backgroundColor: Colors.surface, borderRadius: BorderRadius.xl, borderWidth: 1, borderColor: Colors.border, overflow: 'hidden', ...Shadow.sm },
   statTrio: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -496,10 +545,14 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.borderLight,
   },
-  statItem: { flex: 1 },
+  statItem: { flex: 1, paddingHorizontal: Spacing.sm },
+  statLabel: { fontSize: 10, color: Colors.textSecondary },
+  statValue: { fontSize: 18, fontWeight: Typography.fontWeight.semibold, color: Colors.textPrimary, marginTop: 3, fontVariant: ['tabular-nums'] },
+  statValueAccent: { color: Colors.primaryDark },
+  statUnit: { fontSize: 10, fontWeight: Typography.fontWeight.medium, color: Colors.textSecondary, marginLeft: 2 },
   statDivider: { width: 1, alignSelf: 'stretch', backgroundColor: Colors.borderLight, marginVertical: 2 },
   rowDivider: { height: 1, backgroundColor: Colors.borderLight, marginLeft: 48 },
-  userRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
+  userRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg },
   avatarLoading: {
     width: 56, height: 56, borderRadius: 28,
     backgroundColor: Colors.surfaceGray, alignItems: 'center', justifyContent: 'center',
@@ -509,38 +562,68 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary, borderRadius: 8,
     paddingHorizontal: 4, paddingVertical: 1,
   },
-  editBadgeText: { fontSize: 9, color: Colors.textOnPrimary, fontWeight: Typography.fontWeight.bold },
   userInfo: { flex: 1 },
-  userName: { fontSize: Typography.fontSize.xl, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
+  userNameRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  userName: { fontSize: 18, fontWeight: Typography.fontWeight.extrabold, color: Colors.textPrimary, flexShrink: 1 },
+  profileTitle: { fontSize: 11, fontWeight: Typography.fontWeight.medium, color: Colors.textSecondary, marginTop: 4 },
+  profileEditButton: { width: 36, height: 36, borderRadius: BorderRadius.sm, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' },
   planBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
-    alignSelf: 'flex-start', marginTop: Spacing.xs,
-    paddingHorizontal: Spacing.sm, paddingVertical: 2,
-    backgroundColor: Colors.surfaceGray, borderRadius: BorderRadius.full,
+    paddingHorizontal: 6, paddingVertical: 2,
+    backgroundColor: Colors.surfaceGray, borderRadius: BorderRadius.sm,
   },
   planBadgePro: { backgroundColor: Colors.accentYellow + '33' },
   planText: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary },
   planTextPro: { color: Colors.accentYellow, fontWeight: Typography.fontWeight.bold },
-  sectionTitle: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.semibold, color: Colors.textSecondary, marginBottom: Spacing.md },
+  sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.md },
+  sectionHeading: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.md },
+  surfaceCard: { backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, borderWidth: 1, borderColor: Colors.border, overflow: 'hidden', ...Shadow.sm },
+  showAllButton: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.md },
+  showAllText: { fontSize: Typography.fontSize.xs, fontWeight: Typography.fontWeight.bold, color: Colors.primaryDark },
   proRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   proActiveRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   proLabel: { fontSize: Typography.fontSize.md, color: Colors.primary, fontWeight: Typography.fontWeight.semibold },
   manageLink: { fontSize: Typography.fontSize.sm, color: Colors.primary },
-  proUpsellTitle: { fontSize: Typography.fontSize.xl, fontWeight: Typography.fontWeight.bold, color: DarkColors.textPrimary, marginTop: 6 },
+  proCard: { backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, borderWidth: 1, borderColor: Colors.accent, padding: Spacing.lg, ...Shadow.sm },
+  proCardActive: { borderColor: Colors.border },
+  freePlanBadge: { backgroundColor: Colors.accentLight, borderRadius: BorderRadius.sm, paddingHorizontal: Spacing.sm, paddingVertical: 4, marginBottom: Spacing.md },
+  freePlanText: { fontSize: 10, color: Colors.accentDark, fontWeight: Typography.fontWeight.bold },
+  proIntro: { flexDirection: 'row', gap: Spacing.md },
+  proIcon: { width: 40, height: 40, borderRadius: BorderRadius.sm, backgroundColor: Colors.accentLight, alignItems: 'center', justifyContent: 'center' },
+  proUpsellTitle: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.extrabold, color: Colors.textPrimary },
+  freeDesc: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary, lineHeight: 18, marginTop: 3 },
+  priceText: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary, fontWeight: Typography.fontWeight.semibold, marginTop: Spacing.md },
+  proStartButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.xs, backgroundColor: Colors.accent, borderRadius: BorderRadius.md, paddingVertical: Spacing.md, marginTop: Spacing.md },
+  proStartText: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.extrabold, color: Colors.textOnAccent },
+  restoreButton: { alignSelf: 'center', marginTop: Spacing.sm },
+  restoreText: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary },
+  subscriptionDisclaimer: { fontSize: 10, color: Colors.textTertiary, lineHeight: 15, marginTop: Spacing.sm, textAlign: 'center' },
   freeDescDark: { fontSize: Typography.fontSize.sm, color: DarkColors.textSecondary, lineHeight: 20, marginTop: Spacing.sm },
   priceTextDark: { fontSize: Typography.fontSize.sm, color: DarkColors.textPrimary, fontWeight: Typography.fontWeight.semibold, marginTop: Spacing.sm },
   subscriptionDisclaimerDark: { fontSize: 10, color: DarkColors.textTertiary, lineHeight: 15, marginTop: Spacing.sm },
-  legalRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: Spacing.sm },
-  legalLink: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, textDecorationLine: 'underline' },
+  legalRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: Spacing.xs },
+  legalButton: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  legalLink: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary },
   legalSeparator: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, marginHorizontal: Spacing.xs },
   emptyText: { fontSize: Typography.fontSize.sm, color: Colors.textTertiary, textAlign: 'center', paddingVertical: Spacing.md },
-  titleList: { gap: Spacing.sm },
-  titleBadge: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.sm, borderBottomWidth: 1, borderBottomColor: Colors.borderLight },
-  titleRankWrap: { backgroundColor: Colors.primaryLight, borderRadius: BorderRadius.sm, paddingHorizontal: Spacing.sm, paddingVertical: 4, minWidth: 64, alignItems: 'center' },
-  titleRank: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.primary },
+  titleBadge: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg },
+  titleDivider: { height: 1, backgroundColor: Colors.borderLight, marginLeft: 68 },
+  titleRankWrap: { width: 40, height: 40, backgroundColor: Colors.primaryLight, borderRadius: BorderRadius.sm, alignItems: 'center', justifyContent: 'center' },
+  titleRankWrapSelected: { backgroundColor: Colors.accentLight },
+  titleRank: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.primaryDark },
+  titleRankSelected: { color: Colors.accentDark },
   titleInfo: { flex: 1 },
-  titleName: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.semibold, color: Colors.textPrimary },
-  titleSeason: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, marginTop: 2 },
+  titleNameRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  titleName: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
+  titleSelectedLabel: { fontSize: 9, fontWeight: Typography.fontWeight.bold, color: Colors.primaryDark, backgroundColor: Colors.primaryLight, paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4 },
+  titleBattle: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary, marginTop: 2 },
+  titleSeason: { fontSize: 10, color: Colors.textTertiary, marginTop: 2 },
+  listCard: { marginTop: 0 },
+  profileRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg },
+  profileRowIcon: { width: 36, height: 36, borderRadius: BorderRadius.sm, backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
+  profileRowBody: { flex: 1 },
+  profileRowTitle: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
+  profileRowDetail: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary, marginTop: 2 },
   deleteAccountBtn: {
     alignSelf: 'center',
     paddingVertical: Spacing.sm,
@@ -552,6 +635,12 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.sm,
     color: Colors.error,
   },
+  logoutButton: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm,
+    borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surface, paddingVertical: Spacing.md,
+  },
+  logoutText: { fontSize: Typography.fontSize.md, color: Colors.primaryDark, fontWeight: Typography.fontWeight.extrabold },
   modalOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'flex-end',

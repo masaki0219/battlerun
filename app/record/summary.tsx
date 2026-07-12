@@ -4,15 +4,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
-import { useBattleStore } from '../../stores/battleStore';
 import { isPro } from '../../lib/pro';
-import type { CategoryStats } from '../../types';
 import { Colors, DarkColors, BorderRadius, TextStyles } from '../../design_tokens';
 import { MonoLabel } from '../../components/ui/MonoLabel';
 
@@ -49,101 +47,26 @@ export default function RecordingSummaryScreen() {
 
   const { user, proEntitlement } = useAuthStore();
   const userIsPro = isPro(user?.plan, proEntitlement);
-  const { publicBattles, privateBattles, myMemberships } = useBattleStore();
-
   const [impacts, setImpacts] = useState<BattleImpact[]>([]);
   const [loadingImpact, setLoadingImpact] = useState(true);
-  const [earnedBadge, setEarnedBadge] = useState<string | null>(null);
   const shareCardRef = useRef<View>(null);
 
-  // バトルへの影響を実データから計算
-  // 反映先バトルは保存済み activity の battleIds[] を正とする（store の myMemberships からの推定はしない）
+  // サーバー集計が確定した時点の before/after を活動ドキュメントから受け取る。
+  // クライアント側で距離を足し直さないため、Functionsとの競合や二重加算表示が起きない。
   useEffect(() => {
     if (!user || !activityId) {
       setLoadingImpact(false);
       return;
     }
-    const allBattles = [...publicBattles, ...privateBattles];
-
-    const load = async () => {
-      setLoadingImpact(true);
-      try {
-        const actSnap = await getDoc(doc(db, 'activities', activityId));
-        const battleIds: string[] = actSnap.exists()
-          ? ((actSnap.data()['battleIds'] as string[] | undefined) ?? [])
-          : [];
-
-        const results: BattleImpact[] = [];
-
-        for (const battleId of battleIds) {
-          const membership = myMemberships.find((m) => m.battleId === battleId);
-          const battle = allBattles.find((b) => b.id === battleId);
-          if (!battle || !membership?.categoryId) continue;
-
-          // category_stats を取得して現在の順位を確認
-          const statsSnap = await getDocs(
-            collection(db, 'battles', battleId, 'category_stats')
-          );
-          const stats: CategoryStats[] = statsSnap.docs.map((d) => ({
-            categoryId: d.id,
-            label: battle.categories.find((c) => c.id === d.id)?.label ?? d.id,
-            totalDistanceKm: (d.data()['totalDistanceKm'] as number) ?? 0,
-            avgDistanceKm: (d.data()['avgDistanceKm'] as number) ?? 0,
-            participantCount: (d.data()['participantCount'] as number) ?? 0,
-          }));
-
-          const sorted = [...stats].sort((a, b) =>
-            battle.rankingType === 'total'
-              ? b.totalDistanceKm - a.totalDistanceKm
-              : b.avgDistanceKm - a.avgDistanceKm
-          );
-          const rankBefore = sorted.findIndex((s) => s.categoryId === membership.categoryId) + 1;
-          const myTeam = sorted.find((s) => s.categoryId === membership.categoryId);
-
-          if (!myTeam) continue;
-
-          // Cloud Functionsによる集計はまだ反映されていないため、
-          // この記録の距離をローカルで加算した「加算後」の状態をシミュレーションする
-          const newTotalDistanceKm = myTeam.totalDistanceKm + distanceKm;
-          const newParticipantCount = Math.max(myTeam.participantCount, 1);
-          const newAvgDistanceKm = newTotalDistanceKm / newParticipantCount;
-          const simAfter = sorted.map((s) =>
-            s.categoryId === membership.categoryId
-              ? { ...s, totalDistanceKm: newTotalDistanceKm, avgDistanceKm: newAvgDistanceKm }
-              : s
-          ).sort((a, b) =>
-            battle.rankingType === 'total'
-              ? b.totalDistanceKm - a.totalDistanceKm
-              : b.avgDistanceKm - a.avgDistanceKm
-          );
-          const rankAfter = simAfter.findIndex((s) => s.categoryId === membership.categoryId) + 1;
-
-          results.push({
-            battleId: battle.id,
-            battleTitle: battle.title,
-            rankBefore,
-            rankAfter,
-            totalKm: newTotalDistanceKm,
-          });
-        }
-        setImpacts(results);
-
-        // バッジ判定（陣営累計10km達成）
-        if (user && battleIds.length > 0) {
-          const partSnap = await getDoc(
-            doc(db, 'battles', battleIds[0], 'participants', user.id)
-          ).catch(() => null);
-          const myContrib = (partSnap?.data()?.['totalDistanceKm'] as number) ?? 0;
-          if (myContrib < 10 && myContrib + distanceKm >= 10) {
-            setEarnedBadge('陣営貢献者');
-          }
-        }
-      } finally {
-        setLoadingImpact(false);
-      }
-    };
-    load();
-  }, [user, activityId, myMemberships, publicBattles, privateBattles, distanceKm]);
+    setLoadingImpact(true);
+    return onSnapshot(doc(db, 'activities', activityId), (snapshot) => {
+      if (!snapshot.exists()) return;
+      const data = snapshot.data();
+      const impactMap = (data['aggregationImpacts'] as Record<string, BattleImpact> | undefined) ?? {};
+      setImpacts(Object.values(impactMap));
+      if (data['aggregated'] === true) setLoadingImpact(false);
+    }, () => setLoadingImpact(false));
+  }, [user, activityId]);
 
   const primaryImpact = impacts[0] ?? null;
   const rankChanged = primaryImpact && primaryImpact.rankBefore !== primaryImpact.rankAfter;
@@ -151,13 +74,13 @@ export default function RecordingSummaryScreen() {
 
   async function handleShareRun() {
     const message = primaryImpact
-      ? `今日の出撃: ${distanceKm.toFixed(1)}km\n「${primaryImpact.battleTitle}」陣営が${primaryImpact.rankBefore}位→${primaryImpact.rankAfter}位\n#BattleRun`
-      : `今日の出撃: ${distanceKm.toFixed(1)}km\n#BattleRun`;
+      ? `今日のラン: ${distanceKm.toFixed(1)}km\n「${primaryImpact.battleTitle}」陣営が${primaryImpact.rankBefore}位→${primaryImpact.rankAfter}位\n#BattleRun`
+      : `今日のラン: ${distanceKm.toFixed(1)}km\n#BattleRun`;
 
     try {
       if (shareCardRef.current && (await Sharing.isAvailableAsync())) {
         const uri = await captureRef(shareCardRef, { format: 'png', quality: 0.92 });
-        await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: '今日の出撃をシェア' });
+        await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: '今日のランをシェア' });
         return;
       }
     } catch (e) {
@@ -177,7 +100,7 @@ export default function RecordingSummaryScreen() {
         <View style={s.heroCard}>
           <View style={s.heroTop}>
             <MonoLabel color={DarkColors.primary} size={9}>記録完了 / RUN COMPLETE</MonoLabel>
-            <TouchableOpacity onPress={() => router.replace('/(tabs)' as any)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity onPress={() => router.replace('/(tabs)' as any)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel="閉じる">
               <Ionicons name="close" size={18} color={DarkColors.textTertiary} />
             </TouchableOpacity>
           </View>
@@ -246,13 +169,13 @@ export default function RecordingSummaryScreen() {
                 <View>
                   <Text style={s.impactBattleLabel}>{primaryImpact.battleTitle}</Text>
                   <Text style={s.impactTeamText}>
-                    あなたの出撃で陣営が{' '}
+                    あなたのランで陣営が{' '}
                     <Text style={{ color: rankChanged ? Colors.primaryDark : Colors.textPrimary, fontWeight: '900' }}>
                       {primaryImpact.rankBefore}位→{primaryImpact.rankAfter}位
                     </Text>
                   </Text>
                   {hasMultipleImpacts && (
-                    <Text style={s.impactMoreText}>ほか{impacts.length - 1}件のバトルにも反映されました</Text>
+                    <Text style={s.impactMoreText}>ほか{impacts.length - 1}件のチャレンジにも反映されました</Text>
                   )}
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
@@ -267,32 +190,15 @@ export default function RecordingSummaryScreen() {
           ) : (
             <View style={[s.impactCard, { alignItems: 'center', paddingVertical: 20 }]}>
               <Ionicons name="walk-outline" size={32} color={Colors.textTertiary} />
-              <Text style={{ color: Colors.textTertiary, marginTop: 8, fontSize: 13 }}>バトル未参加</Text>
-              <Text style={{ color: Colors.textTertiary, fontSize: 11, marginTop: 2 }}>バトルに参加して記録を競おう</Text>
+              <Text style={{ color: Colors.textTertiary, marginTop: 8, fontSize: 13 }}>チャレンジ未参加</Text>
+              <Text style={{ color: Colors.textTertiary, fontSize: 11, marginTop: 2 }}>チャレンジに参加して記録を競おう</Text>
             </View>
           )}
         </View>
 
-        {/* ── Badge unlocked ────────────────────────────── */}
-        {earnedBadge && (
-          <View style={s.section}>
-            <View style={s.badgeCard}>
-              <View style={s.badgeIcon}>
-                <Ionicons name="shield" size={24} color={Colors.textOnPrimary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.badgeKicker}>バッジ獲得</Text>
-                <Text style={s.badgeTitle}>{earnedBadge}</Text>
-                <Text style={s.badgeSub}>累計10km 陣営に貢献達成</Text>
-              </View>
-              <Text style={s.badgeNew}>NEW</Text>
-            </View>
-          </View>
-        )}
-
         {/* ── Share ─────────────────────────────────────── */}
         <View style={s.section}>
-          <Text style={TextStyles.sectionTitle}>今日の出撃をシェア</Text>
+          <Text style={TextStyles.sectionTitle}>今日のランをシェア</Text>
           <View ref={shareCardRef} collapsable={false} style={s.shareCard}>
             <View style={{ gap: 4 }}>
               <Text style={s.shareCardKm}>{distanceKm.toFixed(1)}<Text style={s.shareCardKmUnit}> km</Text></Text>
@@ -311,7 +217,7 @@ export default function RecordingSummaryScreen() {
           </View>
           <TouchableOpacity style={s.shareBtn} onPress={handleShareRun} activeOpacity={0.85}>
             <Ionicons name="share-outline" size={18} color={Colors.textOnPrimary} />
-            <Text style={s.shareBtnText}>今日の出撃をシェア</Text>
+            <Text style={s.shareBtnText}>今日のランをシェア</Text>
           </TouchableOpacity>
         </View>
 

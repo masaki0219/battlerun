@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import { addDoc, collection, Timestamp } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../lib/firebase';
 import type { RecordStore, Activity, MeasurementType, RoutePoint } from '../types';
 import { MAX_SPEED_KMH } from '../lib/constants';
 
@@ -15,15 +16,22 @@ function haversine(a: RoutePoint, b: RoutePoint): number {
 }
 
 function filterInvalidPoints(route: RoutePoint[]): RoutePoint[] {
-  return route.filter((point, i) => {
-    if (i === 0) return true;
-    const prev = route[i - 1];
+  const valid: RoutePoint[] = [];
+  for (const point of route) {
+    const prev = valid[valid.length - 1];
+    if (!prev) {
+      valid.push(point);
+      continue;
+    }
     const distKm = haversine(prev, point);
     const timeSec = (point.timestamp - prev.timestamp) / 1000;
-    if (timeSec <= 0) return false;
-    return (distKm / timeSec) * 3600 <= MAX_SPEED_KMH;
-  });
+    if (timeSec > 0 && (distKm / timeSec) * 3600 <= MAX_SPEED_KMH) valid.push(point);
+  }
+  return valid;
 }
+
+const RECORDING_SESSION_KEY = '@battlerun_recording_session_v1';
+const PENDING_ACTIVITIES_KEY = '@battlerun_pending_activities_v1';
 
 /**
  * GPS追跡経路の状態。
@@ -115,33 +123,142 @@ export const useRecordStore = create<RecordState>((set, get) => ({
     }),
 }));
 
-// Firestore へのアクティビティ保存
-// 参加中バトルへの距離加算（participants/category_stats）はCloud Functions側で集計する
-export async function saveActivityToFirestore(params: {
-  userId: string;
-  displayName: string;         // 通知・活動履歴表示用
+type PersistedSession = Pick<RecordState,
+  'isRecording' | 'measurementType' | 'distanceKm' | 'steps' | 'durationSeconds' |
+  'route' | 'startedAt' | 'locationMode' | 'gpsWarning'>;
+
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+let hydrating = false;
+
+function persistRecordingSoon() {
+  if (hydrating) return;
+  if (persistTimer) return;
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    const latest = useRecordStore.getState();
+    if (!latest.isRecording) {
+      void AsyncStorage.removeItem(RECORDING_SESSION_KEY);
+      return;
+    }
+    const persisted: PersistedSession = {
+      isRecording: latest.isRecording,
+      measurementType: latest.measurementType,
+      distanceKm: latest.distanceKm,
+      steps: latest.steps,
+      durationSeconds: latest.durationSeconds,
+      route: latest.route,
+      startedAt: latest.startedAt,
+      locationMode: 'idle',
+      gpsWarning: false,
+    };
+    void AsyncStorage.setItem(RECORDING_SESSION_KEY, JSON.stringify(persisted));
+  }, 5000);
+}
+
+useRecordStore.subscribe(() => persistRecordingSoon());
+
+/** アプリ再起動後に、保存済みの記録中セッションを復旧する。 */
+export async function hydrateRecordingSession(): Promise<void> {
+  hydrating = true;
+  try {
+    const raw = await AsyncStorage.getItem(RECORDING_SESSION_KEY);
+    if (!raw || useRecordStore.getState().isRecording) return;
+    const saved = JSON.parse(raw) as Partial<PersistedSession>;
+    if (!saved.isRecording || !saved.startedAt || !Array.isArray(saved.route)) return;
+    useRecordStore.setState({
+      isRecording: true,
+      measurementType: saved.measurementType === 'steps' ? 'steps' : 'gps',
+      distanceKm: typeof saved.distanceKm === 'number' ? saved.distanceKm : 0,
+      steps: typeof saved.steps === 'number' ? saved.steps : 0,
+      durationSeconds: 0,
+      route: saved.route,
+      startedAt: saved.startedAt,
+      locationMode: 'idle',
+      gpsWarning: false,
+    });
+  } catch {
+    await AsyncStorage.removeItem(RECORDING_SESSION_KEY);
+  } finally {
+    hydrating = false;
+  }
+}
+
+interface PendingActivity {
+  localId: string;
   activity: Activity;
-  activeBattleIds?: string[];  // 省略時は空配列扱い
-}): Promise<string | null> {
-  const { userId, displayName, activity, activeBattleIds = [] } = params;
+}
+
+async function readPendingActivities(): Promise<PendingActivity[]> {
+  try {
+    const raw = await AsyncStorage.getItem(PENDING_ACTIVITIES_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writePendingActivities(items: PendingActivity[]): Promise<void> {
+  if (items.length === 0) await AsyncStorage.removeItem(PENDING_ACTIVITIES_KEY);
+  else await AsyncStorage.setItem(PENDING_ACTIVITIES_KEY, JSON.stringify(items));
+}
+
+async function submitPending(item: PendingActivity): Promise<{
+  activityId: string;
+  distanceKm: number;
+  durationSeconds: number;
+  steps: number;
+}> {
+  const submit = httpsCallable(functions, 'submitActivity');
+  const result = await submit({
+    measurementType: item.activity.measurementType,
+    steps: item.activity.steps ?? 0,
+    startedAtMs: new Date(item.activity.startedAt).getTime(),
+    endedAtMs: new Date(item.activity.endedAt).getTime(),
+    route: item.activity.route ?? [],
+  });
+  return result.data as {
+    activityId: string;
+    distanceKm: number;
+    durationSeconds: number;
+    steps: number;
+  };
+}
+
+/** ローカルに残っている未送信記録を順番に再送する。 */
+export async function flushPendingActivities(): Promise<number> {
+  const pending = await readPendingActivities();
+  const remaining: PendingActivity[] = [];
+  let sent = 0;
+  for (const item of pending) {
+    try {
+      await submitPending(item);
+      sent += 1;
+    } catch {
+      remaining.push(item);
+    }
+  }
+  await writePendingActivities(remaining);
+  return sent;
+}
+
+// 検証済みCallableへのアクティビティ送信。ユーザー・表示名・反映先はサーバーで確定する。
+export async function saveActivityToFirestore(params: {
+  activity: Activity;
+}): Promise<{ activityId: string; distanceKm: number; durationSeconds: number; steps: number } | null> {
+  const { activity } = params;
 
   if (activity.distanceKm <= 0) return null;
 
-  // 1. activities コレクションに保存（battleId は先頭のアクティブバトルを代表として保持）
-  const primaryBattleId = activeBattleIds[0] ?? null;
-  const actRef = await addDoc(collection(db, 'activities'), {
-    userId,
-    displayName,
-    battleId: primaryBattleId,   // 後方互換
-    battleIds: activeBattleIds,  // 全参加バトルへの加算
-    distanceKm: activity.distanceKm,
-    steps: activity.steps ?? null,
-    durationSeconds: activity.durationSeconds,
-    measurementType: activity.measurementType,
-    route: activity.route ?? [],
-    startedAt: Timestamp.fromDate(new Date(activity.startedAt)),
-    endedAt: Timestamp.fromDate(new Date(activity.endedAt)),
-  });
+  const pending: PendingActivity = {
+    localId: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+    activity,
+  };
+  const queue = await readPendingActivities();
+  await writePendingActivities([...queue, pending]);
 
-  return actRef.id;
+  const submitted = await submitPending(pending);
+  const latestQueue = await readPendingActivities();
+  await writePendingActivities(latestQueue.filter((item) => item.localId !== pending.localId));
+  return submitted;
 }

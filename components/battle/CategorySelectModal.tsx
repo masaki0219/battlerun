@@ -58,6 +58,7 @@ export function CategorySelectModal({ visible, battle, onJoin, onClose, loading 
             label="参加する"
             onPress={() => { if (selected) onJoin(selected); }}
             loading={loading}
+            disabled={!selected}
             style={{ opacity: selected ? 1 : 0.4 }}
           />
           <Button label="キャンセル" onPress={onClose} variant="ghost" style={{ marginTop: Spacing.sm }} />

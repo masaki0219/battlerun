@@ -7,10 +7,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import {
   collection, query, where, getDocs, orderBy, limit,
-  doc, getDoc, setDoc, serverTimestamp,
+  doc, getDoc,
 } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 import { Ionicons } from '@expo/vector-icons';
-import { db } from '../lib/firebase';
+import { db, functions } from '../lib/firebase';
 import { useAuthStore } from '../stores/authStore';
 import type { UserActivityStats, EarnedBadge, UserTitle } from '../types';
 import { Colors, BorderRadius, TextStyles } from '../design_tokens';
@@ -46,7 +47,7 @@ const BADGE_DEFS: BadgeDef[] = [
   },
   {
     id: 'streak_3',
-    name: '3日連続出撃',
+    name: '3日連続ラン',
     desc: '3日連続で記録した',
     icon: 'flame',
     color: Colors.accent,
@@ -55,7 +56,7 @@ const BADGE_DEFS: BadgeDef[] = [
   },
   {
     id: 'streak_7',
-    name: '7日連続出撃',
+    name: '7日連続ラン',
     desc: '7日連続で記録した',
     icon: 'flash',
     color: Colors.pro,
@@ -113,7 +114,8 @@ export default function BadgesScreen() {
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-        // 既に獲得済みのバッジIDをFirestoreから取得
+        // 判定・付与はサーバーで行い、クライアントは結果を読むだけにする。
+        await httpsCallable(functions, 'syncMyBadges')({}).catch(() => null);
         const badgesSnap = await getDocs(
           collection(db, 'users', user.id, 'badges')
         );
@@ -177,23 +179,6 @@ export default function BadgesScreen() {
           earnedBadgeIds: [...persistedBadgeIds],
         };
 
-        // 新たに条件達成したバッジをFirestoreに保存
-        const newlyEarned = BADGE_DEFS.filter(
-          (b) => !persistedBadgeIds.has(b.id) && b.check(computedStats)
-        );
-        if (newlyEarned.length > 0) {
-          await Promise.all(
-            newlyEarned.map((b) =>
-              setDoc(
-                doc(db, 'users', user.id, 'badges', b.id),
-                { earnedAt: serverTimestamp(), name: b.name },
-              )
-            )
-          );
-          newlyEarned.forEach((b) => persistedBadgeIds.add(b.id));
-          computedStats.earnedBadgeIds = [...persistedBadgeIds];
-        }
-
         setStats(computedStats);
       } finally {
         setLoading(false);
@@ -202,7 +187,8 @@ export default function BadgesScreen() {
     load();
   }, [user]);
 
-  const earned = stats ? BADGE_DEFS.filter((b) => b.check(stats)) : [];
+  const earnedIdsFromServer = new Set(stats?.earnedBadgeIds ?? []);
+  const earned = stats ? BADGE_DEFS.filter((b) => earnedIdsFromServer.has(b.id)) : [];
   const earnedIds = new Set(earned.map((b) => b.id));
   const unearned = BADGE_DEFS.filter((b) => !earnedIds.has(b.id));
 
@@ -212,7 +198,7 @@ export default function BadgesScreen() {
     prog: b.progress!(stats!),
   }));
 
-  const titles = (user?.titles ?? []).sort(
+  const titles = [...(user?.titles ?? [])].sort(
     (a, b) => new Date(b.awardedAt).getTime() - new Date(a.awardedAt).getTime()
   );
 
@@ -220,7 +206,7 @@ export default function BadgesScreen() {
     <SafeAreaView style={s.root} edges={['top']}>
       {/* Header */}
       <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel="戻る">
           <Ionicons name="chevron-back" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
@@ -301,7 +287,7 @@ export default function BadgesScreen() {
           <View style={s.section}>
             <Text style={TextStyles.sectionTitle}>獲得称号一覧</Text>
             {titles.length === 0 ? (
-              <Text style={s.emptyText}>まだ称号がありません。バトルで活躍しよう！</Text>
+              <Text style={s.emptyText}>まだ称号がありません。チャレンジで活躍しよう！</Text>
             ) : (
               <View style={{ gap: 8, marginTop: 8 }}>
                 {titles.map((t, i) => (
@@ -311,7 +297,7 @@ export default function BadgesScreen() {
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={s.titleBattleName} numberOfLines={1}>
-                        {t.rank === 1 ? '👑 MVP' : t.rank === 2 ? '準MVP' : `TOP ${t.rank}`}
+                        {t.rank === 1 ? '👑 優勝陣営メンバー' : t.rank === 2 ? '準優勝陣営メンバー' : `${t.rank}位陣営メンバー`}
                         　{t.battleTitle}
                       </Text>
                       <Text style={s.titleMeta}>

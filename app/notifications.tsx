@@ -68,7 +68,6 @@ export default function NotificationsScreen() {
         const batch = writeBatch(db);
         unread.forEach((d) => batch.update(d.ref, { isRead: true }));
         await batch.commit();
-        setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
       }
     } finally {
       setLoading(false);
@@ -79,7 +78,11 @@ export default function NotificationsScreen() {
 
   function handleTap(n: AppNotification) {
     if (n.relatedBattleId) {
-      router.push(`/battle/${n.relatedBattleId}` as any);
+      if (n.type === 'battle_ended' || n.type === 'title_earned') {
+        router.push(`/battle/result/${n.relatedBattleId}` as any);
+      } else {
+        router.push(`/battle/${n.relatedBattleId}` as any);
+      }
     } else if (n.relatedActivityId) {
       router.push(`/activity/${n.relatedActivityId}` as any);
     }
@@ -95,6 +98,8 @@ export default function NotificationsScreen() {
           onPress={() => router.back()}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           style={s.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="戻る"
         >
           <Ionicons name="chevron-back" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
@@ -116,7 +121,7 @@ export default function NotificationsScreen() {
         <EmptyState
           icon="notifications-off-outline"
           title="通知はありません"
-          hint="バトルに参加すると通知が届きます"
+          hint="チャレンジに参加すると通知が届きます"
         />
       ) : (
         <FlatList
@@ -157,28 +162,6 @@ export default function NotificationsScreen() {
       )}
     </SafeAreaView>
   );
-}
-
-/** 通知をFirestoreに書き込むユーティリティ（クライアントサイド用） */
-export async function createNotification(params: {
-  userId: string;
-  type: AppNotification['type'];
-  title: string;
-  body: string;
-  relatedBattleId?: string;
-  relatedActivityId?: string;
-}): Promise<void> {
-  const { userId, ...rest } = params;
-  try {
-    const { addDoc, serverTimestamp } = await import('firebase/firestore');
-    await addDoc(collection(db, 'users', userId, 'notifications'), {
-      ...rest,
-      isRead: false,
-      createdAt: serverTimestamp(),
-    });
-  } catch {
-    // 通知の失敗はサイレントに処理
-  }
 }
 
 const s = StyleSheet.create({

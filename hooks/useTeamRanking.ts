@@ -1,0 +1,111 @@
+import { useEffect, useState } from 'react';
+import { collection, onSnapshot, doc, getDoc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+
+export interface TeamRankingMember {
+  userId: string;
+  displayName: string;
+  totalDistanceKm: number;
+  /** 陣営内の順位（1始まり） */
+  rank: number | null;
+  isMe: boolean;
+}
+
+export interface TeamRanking {
+  /** 陣営内の上位メンバー（最大 topCount 件） */
+  top: TeamRankingMember[];
+  /** 自分の陣営内順位（1始まり）。陣営に自分がいなければ 0 */
+  myRank: number;
+  /** 陣営の人数 */
+  teamSize: number;
+  /** 自分の距離 */
+  myKm: number;
+  /** ひとつ上の順位との距離差。自分が1位・未参加なら null */
+  gapToNextKm: number | null;
+  loading: boolean;
+}
+
+const EMPTY: Omit<TeamRanking, 'loading'> = {
+  top: [], myRank: 0, teamSize: 0, myKm: 0, gapToNextKm: null,
+};
+
+/**
+ * 参加中バトルの「自分の陣営の中での」順位を出す read-only フック。
+ *
+ * participants サブコレクション（categoryId / totalDistanceKm を持つ）を読み、
+ * 自陣営で絞って距離降順に並べる。名前の解決は上位 topCount 件だけに限定する
+ * （参加者全員の users/{uid} を引くと人数分のリードになるため）。
+ * 新規インデックス不要。firestore.rules は participants を認証済みユーザーに read 許可済み。
+ */
+export function useTeamRanking(
+  battleId: string | undefined,
+  categoryId: string | null | undefined,
+  myUserId: string | undefined,
+  { topCount = 3 }: { topCount?: number } = {},
+): TeamRanking {
+  const [state, setState] = useState<Omit<TeamRanking, 'loading'>>(EMPTY);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!battleId || !categoryId || !myUserId) {
+      setState(EMPTY);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    let generation = 0;
+    const unsubscribe = onSnapshot(collection(db, 'battles', battleId, 'participants'), async (snap) => {
+      const currentGeneration = ++generation;
+      try {
+        const team = snap.docs
+          .map((d) => ({
+            userId: d.id,
+            categoryId: (d.data()['categoryId'] as string | null) ?? null,
+            totalDistanceKm: (d.data()['totalDistanceKm'] as number) ?? 0,
+          }))
+          .filter((p) => p.categoryId === categoryId)
+          .sort((a, b) => b.totalDistanceKm - a.totalDistanceKm || a.userId.localeCompare(b.userId));
+
+        const myIndex = team.findIndex((p) => p.userId === myUserId);
+        const myKm = myIndex >= 0 ? team[myIndex].totalDistanceKm : 0;
+        const allZero = team.every((member) => member.totalDistanceKm <= 0);
+        const gapToNextKm = myIndex > 0
+          ? Math.max(0, team[myIndex - 1].totalDistanceKm - myKm)
+          : null;
+
+        const top = await Promise.all(
+          team.slice(0, topCount).map(async (p) => {
+            const userSnap = await getDoc(doc(db, 'publicProfiles', p.userId));
+            return {
+              userId: p.userId,
+              displayName: (userSnap.data()?.['name'] as string) ?? 'メンバー',
+              totalDistanceKm: p.totalDistanceKm,
+              rank: allZero ? null : 1 + team.filter((member) => member.totalDistanceKm > p.totalDistanceKm).length,
+              isMe: p.userId === myUserId,
+            };
+          }),
+        );
+
+        if (currentGeneration === generation) {
+          setState({
+            top,
+            myRank: myIndex >= 0 && !allZero
+              ? 1 + team.filter((member) => member.totalDistanceKm > myKm).length
+              : 0,
+            teamSize: team.length,
+            myKm,
+            gapToNextKm,
+          });
+        }
+      } catch {
+        if (currentGeneration === generation) setState(EMPTY);
+      } finally {
+        if (currentGeneration === generation) setLoading(false);
+      }
+    }, () => { setState(EMPTY); setLoading(false); });
+
+    return () => { generation += 1; unsubscribe(); };
+  }, [battleId, categoryId, myUserId, topCount]);
+
+  return { ...state, loading };
+}

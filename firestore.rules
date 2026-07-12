@@ -1,103 +1,185 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isSelf(uid) { return signedIn() && request.auth.uid == uid; }
+    function userDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid));
+    }
+    function isAdmin() {
+      return signedIn() && userDoc(request.auth.uid).data.role == 'admin';
+    }
+    function canReadBattle(battleId) {
+      let battle = get(/databases/$(database)/documents/battles/$(battleId));
+      return signedIn() && battle.exists() && (
+        battle.data.type == 'public'
+        || battle.data.createdBy == request.auth.uid
+        || isAdmin()
+        || exists(/databases/$(database)/documents/battles/$(battleId)/participants/$(request.auth.uid))
+      );
+    }
 
+    // 課金状態・通知トークン・参加履歴を含む非公開ユーザーデータ。
     match /users/{userId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null && request.auth.uid == userId;
-      // plan/role/titlesはCloud Functions（Admin SDK、ルール適用外）またはRevenueCat Webhookのみが変更する。
-      // クライアントによる自己付与・改ざん（自己をadmin/proに昇格、称号偽造）を防ぐためupdateでの変更を禁止する。
-      allow update: if request.auth != null && request.auth.uid == userId
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['plan', 'role', 'titles']);
+      allow read: if isSelf(userId) || isAdmin();
+      allow create: if isSelf(userId)
+        && request.resource.data.plan == 'free'
+        && !('role' in request.resource.data)
+        && !('titles' in request.resource.data)
+        && !('totalDistanceKm' in request.resource.data)
+        && !('activityCount' in request.resource.data)
+        && !('revenuecatLastEventAtMs' in request.resource.data)
+        && !('lastStatsSyncAtMs' in request.resource.data)
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 1
+        && request.resource.data.name.size() <= 40;
+      allow update: if isSelf(userId)
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 1
+        && request.resource.data.name.size() <= 40
+        && request.resource.data.plan in ['free', 'pro']
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'plan', 'role', 'titles', 'totalDistanceKm', 'activityCount',
+          'revenuecatLastEventAtMs', 'revenuecatLastEventId', 'revenuecatExpirationAtMs',
+          'lastStatsSyncAtMs'
+        ]);
+      allow delete: if false;
 
-      // 通知の作成はCloud Functions（Admin SDK、ルール適用外）のみ。
-      // クライアントは既読化(update)・閲覧(read)のみ行う。
       match /notifications/{notificationId} {
-        allow read, update: if request.auth != null && request.auth.uid == userId;
+        allow read: if isSelf(userId);
+        allow update: if isSelf(userId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead'])
+          && request.resource.data.isRead is bool;
         allow create, delete: if false;
       }
+
+      match /badges/{badgeId} {
+        allow read: if isSelf(userId);
+        allow write: if false;
+      }
+
+      // GPSルートは本人だけが取得できる。書き込みは submitActivity の Admin SDK のみ。
+      match /activityRoutes/{activityId}/{document=**} {
+        allow read: if isSelf(userId);
+        allow write: if false;
+      }
+    }
+
+    // ランキング等で使う公開範囲を限定したプロフィール。
+    match /publicProfiles/{userId} {
+      allow read: if signedIn();
+      allow create, update: if isSelf(userId)
+        && request.resource.data.keys().hasOnly(['name', 'avatarUrl', 'avatarEmoji', 'updatedAt'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 1
+        && request.resource.data.name.size() <= 40;
+      allow delete: if false;
     }
 
     match /seasons/{seasonId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow read: if signedIn();
+      allow write: if isAdmin();
     }
 
     match /battles/{battleId} {
-      allow read: if request.auth != null;
-
-      // パブリック戦の作成は admin のみ
-      // プライベート戦の作成は Pro ユーザーのみ
-      allow create: if request.auth != null && (
-        (
-          request.resource.data.type == 'private' &&
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.plan == 'pro' &&
-          request.resource.data.createdBy == request.auth.uid
-        ) ||
-        (
-          request.resource.data.type == 'public' &&
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
-        )
+      allow read: if canReadBattle(battleId);
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'type', 'seasonId', 'title', 'description', 'categories', 'categoryIds',
+          'rankingType', 'startAt', 'endAt', 'status', 'createdBy', 'inviteCode', 'createdAt'
+        ])
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 1
+        && request.resource.data.title.size() <= 60
+        && request.resource.data.categories is list
+        && request.resource.data.categories.size() >= 2
+        && request.resource.data.categories.size() <= 20
+        && request.resource.data.categoryIds is list
+        && request.resource.data.categoryIds.size() == request.resource.data.categories.size()
+        && request.resource.data.rankingType in ['average', 'total']
+        && request.resource.data.startAt is timestamp
+        && request.resource.data.endAt is timestamp
+        && request.resource.data.endAt > request.resource.data.startAt
+        && request.resource.data.createdBy == request.auth.uid
+        && (
+          (request.resource.data.type == 'private'
+            && userDoc(request.auth.uid).data.plan == 'pro'
+            && request.resource.data.seasonId == null
+            && request.resource.data.inviteCode is string
+            && request.resource.data.inviteCode.matches('^[A-Z0-9]{6}$'))
+          ||
+          (request.resource.data.type == 'public' && isAdmin())
+        );
+      allow update: if isAdmin() || (
+        signedIn()
+        && resource.data.type == 'private'
+        && resource.data.createdBy == request.auth.uid
+        && userDoc(request.auth.uid).data.plan == 'pro'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['theme'])
+        && request.resource.data.theme in ['sports', 'rpg', 'territory', 'cyber', 'casual', 'school', 'corporate']
       );
-      allow update: if request.auth != null && (
-        (resource.data.type == 'private' && resource.data.createdBy == request.auth.uid) ||
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
-      );
+      allow delete: if isAdmin();
 
-      // 参加者情報（participants/{uid}）
-      // - create: 本人のみ。totalDistanceKm は必ず 0 で作成すること（距離はCloud Functionsのみが加算）。
-      //           userId フィールドはドキュメントパスのuidと一致必須
-      //           （アカウント削除時の collectionGroup('participants') 検索に使うため、
-      //           他人のuidを詐称されるとその人の参加データが誤って削除されうる）
-      // - update: 本人のみ。totalDistanceKm / activityCount / userId は変更不可（カテゴリ変更等は許可）
-      // - delete: 本人またはadmin
       match /participants/{userId} {
-        allow read: if request.auth != null;
-        allow create: if request.auth != null && request.auth.uid == userId
+        allow read: if isSelf(userId) || canReadBattle(battleId);
+        allow create: if isSelf(userId)
+          && exists(/databases/$(database)/documents/battles/$(battleId))
+          && get(/databases/$(database)/documents/battles/$(battleId)).data.status == 'active'
+          && request.resource.data.keys().hasOnly([
+            'userId', 'categoryId', 'totalDistanceKm', 'activityCount', 'joinedAt'
+          ])
+          && request.resource.data.userId == userId
           && request.resource.data.totalDistanceKm == 0
-          && request.resource.data.userId == userId;
-        allow update: if request.auth != null && request.auth.uid == userId
+          && request.resource.data.get('activityCount', 0) == 0
+          && (
+            !('categoryIds' in get(/databases/$(database)/documents/battles/$(battleId)).data)
+            || request.resource.data.categoryId in get(/databases/$(database)/documents/battles/$(battleId)).data.categoryIds
+          );
+        // 距離がまだ0の間だけ陣営選択を変更可能。集計済み距離はFunctionsだけが更新する。
+        allow update: if isSelf(userId)
           && request.resource.data.get('totalDistanceKm', null) == resource.data.get('totalDistanceKm', null)
           && request.resource.data.get('activityCount', null) == resource.data.get('activityCount', null)
-          && request.resource.data.get('userId', null) == resource.data.get('userId', null);
-        allow delete: if request.auth != null && (
-          request.auth.uid == userId ||
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
-        );
+          && request.resource.data.get('userId', null) == resource.data.get('userId', null)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['categoryId'])
+          && resource.data.totalDistanceKm == 0
+          && resource.data.get('activityCount', 0) == 0;
+        allow delete: if (isSelf(userId) && resource.data.totalDistanceKm == 0) || isAdmin();
       }
 
-      // 区分ごとの集計（category_stats/{categoryId}）
-      // - read: 認証済みユーザー
-      // - create: バトル作成時のゼロ初期化のみ許可（totalDistanceKm/avgDistanceKm/participantCountが0）
-      // - update: 全面禁止。totalDistanceKm/avgDistanceKmはCloud Functions(aggregateActivity)、
-      //           participantCount/avgDistanceKmはCloud Functions(participantCounter)のみが更新する。
-      //           以前はparticipantCountのみクライアント更新を許可していたが、
-      //           平均ランキング(avgDistanceKm = totalDistanceKm / participantCount)は
-      //           他陣営の参加人数を水増しして不正に下げられる改ざん経路だったため塞いだ。
-      // - delete: 不可
       match /category_stats/{categoryId} {
-        allow read: if request.auth != null;
-        allow create: if request.auth != null
+        allow read: if canReadBattle(battleId);
+        allow create: if signedIn()
+          && (
+            getAfter(/databases/$(database)/documents/battles/$(battleId)).data.createdBy == request.auth.uid
+            || isAdmin()
+          )
+          && request.resource.data.keys().hasOnly([
+            'totalDistanceKm', 'avgDistanceKm', 'participantCount'
+          ])
           && request.resource.data.totalDistanceKm == 0
           && request.resource.data.avgDistanceKm == 0
           && request.resource.data.participantCount == 0;
-        allow update: if false;
-        allow delete: if false;
+        allow update, delete: if false;
       }
     }
 
     match /activities/{activityId} {
-      allow read: if request.auth != null;
-      // aggregated はCloud Functionsのみが付与するフィールドのため、作成時に含めることを禁止
-      allow create: if request.auth != null
-        && request.auth.uid == request.resource.data.userId
-        && !('aggregated' in request.resource.data);
-      allow update, delete: if false;
+      // 新形式は公開メタデータのみ。routeを含む旧形式は本人だけ閲覧可能。
+      allow read: if signedIn() && (
+        request.auth.uid == resource.data.userId
+        || resource.data.visibility == 'public_v2'
+      );
+      // 記録作成・集計更新は認証・内容検証を行う submitActivity / Functions のみ。
+      allow create, update, delete: if false;
 
       match /reactions/{userId} {
-        allow read: if request.auth != null;
-        allow write: if request.auth != null && request.auth.uid == userId;
+        allow read: if signedIn();
+        allow create, update: if isSelf(userId)
+          && get(/databases/$(database)/documents/activities/$(activityId)).data.visibility == 'public_v2'
+          && request.resource.data.keys().hasOnly(['type', 'userId', 'createdAt'])
+          && request.resource.data.userId == userId
+          && request.resource.data.type in ['👏', '🔥', '💪', '⚡'];
+        allow delete: if isSelf(userId);
       }
     }
   }
