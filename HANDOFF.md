@@ -128,41 +128,34 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 - 新規純関数: `utils/displayStats.ts` の `weekOverWeek()`（先週比チップ用）と `weekStartLabel()`（「4月15日〜」の見出し用）。
 - `VersusGauge` はヒーローから外れたが、`JoinRecommendationCard` と `battle/[id]` で引き続き使用中。
 
+リリース準備のユーザー作業は完了済み（2026-07-19、ユーザー報告）: App Store Connect のアプリ登録とサブスク商品 `monthly` / `yearly` 作成、本番EASビルド、Sandbox での購入・復元確認、実機での画面目視（PeriodPicker・月額/年額選択UI含む）。
+
 ## 次にやること
 
-App Store Connect で Bundle ID `com.masaki.zelio` のアプリ「Zelio」を登録してサブスク商品 `monthly` / `yearly` を作成し、`eas build --profile production --platform ios` → Sandbox テスターで購入・復元と `users/{uid}.plan` が `pro` になることを確認する。
+`RELEASE_TEST_CHECKLIST.md` の通し確認（Day-0、GPS保存、再送、ランキング反映、アカウント削除を2アカウントの実機で）を行い、問題なければ App Store 審査へ提出する。
 
 ## その次の候補
-- App Store ConnectでBundle ID `com.masaki.zelio` のアプリ「ZELIO」を登録し、サブスク商品 `monthly` / `yearly` を作成する（プライバシーポリシーURLは https://zelio-run.web.app/legal/privacy.html）
-- `eas build --profile production --platform ios` で本番ビルドを作成する（初回は新Bundle ID用の証明書・プロビジョニング作成を求められる。RevenueCat APIキー設定後に行うこと）
-- Sandboxテスターで月額・年額それぞれの購入と復元を確認し、`users/{uid}.plan` が `pro` になることを確認する
-- Firestore データ移行と動作確認の完了後、旧 `battlerun-75eb6` プロジェクトの削除（または凍結）を検討する
-- ローカル `ios/` は旧設定（com.battlerun.app）のまま。ローカルでネイティブビルドする場合は `npx expo prebuild --platform ios --clean` で再生成する
-- masaki0219/app-support（GitHub Pages）の docs/battlerun/ 配下サポートページをZELIO表記へ同期する
-- `RELEASE_TEST_CHECKLIST.md` のDay-0、GPS保存、再送、ランキング反映、アカウント削除を2アカウントの実機で通す
-- `feat/ui-consolidation` を origin へ push し、`main` へマージするか判断する
+- 旧 `battlerun-75eb6` プロジェクトの削除（または凍結）を検討する
+- ローカル `ios/` は表示名等が旧設定のまま。ローカルでネイティブビルドする場合は `npx expo prebuild --platform ios --clean` で再生成する
+- masaki0219/app-support（GitHub Pages）の docs/battlerun/ 配下サポートページをZelio表記へ同期する
+- `feat/ui-consolidation` を `main` へマージするか判断する（origin へは push 済み）
 - 使われていないブランチ `feat/ui-refresh` / `feat/ui-redesign` を整理する
 - `package.json` に `typecheck` / `lint` スクリプトを追加する（現在は `test:rules` のみ）
 - バックグラウンドGPS を EAS development build で確認する（Expo Go ではフォアグラウンドのみ）
-- `RELEASE_TEST_CHECKLIST.md` に沿ったリリース前確認
 
 ## 未解決・要確認
 
 - `EXPO_PUBLIC_REVENUECAT_API_KEY` は `appl_RRF…`（.env側の値）が正と確認され、`eas.json` 3プロファイルを統一済み（2026-07-19）。
 - 修正済み `revenuecatWebhook` のデプロイと zelio-run 残作業（Auth メール/パスワード有効化、Firestore データコピー、RevenueCat Webhook URL 変更）はユーザー報告により完了（2026-07-19）。
-- PeriodPicker のエラーバウンダリ（ネイティブ欠落時の手入力フォールバック）は実機未確認。datetimepicker 追加前のネイティブビルドで「日付を選ぶ」をタップして手入力に切り替わることを確認するとよい。
+- 実機での画面目視（PeriodPicker・月額/年額選択UI等）はユーザー報告により完了（2026-07-19）。
 - 2026-07-19 の functions デプロイで `revenuecatWebhook` が「No changes detected」でスキップされた＝それ以前に現行ソースでデプロイ済みだったことを意味する（他13関数は今回更新）。Webhook が us-central1 なのに対し Firestore トリガー系は asia-northeast1 と、リージョンが混在している点は把握しておく。
 - RevenueCat 側 Webhook 設定の URL（us-central1 の revenuecatWebhook）と Authorization ヘッダが `REVENUECAT_WEBHOOK_AUTH` シークレットと一致しているかは、ダッシュボードで要確認（コード側からは確認不可）。
 - zelio-run 移行の残作業（Auth メール/パスワード有効化・Firestore データコピー・Webhook URL 変更）はユーザー報告により完了。移行した Auth ユーザー2件のパスワード再設定は各アカウントの「パスワードを忘れた」から行う（未実施の場合）。
-- 月額/年額選択UIは実機目視未確認。RevenueCat の Offering に `$rc_monthly` / `$rc_annual` の両方が存在する前提（片方のみでも動作するが要確認）。
-- サポート窓口の実アドレスと App Store Connect 登録情報は公開後に確認する。
+- サポート窓口の実アドレスは公開後に確認する。
 - Expo依存は `expo ~54.0.35`、`expo-font ~14.0.12`、`expo-router ~6.0.24` へ更新済み。Expo Doctorは18/18合格。
 - `npm audit --omit=dev` は34件（critical 1 / high 4）。Criticalの`shell-quote`とHighの`@grpc/grpc-js` / `protobufjs` / `ws`は親依存の許容範囲内に修正版があり、`npm audit fix`（`--force`なし）で更新可能。Highの`undici`はFirebase 10.14.1が6.19.7へ固定しており、完全解消にはFirebase 12系へのメジャー更新と回帰検証が必要。開発依存込みでは`form-data`が加わりcritical 1 / high 5。`npm audit fix --force`は未適用。
 - Firestoreルールテストはローカルの Java（openjdk 26）でエミュレータ実行できるようになった。2026-07-19 時点で全32件成功。
-- ブラウザ操作環境へ接続できず、今回追加・変更した画面は実機目視が必要。
-- `submitActivity` はサーバーで距離を再計算するが、Firebase App Checkのネイティブ導入は未実施。stagingで動作確認後、改造クライアント対策として導入を検討する。
-
-- **画面の目視確認が未実施**。今回実行したのは `npx tsc --noEmit`（エラーなし）と `npx expo export --platform ios`（バンドル成功）のみ。レイアウト崩れの有無は未確認。
+- `submitActivity` はサーバーで距離を再計算するが、Firebase App Checkのネイティブ導入は未実施。改造クライアント対策として導入を検討する。
 - `FactionColumns` のバー高さは **0起点ではなく「最下位〜首位」で正規化**している（僅差だと全部同じ高さに潰れて順位が読めないため。最下位でも 32% は残す）。各バーの上に実数値 km を出して誤読を防いでいるが、スケールの妥当性は要レビュー。
 - `useTeamRanking` は participants サブコレクションを全件読む（既存の `useBattleParticipants` と同じ方式）。大規模バトルでは読み取り件数が増える。上位3名の users 読みは3件に固定。
 - ダーク面（記録中HUD・結果画面）がパイン系に変わったため、`battle/result/[id].tsx` など今回レイアウトを触っていないダーク画面の見え方は要確認。
