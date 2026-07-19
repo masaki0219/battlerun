@@ -11,7 +11,7 @@ service cloud.firestore {
     }
     function canReadBattle(battleId) {
       let battle = get(/databases/$(database)/documents/battles/$(battleId));
-      return signedIn() && battle.exists() && (
+      return signedIn() && exists(/databases/$(database)/documents/battles/$(battleId)) && (
         battle.data.type == 'public'
         || battle.data.createdBy == request.auth.uid
         || isAdmin()
@@ -82,7 +82,11 @@ service cloud.firestore {
     }
 
     match /battles/{battleId} {
-      allow read: if canReadBattle(battleId);
+      // list では battleId が未確定で get() が評価できないため、get と list を分ける。
+      // list は resource.data ベースの条件のみ（公開チャレンジは type の絞り込みが必須）。
+      allow get: if canReadBattle(battleId);
+      allow list: if isAdmin()
+        || (signedIn() && resource.data.type == 'public');
       allow create: if signedIn()
         && request.resource.data.keys().hasOnly([
           'type', 'seasonId', 'title', 'description', 'categories', 'categoryIds',

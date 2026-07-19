@@ -16,6 +16,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   doc, setDoc, updateDoc, addDoc, deleteDoc, collection, Timestamp, getDoc,
+  getDocs, query, where, orderBy,
 } from 'firebase/firestore';
 
 const PROJECT_ID = 'battlerun-rules-test';
@@ -90,6 +91,7 @@ async function seed() {
       titles: [],
     });
     await setDoc(doc(db, 'users/bob'), { name: 'Bob', plan: 'free', role: 'user', titles: [] });
+    await setDoc(doc(db, 'users/adminUser'), { name: 'Admin', plan: 'free', role: 'admin', titles: [] });
     await setDoc(doc(db, 'publicProfiles/alice'), { name: 'Alice', avatarUrl: null, avatarEmoji: null, updatedAt: Timestamp.now() });
     await setDoc(doc(db, 'activities/publicAct'), {
       userId: 'alice', visibility: 'public_v2', distanceKm: 2, battleIds: ['battle1'],
@@ -110,6 +112,7 @@ async function run() {
 
   const aliceDb = testEnv.authenticatedContext('alice').firestore();
   const bobDb = testEnv.authenticatedContext('bob').firestore();
+  const adminDb = testEnv.authenticatedContext('adminUser').firestore();
 
   // ── category_stats ────────────────────────────────────────────────
   await check(
@@ -233,6 +236,37 @@ async function run() {
   await check(
     'private battle: 作成者でもtypeをpublicへ変更できない',
     updateDoc(doc(aliceDb, 'battles/battle1'), { type: 'public' }),
+    'fail',
+  );
+
+  // ── battles の get / list ─────────────────────────────────────────
+  await check(
+    'battles list: adminは全チャレンジを絞り込みなしで一覧できる（管理画面）',
+    getDocs(query(collection(adminDb, 'battles'), orderBy('startAt', 'desc'))),
+    'succeed',
+  );
+  await check(
+    'battles list: 認証済みユーザーはtype==publicの絞り込み付きで一覧できる（ホーム）',
+    getDocs(query(
+      collection(bobDb, 'battles'),
+      where('type', '==', 'public'),
+      where('status', '==', 'active'),
+    )),
+    'succeed',
+  );
+  await check(
+    'battles list: 非adminの絞り込みなし一覧は拒否',
+    getDocs(query(collection(bobDb, 'battles'), orderBy('startAt', 'desc'))),
+    'fail',
+  );
+  await check(
+    'battles get: 参加者はprivateチャレンジを単品取得できる',
+    getDoc(doc(aliceDb, 'battles/battle1')),
+    'succeed',
+  );
+  await check(
+    'battles get: 非参加者はprivateチャレンジを単品取得できない',
+    getDoc(doc(bobDb, 'battles/battle1')),
     'fail',
   );
 
