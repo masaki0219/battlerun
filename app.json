@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "ORUNA",
+    "name": "Zelio",
     "slug": "battlerun",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "scheme": "battlerun",
+    "scheme": "zelio",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -14,9 +14,9 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.masaki.oruna",
+      "bundleIdentifier": "com.masaki.zelio",
       "infoPlist": {
-        "CFBundleDisplayName": "ORUNA",
+        "CFBundleDisplayName": "Zelio",
         "NSLocationWhenInUseUsageDescription": "ランニング・ウォーキングの走行距離を計測し、参加中のチャレンジへ反映するために位置情報を使用します。",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "記録中にアプリがバックグラウンドへ移動しても走行距離の計測を続けるために使用します。",
         "NSMotionUsageDescription": "歩数モードで歩数と推定距離を計測するためにモーションデータを使用します。",
@@ -39,7 +39,7 @@
         "FOREGROUND_SERVICE_LOCATION",
         "ACTIVITY_RECOGNITION"
       ],
-      "package": "com.battlerun.app"
+      "package": "com.masaki.zelio"
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -72,7 +72,8 @@
             "useFrameworks": "static"
           }
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "router": {},

@@ -8,37 +8,37 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyA6IAZZIFcgYipUwqxzE6RKSAhib75T09E",
-        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "battlerun-75eb6.firebaseapp.com",
-        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "battlerun-75eb6",
-        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "battlerun-75eb6.firebasestorage.app",
-        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "823386766952",
-        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:823386766952:web:1d41fb6b58877d9db805dd",
-        "EXPO_PUBLIC_REVENUECAT_API_KEY": "appl_UEBYfopUMapurjXBOQwCjWzFvsK"
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyAZDbh-qBTSWRojbAr6n5M7B_lZs1QCcqM",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "zelio-run.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "zelio-run",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "zelio-run.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "498018792767",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:498018792767:web:2798efb901b565e5cf8f8a",
+        "EXPO_PUBLIC_REVENUECAT_API_KEY": "appl_RRFOHRNqNGOakLIVuYHoQfIYxeI"
       }
     },
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyA6IAZZIFcgYipUwqxzE6RKSAhib75T09E",
-        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "battlerun-75eb6.firebaseapp.com",
-        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "battlerun-75eb6",
-        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "battlerun-75eb6.firebasestorage.app",
-        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "823386766952",
-        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:823386766952:web:1d41fb6b58877d9db805dd",
-        "EXPO_PUBLIC_REVENUECAT_API_KEY": "appl_UEBYfopUMapurjXBOQwCjWzFvsK"
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyAZDbh-qBTSWRojbAr6n5M7B_lZs1QCcqM",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "zelio-run.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "zelio-run",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "zelio-run.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "498018792767",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:498018792767:web:2798efb901b565e5cf8f8a",
+        "EXPO_PUBLIC_REVENUECAT_API_KEY": "appl_RRFOHRNqNGOakLIVuYHoQfIYxeI"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyA6IAZZIFcgYipUwqxzE6RKSAhib75T09E",
-        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "battlerun-75eb6.firebaseapp.com",
-        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "battlerun-75eb6",
-        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "battlerun-75eb6.firebasestorage.app",
-        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "823386766952",
-        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:823386766952:web:1d41fb6b58877d9db805dd",
-        "EXPO_PUBLIC_REVENUECAT_API_KEY": "appl_UEBYfopUMapurjXBOQwCjWzFvsK"
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyAZDbh-qBTSWRojbAr6n5M7B_lZs1QCcqM",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "zelio-run.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "zelio-run",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "zelio-run.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "498018792767",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:498018792767:web:2798efb901b565e5cf8f8a",
+        "EXPO_PUBLIC_REVENUECAT_API_KEY": "appl_RRFOHRNqNGOakLIVuYHoQfIYxeI"
       }
     }
   },

@@ -45,7 +45,7 @@ export default function LoginScreen() {
     <SafeAreaView style={styles.safe}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.logo}>🏃 ORUNA</Text>
+          <Text style={styles.logo}>🏃 ZELIO</Text>
           <Text style={styles.tagline}>走る距離が、絆になる。</Text>
         </View>
 

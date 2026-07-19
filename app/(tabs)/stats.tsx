@@ -52,7 +52,7 @@ export default function StatsScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.eyebrow}>ORUNA</Text>
+        <Text style={styles.eyebrow}>ZELIO</Text>
         <Text style={styles.headerTitle}>記録</Text>
       </View>
 

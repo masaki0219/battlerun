@@ -1,5 +1,6 @@
 {
   "projects": {
-    "default": "battlerun-75eb6"
+    "default": "zelio-run",
+    "battlerun": "battlerun-75eb6"
   }
 }

@@ -74,8 +74,8 @@ export default function RecordingSummaryScreen() {
 
   async function handleShareRun() {
     const message = primaryImpact
-      ? `今日のラン: ${distanceKm.toFixed(1)}km\n「${primaryImpact.battleTitle}」陣営が${primaryImpact.rankBefore}位→${primaryImpact.rankAfter}位\n#ORUNA`
-      : `今日のラン: ${distanceKm.toFixed(1)}km\n#ORUNA`;
+      ? `今日のラン: ${distanceKm.toFixed(1)}km\n「${primaryImpact.battleTitle}」陣営が${primaryImpact.rankBefore}位→${primaryImpact.rankAfter}位\n#ZELIO`
+      : `今日のラン: ${distanceKm.toFixed(1)}km\n#ZELIO`;
 
     try {
       if (shareCardRef.current && (await Sharing.isAvailableAsync())) {
@@ -207,11 +207,11 @@ export default function RecordingSummaryScreen() {
                   「{primaryImpact.battleTitle}」陣営 {primaryImpact.rankBefore}位→{primaryImpact.rankAfter}位
                 </Text>
               ) : null}
-              <Text style={s.shareCardTag}>#ORUNA</Text>
+              <Text style={s.shareCardTag}>#ZELIO</Text>
             </View>
             {!userIsPro && (
               <View style={s.shareWatermarkBadge}>
-                <Text style={s.shareWatermarkText}>ORUNA</Text>
+                <Text style={s.shareWatermarkText}>ZELIO</Text>
               </View>
             )}
           </View>

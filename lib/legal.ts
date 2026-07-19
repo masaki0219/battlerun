@@ -1,7 +1,7 @@
 /** Firebase Hostingへ公開する法務ページ。アプリ内では同内容のネイティブ画面を表示する。 */
 export const LEGAL_URLS = {
-  termsOfService: 'https://battlerun-75eb6.web.app/legal/terms.html',
-  privacyPolicy: 'https://battlerun-75eb6.web.app/legal/privacy.html',
+  termsOfService: 'https://zelio-run.web.app/legal/terms.html',
+  privacyPolicy: 'https://zelio-run.web.app/legal/privacy.html',
 };
 
 /**

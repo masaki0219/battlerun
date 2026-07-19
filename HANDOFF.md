@@ -1,14 +1,20 @@
 # HANDOFF
 
-最終更新: 2026-07-13
+最終更新: 2026-07-19
 
 ## プロジェクトの目的
 
-仲間と合計距離を競うチーム対抗ランニング・ウォーキングアプリ。React Native / Expo で実装し、Firebase（Firestore）をバックエンド、RevenueCat を課金、Google サインインを認証に使う。GPS によるアクティビティ記録とバトル（対戦）機能が中心。
+仲間と合計距離を競うチーム対抗ランニング・ウォーキングアプリ。React Native / Expo で実装し、Firebase（Firestore）をバックエンド、RevenueCat を課金に使う。GPS によるアクティビティ記録とバトル（対戦）機能が中心。認証は現状メール/パスワードのみ（Google サインインは未実装）。
 
 ## 現在の状態
 
-`feat/ui-consolidation` ブランチで作業中。アプリの表示ブランドを `ORUNA`、iOS Bundle Identifier を `com.masaki.oruna` へ変更した。Firebaseプロジェクト、RevenueCat商品ID、Expo slug、Android package、内部永続化キーは従来値を維持している。
+`feat/ui-consolidation` ブランチで作業中。アプリ名（`expo.name` / `CFBundleDisplayName`、ランチャー表示）は `Zelio`、アプリ内UIの見出し等の表記は `ZELIO`、Bundle Identifier / Android package は `com.masaki.zelio`、ディープリンク scheme は `zelio`。
+
+**Firebase は新プロジェクト `zelio-run` へ移行済み**（2026-07-19 に再度方針転換し移行を実施。`.env` / `eas.json` 3プロファイル / `.firebaserc` / `lib/legal.ts` を zelio-run へ更新し、ルール・インデックス・Hosting・Functions 全14関数・シークレット・Authユーザー2件を zelio-run へデプロイ/移行した）。旧 `battlerun-75eb6` は Firestore テストデータのコピー完了を確認するまで残しておくこと。残作業は「未解決・要確認」を参照。
+
+**RevenueCat はダッシュボード設定が正**。コードを以下の既存設定へ合わせた: Entitlement `Zelio Pro` / Offering `default` / Package `$rc_monthly`・`$rc_annual` / Product `monthly`・`yearly`。APIキーは `.env` / `eas.json`（3プロファイル）とも設定済み。
+
+Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*` 等）は従来値を維持している。
 
 `inst_v3/BattleRunホーム画面作成.zip`（Figma Make のホーム画面デザイン・最終版）を反映し、パレットをディープパイン系に刷新した。レイアウトの作り直しはホームタブとランタブの2画面に限定し、他画面は `design_tokens.ts` 経由で色だけ追従している。
 
@@ -16,13 +22,77 @@
 
 ## 最後に完了したこと
 
-### ORUNAへのブランド名変更
+### 未コミット差分のコードレビューと確定バグ修正（2026-07-19）
 
-- `app.json` の `expo.name` とiOSの表示名を `ORUNA`、iOS Bundle Identifierを `com.masaki.oruna` へ変更した。
-- アプリ内UI、共有テキスト・透かし、通知文、アプリ内法務ページの表示ブランドを `ORUNA` へ統一した。
-- Firebase Hosting用の利用規約・プライバシーポリシーHTMLを `ORUNA` 表記へ更新した。
-- `slug: battlerun`、`scheme: battlerun`、Android package `com.battlerun.app`、Firebaseプロジェクト `battlerun-75eb6` は変更していない。
-- `npx tsc --noEmit` はエラーなしで完了した。
+未コミット差分全体（29ファイル＋新規2ファイル）をレビューし、15件を指摘、うち確定バグを修正した。
+
+- `functions/src/revenuecatWebhook.ts`: `entitlement_ids` が**明示的な空配列**のイベントを誤ってPro扱いする退行を修正。空配列はPro対象外、`entitlement_ids` / `entitlement_id` の両方が欠落しているときだけ従来どおりPro扱い。**修正は未デプロイ**（「未解決・要確認」参照）。
+- `app/_layout.tsx`: `initRevenueCat` の完了を待ってから `checkProEntitlement` を実行するよう変更。コールドスタートで configure 前に `getCustomerInfo` が走り、Proユーザーでも entitlement が false 上書きされる競合を解消。
+- `utils/dateInput.ts` を新設し、`pad2` / `formatDateInput` / `parseLocalDate` / `addDays` を共通化（`app/admin/battle/new.tsx`・`components/battle/PeriodPicker.tsx`・`app/(tabs)/battle.tsx` の3重複製を解消）。
+- `app/(tabs)/battle.tsx` の私的チャレンジ作成: 日付を `new Date('YYYY-MM-DD')`（UTC解釈＝JSTで朝9時締切）からローカル解釈＋終了日23:59:59へ変更し、admin側・PeriodPickerの「23:59まで」表示と整合させた。「終了日≦開始日」の拒否も追加（従来はadmin側にのみ存在）。
+- `components/battle/PeriodPicker.tsx`: 「1ヶ月」プリセットの月末繰り越しを修正（1/31開始→2/28。従来は3/2になった）。ネイティブピッカーがマウント時に落ちる環境（datetimepicker追加前のネイティブビルド）を手入力へフォールバックするエラーバウンダリを追加（遅延requireのtry/catchだけではマウント時エラーを拾えないため）。
+- `lib/revenuecat.ts`: `purchasePro` / `restorePurchases` が購入不可環境で黙って false を返す代わりに、理由付きエラーを投げるよう変更（将来の呼び出し元で「押しても無反応」が再発しないように）。
+- `app.json`: アプリ名を `Zelio` に統一（`expo.name` と `CFBundleDisplayName` の両方。従来は `Zelio` / `ZELIO` が混在し、iOSとAndroidで表示名が割れていた）。
+- `scripts/migrate-firestore-to-zelio.js`: 鍵ファイル2つの `project_id` を検証し、不一致なら即終了・コピー方向を表示するよう変更（鍵の取り違えによる逆方向コピー防止）。
+
+確認: `npx tsc --noEmit`、`functions` の `npm run build`、`npx expo export --platform ios` すべて成功。`addOneMonth` とWebhookのentitlement判定は node で境界ケース（1/31、空配列、旧形式単数など）を実測確認。`npm run test:rules` は未実行（今回ルール変更なし）。画面の実機目視は未実施。
+
+### 購入不可環境で購入ボタンが無反応になる問題を修正（2026-07-19）
+
+- Expo Go・シミュレータでは react-native-purchases が使えず `purchasePro()` が黙って false を返すため、Proカードの購入・復元ボタンが「押しても何も起こらない」状態だった。`lib/revenuecat.ts` に `isStoreAvailable()` を追加し、`profile.tsx` の購入・復元ハンドラで不可環境なら理由のアラート（実機EASビルドが必要）を表示するようにした。`npx tsc --noEmit` 成功。
+- 購入フローの実テストは従来どおり「実機 + EAS ビルド + App Store Connect のサブスク商品登録 + Sandbox テスター」が必要（商品登録は未実施、「その次の候補」参照）。
+- 追記: 再ビルド後の購入テストで「購入に失敗しました」となったのは、ASC に商品が無く Offering の availablePackages が空 →「プランが見つかりません」を汎用 catch が握りつぶしていたため。`profile.tsx` の購入エラーアラートに実際のエラーメッセージを表示するよう変更し、`purchasePro` のパッケージ未発見メッセージも原因（ASC 商品登録 / RevenueCat Offering）を示す文言にした。
+- **追記2（重要バグ修正）**: エラー表示改善で「There is no singleton instance」が判明。`initRevenueCat` の `if (Purchases.isConfigured())` は Promise（v10 は非同期 API）を truthy 判定していたため常に logIn 分岐へ進み、**`configure()` が一度も呼ばれていなかった**。`await` を追加して修正。2026-07-19 のアカウント切替対応で入った退行で、それ以降 RevenueCat は実質未初期化だった。
+
+### チャレンジ作成フォームの期間設定を刷新（2026-07-19）
+
+- `YYYY-MM-DD` の手打ちテキスト2つを廃止し、共通コンポーネント `components/battle/PeriodPicker.tsx` に置き換えた（pro用の `PrivateBattleCreateForm` と admin の `app/admin/battle/new.tsx` の両方。admin のシーズン期間入力は従来どおりテキスト）。
+- PeriodPicker の構成: 「いつから」（今日から/明日から/月曜から + カレンダー）×「どのくらい」（1週間/2週間/1ヶ月 + 終了日カレンダー）のチップ選択、常時表示の要約（`7月19日(土) 〜 8月1日(金)` + `14日間・終了日の23:59までの記録が集計されます`）、不正時（終了<開始）のインラインエラー。開始日を動かすと設定済みの日数を保って終了日が追従する。親フォームとの受け渡しは従来の `YYYY-MM-DD` 文字列のままなので、`battle.tsx` / `new.tsx` の送信ロジックとバリデーションは無変更。
+- pro用フォームに補足文言を追加: 「区分リスト」→「チーム分け」に改称し1行説明を追加、ランキング方式の選択に応じた説明（平均=人数差があっても公平 / 合計=人数が多いほど有利）を表示。
+- `@react-native-community/datetimepicker` を `npx expo install` で追加（Expo Go 対応。app.json の plugins にも自動追加済み）。iOS はインラインカレンダー、Android は標準ダイアログ表示。
+- `npx tsc --noEmit` と `npx expo export --platform ios` は成功。**実機/シミュレータでの目視は未実施**（特に iOS インラインカレンダーの表示幅と、Android ダイアログの挙動は要確認）。
+- **追記（クラッシュ対応）**: datetimepicker 追加前に生成した `ios/` のネイティブビルドには RNDateTimePicker が入っておらず起動時クラッシュした。PeriodPicker を遅延 require + try/catch に変更し、ネイティブが無い環境ではカレンダーの代わりに YYYY-MM-DD 手入力へフォールバックするようにした（チップと要約は全環境で動く）。ネイティブビルドでカレンダーを使うには `npx expo prebuild --platform ios --clean` で再生成してリビルドが必要。Expo Go は SDK 54 に 8.4.4 が同梱されているのでそのまま動く（`npm install` 後は Metro を `npx expo start -c` で再起動すること）。
+
+### battles ルールの list 拒否バグ2件を修正（2026-07-19）
+
+- 管理画面の「チャレンジの取得に失敗しました」の原因を修正。`allow read: if canReadBattle(battleId)` は関数内で対象ドキュメントを `get()` するため、ID が未確定な list（コレクションクエリ）では常に拒否されていた。`allow get`（従来どおり canReadBattle）と `allow list`（admin なら無条件、認証済みなら `resource.data.type == 'public'` の絞り込み必須）に分割した。ホームの公開チャレンジ一覧も同じ理由で壊れていたはず。
+- あわせて `canReadBattle` 内の `battle.exists()`（ルール言語に存在しないメソッド。デプロイ時警告 `Invalid function name: exists` の正体）を `exists(パス)` 関数へ修正。これにより private チャレンジの単品取得が常に評価エラー→拒否になっていた問題も解消。
+- `tests/firestore-rules.test.ts` に battles の get/list テスト5件（admin 全件一覧・public 絞り込み一覧・非 admin 全件拒否・参加者の単品取得・非参加者の拒否）と admin ユーザーのシードを追加。**ローカルに Java（openjdk 26）が入ったため `npm run test:rules` が実行可能になり、全32件成功**。修正済みルールは zelio-run へデプロイ済み。
+- Gmail アカウント（users/taGT1I70igbLkf71NSm2Hx0Tsdh1）に `role: 'admin'` を設定済み（zelio-run と battlerun の両方。公開チャレンジ作成用）。
+
+### Firebase を zelio-run へ移行（2026-07-19）
+
+- `.env` / `eas.json`（3プロファイル）/ `.firebaserc`（default を zelio-run、alias `battlerun` を旧プロジェクトに）/ `lib/legal.ts` を zelio-run の設定値へ更新した。`npx tsc --noEmit` 成功。
+- zelio-run へデプロイ済み: Firestore ルール＋インデックス、Storage ルール、Hosting 法務ページ（https://zelio-run.web.app/legal/terms.html / privacy.html）、Functions 全14関数（Webhook URL は https://us-central1-zelio-run.cloudfunctions.net/revenuecatWebhook に変わった）。
+- シークレット `REVENUECAT_WEBHOOK_AUTH` を battlerun から zelio-run へコピーした（値は同一）。
+- Auth ユーザー2件を UID・メール保持でインポートした。**パスワードハッシュはプロジェクト固有の SCRYPT パラメータ（コンソールのみで取得可）が必要なため未移行**。ログインには各アカウントでパスワード再設定が必要。
+- battlerun の Storage バケットは空（オブジェクト0件）で移行不要。
+- Firestore データ（activities 19 / battles 5 / publicProfiles 2 / seasons 6 / teams 2 / users 2）は `scripts/migrate-firestore-to-zelio.js` でコピーできる状態。実行には zelio-run のサービスアカウントキー（`service-account-zelio.json`）が必要で未実施。
+
+### iOSネイティブプロジェクトの再生成（2026-07-19）
+
+- `npx expo prebuild --platform ios --clean` で `ios/` を作り直した。旧 `BattleRun.xcworkspace` は削除され、以後は **`ios/ZELIO.xcworkspace`** を開くこと。
+- 再生成後の確認済み項目: Bundle ID `com.masaki.zelio`、`CFBundleDisplayName` `ZELIO`、URLスキーム `zelio`、位置情報の使用目的文言、entitlements（`aps-environment` ＋ Sign in with Apple）。Pod は112依存すべてインストール成功。
+- `ios/` はgit管理外（`.gitignore` 済み）。ネイティブ設定はすべて `app.json` が正であり、`ios/` 内を直接編集しないこと。
+
+### RevenueCatダッシュボード設定へのコード追従（2026-07-19）
+
+- Entitlement 判定を `'pro'` → `'Zelio Pro'` へ変更（`lib/revenuecat.ts` の `PRO_ENTITLEMENT_ID` 定数と `functions/src/revenuecatWebhook.ts`）。Firestore の `users/{uid}.plan` の値 `'pro' | 'free'` は内部値なので変更していない。
+- Webhook は `event.entitlement_ids`（配列）と `event.entitlement_id`（旧形式・単数）の両方を安全に確認する。どちらも無いイベントは従来どおり Pro 対象として扱う。
+- `availablePackages[0]` による購入を廃止し、`$rc_monthly` / `$rc_annual` を Package identifier で明示取得する構成へ変更（`getProPlanPrices()` / `purchasePro(period)`）。
+- プロフィールの Pro カードに月額/年額の選択UI（ラジオ型の2択、価格はストアから動的取得）を追加。Offering に片方しか無い場合は自動でそちらへフォールバックする。
+- Firebase 設定を `battlerun-75eb6` へ戻した（`.env` / `eas.json` 3プロファイル / `.firebaserc` / `lib/legal.ts` の法務ページURL）。
+- `npx tsc --noEmit`、`functions` の `npm run build`、`npx expo export --platform ios` すべて成功。
+
+### ZELIOへのブランド名変更とFirebase新プロジェクト移行（2026-07-18）
+
+- `app.json`: `expo.name` / `CFBundleDisplayName` を `ZELIO`、`ios.bundleIdentifier` と `android.package` を `com.masaki.zelio`、`scheme` を `zelio` へ変更した。slug と EAS projectId は据え置き。
+- アプリ内UI、共有テキスト・透かし（`#ZELIO`）、通知文、アプリ内法務ページ、Hosting用HTML の表示ブランドを `ZELIO` へ統一した。
+- Firebase 新規プロジェクト `zelio-run`（表示名 ZELIO）を CLI で作成し、Webアプリを登録した。
+- Firestore `(default)` を asia-northeast1 に作成し、`firestore.rules` / `firestore.indexes.json` をデプロイした。
+- Hosting へ法務ページをデプロイした（https://zelio-run.web.app/legal/terms.html / privacy.html）。`lib/legal.ts` のURLも更新した。
+- `.firebaserc` / `eas.json`（3プロファイル）/ `.env` を zelio-run の設定値へ更新した。RevenueCat APIキーは新プロジェクト未作成のため空にした。
+- `npx tsc --noEmit` と `npx expo export --platform ios` はエラーなしで完了した。
 
 ### リリース前レビュー対応
 
@@ -60,14 +130,16 @@
 
 ## 次にやること
 
-Masakiが `firebase deploy --only hosting` を実行し、ORUNA表記へ更新した利用規約・プライバシーポリシーを再公開する。
+App Store Connect で Bundle ID `com.masaki.zelio` のアプリ「Zelio」を登録してサブスク商品 `monthly` / `yearly` を作成し、`eas build --profile production --platform ios` → Sandbox テスターで購入・復元と `users/{uid}.plan` が `pro` になることを確認する。
 
 ## その次の候補
-
-- `eas build --profile production --platform ios` で新しいBundle IDの本番ビルドを作成する
-- App Store ConnectでBundle ID `com.masaki.oruna` のアプリを新規登録する
-- RevenueCat側のアプリ設定を新しいBundle IDへ合わせる（商品IDは変更しない）
-- Firebaseのstaging環境へ Functions / Firestore rules / indexes / Storage rules をデプロイし、`RELEASE_TEST_CHECKLIST.md` のDay-0、GPS保存、再送、ランキング反映、アカウント削除を2アカウントの実機で通す
+- App Store ConnectでBundle ID `com.masaki.zelio` のアプリ「ZELIO」を登録し、サブスク商品 `monthly` / `yearly` を作成する（プライバシーポリシーURLは https://zelio-run.web.app/legal/privacy.html）
+- `eas build --profile production --platform ios` で本番ビルドを作成する（初回は新Bundle ID用の証明書・プロビジョニング作成を求められる。RevenueCat APIキー設定後に行うこと）
+- Sandboxテスターで月額・年額それぞれの購入と復元を確認し、`users/{uid}.plan` が `pro` になることを確認する
+- Firestore データ移行と動作確認の完了後、旧 `battlerun-75eb6` プロジェクトの削除（または凍結）を検討する
+- ローカル `ios/` は旧設定（com.battlerun.app）のまま。ローカルでネイティブビルドする場合は `npx expo prebuild --platform ios --clean` で再生成する
+- masaki0219/app-support（GitHub Pages）の docs/battlerun/ 配下サポートページをZELIO表記へ同期する
+- `RELEASE_TEST_CHECKLIST.md` のDay-0、GPS保存、再送、ランキング反映、アカウント削除を2アカウントの実機で通す
 - `feat/ui-consolidation` を origin へ push し、`main` へマージするか判断する
 - 使われていないブランチ `feat/ui-refresh` / `feat/ui-redesign` を整理する
 - `package.json` に `typecheck` / `lint` スクリプトを追加する（現在は `test:rules` のみ）
@@ -76,11 +148,17 @@ Masakiが `firebase deploy --only hosting` を実行し、ORUNA表記へ更新�
 
 ## 未解決・要確認
 
-- Firebase資産は未デプロイ。クライアントだけ先に配布すると新しいCallableが存在せず記録保存できないため、必ずサーバーを先にデプロイする。
-- 法務ページHTMLは用意済みだがHosting未デプロイ。App Store Connectへ登録するプライバシーポリシーURLとサポート窓口の実アドレスは公開後に確認する。
+- `EXPO_PUBLIC_REVENUECAT_API_KEY` は `appl_RRF…`（.env側の値）が正と確認され、`eas.json` 3プロファイルを統一済み（2026-07-19）。
+- 修正済み `revenuecatWebhook` のデプロイと zelio-run 残作業（Auth メール/パスワード有効化、Firestore データコピー、RevenueCat Webhook URL 変更）はユーザー報告により完了（2026-07-19）。
+- PeriodPicker のエラーバウンダリ（ネイティブ欠落時の手入力フォールバック）は実機未確認。datetimepicker 追加前のネイティブビルドで「日付を選ぶ」をタップして手入力に切り替わることを確認するとよい。
+- 2026-07-19 の functions デプロイで `revenuecatWebhook` が「No changes detected」でスキップされた＝それ以前に現行ソースでデプロイ済みだったことを意味する（他13関数は今回更新）。Webhook が us-central1 なのに対し Firestore トリガー系は asia-northeast1 と、リージョンが混在している点は把握しておく。
+- RevenueCat 側 Webhook 設定の URL（us-central1 の revenuecatWebhook）と Authorization ヘッダが `REVENUECAT_WEBHOOK_AUTH` シークレットと一致しているかは、ダッシュボードで要確認（コード側からは確認不可）。
+- zelio-run 移行の残作業（Auth メール/パスワード有効化・Firestore データコピー・Webhook URL 変更）はユーザー報告により完了。移行した Auth ユーザー2件のパスワード再設定は各アカウントの「パスワードを忘れた」から行う（未実施の場合）。
+- 月額/年額選択UIは実機目視未確認。RevenueCat の Offering に `$rc_monthly` / `$rc_annual` の両方が存在する前提（片方のみでも動作するが要確認）。
+- サポート窓口の実アドレスと App Store Connect 登録情報は公開後に確認する。
 - Expo依存は `expo ~54.0.35`、`expo-font ~14.0.12`、`expo-router ~6.0.24` へ更新済み。Expo Doctorは18/18合格。
 - `npm audit --omit=dev` は34件（critical 1 / high 4）。Criticalの`shell-quote`とHighの`@grpc/grpc-js` / `protobufjs` / `ws`は親依存の許容範囲内に修正版があり、`npm audit fix`（`--force`なし）で更新可能。Highの`undici`はFirebase 10.14.1が6.19.7へ固定しており、完全解消にはFirebase 12系へのメジャー更新と回帰検証が必要。開発依存込みでは`form-data`が加わりcritical 1 / high 5。`npm audit fix --force`は未適用。
-- Firestoreルールテストはテストコードの型チェックまで成功。ローカル環境にJavaがなくエミュレータ実行は未完了。
+- Firestoreルールテストはローカルの Java（openjdk 26）でエミュレータ実行できるようになった。2026-07-19 時点で全32件成功。
 - ブラウザ操作環境へ接続できず、今回追加・変更した画面は実機目視が必要。
 - `submitActivity` はサーバーで距離を再計算するが、Firebase App Checkのネイティブ導入は未実施。stagingで動作確認後、改造クライアント対策として導入を検討する。
 
@@ -115,7 +193,7 @@ npx expo export --platform ios  # Metro でバンドルが通るかの確認（�
 npm run test:rules              # Firestore ルールのテスト（Firebase エミュレータ必要）
 ```
 
-2026-07-12 時点: `npx tsc --noEmit` と `npx expo export --platform ios` は成功。`npm run test:rules` は未実行。
+2026-07-19 時点: `npx tsc --noEmit`、`functions` の `npm run build`、`npx expo export --platform ios` 成功（レビュー後の修正込み）。`npm run test:rules` は全32件成功（ルール最終変更時に実行。以後ルール変更なし）。
 
 ## 重要なファイル
 

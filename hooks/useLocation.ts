@@ -158,7 +158,7 @@ export function useLocation({ enabled }: { enabled: boolean }) {
               showsBackgroundLocationIndicator: true,
               foregroundService: {
                 notificationTitle: '記録中',
-                notificationBody: 'ORUNA がGPSを追跡しています',
+                notificationBody: 'ZELIO がGPSを追跡しています',
               },
             });
           }
