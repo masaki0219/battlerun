@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
+import { PeriodPicker } from './PeriodPicker';
 import { Colors, Typography, Spacing, BorderRadius } from '../../design_tokens';
 import type { Category } from '../../types';
 
@@ -44,7 +45,8 @@ export function PrivateBattleCreateForm({
         <TextInput style={[styles.input, styles.inputMulti]} value={desc} onChangeText={onChangeDesc}
           placeholder="チャレンジの説明..." placeholderTextColor={Colors.textTertiary} multiline maxLength={200} />
 
-        <Text style={styles.inputLabel}>区分リスト *（最低2つ）</Text>
+        <Text style={styles.inputLabel}>チーム分け *（最低2つ）</Text>
+        <Text style={styles.helpText}>参加者はどれか1つのチームに入って距離を競います（例: きのこの山 vs たけのこの里）</Text>
         {categories.map((cat, i) => (
           <View key={i} style={styles.catInputRow}>
             <TextInput
@@ -79,14 +81,19 @@ export function PrivateBattleCreateForm({
             </TouchableOpacity>
           ))}
         </View>
+        <Text style={styles.helpText}>
+          {rankingType === 'average'
+            ? '平均距離で競うので、チームの人数が違っても公平です'
+            : 'チーム全員の合計距離で競います。人数が多いチームほど有利です'}
+        </Text>
 
-        <Text style={styles.inputLabel}>開始日 *（YYYY-MM-DD）</Text>
-        <TextInput style={styles.input} value={startAt} onChangeText={onChangeStartAt}
-          placeholder="例: 2026-06-01" placeholderTextColor={Colors.textTertiary} maxLength={10} />
-
-        <Text style={styles.inputLabel}>終了日 *（YYYY-MM-DD）</Text>
-        <TextInput style={styles.input} value={endAt} onChangeText={onChangeEndAt}
-          placeholder="例: 2026-06-30" placeholderTextColor={Colors.textTertiary} maxLength={10} />
+        <Text style={styles.inputLabel}>期間 *</Text>
+        <PeriodPicker
+          startAt={startAt}
+          endAt={endAt}
+          onChangeStartAt={onChangeStartAt}
+          onChangeEndAt={onChangeEndAt}
+        />
 
         <View style={styles.formActions}>
           <Button label="キャンセル" onPress={onCancel} variant="ghost" style={styles.formBtn} />
@@ -102,6 +109,7 @@ const styles = StyleSheet.create({
   card: { marginBottom: 0, marginHorizontal: 0 },
   formTitle: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.lg },
   inputLabel: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary, marginBottom: Spacing.xs, marginTop: Spacing.md },
+  helpText: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, marginBottom: Spacing.xs },
   input: {
     backgroundColor: Colors.surfaceGray, borderRadius: BorderRadius.sm,
     paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,

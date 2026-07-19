@@ -13,47 +13,12 @@ import { useAuthStore } from '../../../stores/authStore';
 import { useBattleStore } from '../../../stores/battleStore';
 import { Button } from '../../../components/ui/Button';
 import { Card } from '../../../components/ui/Card';
+import { PeriodPicker } from '../../../components/battle/PeriodPicker';
 import { Colors, Typography, Spacing, BorderRadius } from '../../../design_tokens';
+import { formatDateInput, addDays, parseLocalDate } from '../../../utils/dateInput';
 import type { Category, Season } from '../../../types';
 
 type SeasonDraftMode = 'existing' | 'new' | 'none';
-
-function pad2(value: number): string {
-  return value.toString().padStart(2, '0');
-}
-
-function formatDateInput(date: Date): string {
-  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
-}
-
-function addDays(date: Date, days: number): Date {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
-}
-
-function parseLocalDate(value: string, endOfDay = false): Date | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
-  if (!match) return null;
-  const [, year, month, day] = match;
-  const parsed = new Date(
-    Number(year),
-    Number(month) - 1,
-    Number(day),
-    endOfDay ? 23 : 0,
-    endOfDay ? 59 : 0,
-    endOfDay ? 59 : 0,
-    endOfDay ? 999 : 0
-  );
-  if (
-    parsed.getFullYear() !== Number(year) ||
-    parsed.getMonth() !== Number(month) - 1 ||
-    parsed.getDate() !== Number(day)
-  ) {
-    return null;
-  }
-  return parsed;
-}
 
 function mapSeason(id: string, data: Record<string, any>): Season {
   return {
@@ -388,14 +353,14 @@ export default function NewPublicBattleScreen() {
               ))}
             </View>
 
-            {/* 開始日・終了日 */}
-            <Text style={styles.label}>開始日 *（YYYY-MM-DD）</Text>
-            <TextInput style={styles.input} value={startAt} onChangeText={setStartAt}
-              placeholder="例: 2026-06-01" placeholderTextColor={Colors.textTertiary} maxLength={10} />
-
-            <Text style={styles.label}>終了日 *（YYYY-MM-DD）</Text>
-            <TextInput style={styles.input} value={endAt} onChangeText={setEndAt}
-              placeholder="例: 2026-06-30" placeholderTextColor={Colors.textTertiary} maxLength={10} />
+            {/* 期間 */}
+            <Text style={styles.label}>期間 *</Text>
+            <PeriodPicker
+              startAt={startAt}
+              endAt={endAt}
+              onChangeStartAt={setStartAt}
+              onChangeEndAt={setEndAt}
+            />
 
             <Button
               label="パブリックランを作成する"

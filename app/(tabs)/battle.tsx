@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import { useBattleStore } from '../../stores/battleStore';
+import { parseLocalDate } from '../../utils/dateInput';
 import { useUnreadNotifications } from '../../hooks/useUnreadNotifications';
 import { useRecentActivities } from '../../hooks/useRecentActivities';
 import { useBattleCategoryStats } from '../../hooks/useBattleCategoryStats';
@@ -223,10 +224,16 @@ export default function BattleScreen() {
       Alert.alert('入力エラー', '開始日と終了日を入力してください（YYYY-MM-DD）');
       return;
     }
-    const startDate = new Date(createStartAt);
-    const endDate = new Date(createEndAt);
-    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+    // UTC解釈（new Date('YYYY-MM-DD')）だとJSTでは朝9:00が締切になるため、ローカルで解釈し
+    // 終了日は23:59:59まで含める（PeriodPickerの「終了日の23:59まで」表示・admin側と同じ扱い）。
+    const startDate = parseLocalDate(createStartAt);
+    const endDate = parseLocalDate(createEndAt, true);
+    if (!startDate || !endDate) {
       Alert.alert('入力エラー', '日付の形式が正しくありません（例: 2026-06-01）');
+      return;
+    }
+    if (endDate <= startDate) {
+      Alert.alert('入力エラー', '終了日は開始日より後にしてください');
       return;
     }
 
@@ -591,7 +598,7 @@ export default function BattleScreen() {
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerEyebrow}>ORUNA</Text>
+          <Text style={styles.headerEyebrow}>ZELIO</Text>
           <Text style={styles.headerTitle}>チャレンジ</Text>
         </View>
         <TouchableOpacity
