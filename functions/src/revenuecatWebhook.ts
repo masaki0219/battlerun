@@ -7,6 +7,9 @@ import { getFirestore } from 'firebase-admin/firestore';
 // `firebase functions:secrets:set REVENUECAT_WEBHOOK_AUTH` で設定する。
 const REVENUECAT_WEBHOOK_AUTH = defineSecret('REVENUECAT_WEBHOOK_AUTH');
 
+// RevenueCatダッシュボードのEntitlement識別子。ダッシュボード側を正とする。
+const PRO_ENTITLEMENT_ID = 'Zelio Pro';
+
 // Pro化するイベント
 const PRO_EVENT_TYPES = new Set([
   'INITIAL_PURCHASE', 'RENEWAL', 'UNCANCELLATION', 'PRODUCT_CHANGE',
@@ -36,7 +39,8 @@ export const revenuecatWebhook = onRequest(
       app_user_id?: string;
       event_timestamp_ms?: number;
       expiration_at_ms?: number | null;
-      entitlement_ids?: string[];
+      entitlement_ids?: string[] | null;
+      entitlement_id?: string | null;
     } | undefined;
     const eventType = event?.type;
     const appUserId = event?.app_user_id;
@@ -48,7 +52,14 @@ export const revenuecatWebhook = onRequest(
     }
 
     let plan: 'pro' | 'free' | null = null;
-    const hasProEntitlement = !event.entitlement_ids || event.entitlement_ids.includes('pro');
+    // entitlement_ids（配列）と entitlement_id（旧形式・単数）の両方を安全に確認する。
+    // 両フィールドとも無いイベントだけ従来どおりPro対象として扱う。
+    // entitlement_ids: [] のように「明示的に空」で届いた場合はPro対象外（付与されたentitlementが無い）。
+    const idsField = Array.isArray(event.entitlement_ids) ? event.entitlement_ids : null;
+    const idField = typeof event.entitlement_id === 'string' && event.entitlement_id ? event.entitlement_id : null;
+    const entitlementIds = [...(idsField ?? []), ...(idField ? [idField] : [])];
+    const hasEntitlementInfo = idsField !== null || idField !== null;
+    const hasProEntitlement = !hasEntitlementInfo || entitlementIds.includes(PRO_ENTITLEMENT_ID);
     if (PRO_EVENT_TYPES.has(eventType) && hasProEntitlement) plan = 'pro';
     else if (FREE_EVENT_TYPES.has(eventType) && (event.expiration_at_ms ?? 0) <= Date.now()) plan = 'free';
 

@@ -15,7 +15,7 @@ import {
 } from 'firebase/auth';
 import { auth, db, storage, functions } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
-import { purchasePro, restorePurchases, getProPackageInfo, type ProPackageInfo } from '../../lib/revenuecat';
+import { purchasePro, restorePurchases, getProPlanPrices, isStoreAvailable, type ProPackageInfo, type ProPlanPeriod } from '../../lib/revenuecat';
 import { isPro } from '../../lib/pro';
 import { SUBSCRIPTION_DISCLAIMER } from '../../lib/legal';
 import { Ionicons } from '@expo/vector-icons';
@@ -88,7 +88,8 @@ export default function ProfileScreen() {
   const [purchasing, setPurchasing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [proPackageInfo, setProPackageInfo] = useState<ProPackageInfo | null>(null);
+  const [proPlans, setProPlans] = useState<Partial<Record<ProPlanPeriod, ProPackageInfo>>>({});
+  const [selectedPeriod, setSelectedPeriod] = useState<ProPlanPeriod>('monthly');
   const [serverStats, setServerStats] = useState<{ totalDistanceKm: number; activityCount: number } | null>(null);
 
   // 自分の戦績（累計距離・ラン回数・ストリーク）
@@ -99,7 +100,11 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     if (!isPro(user?.plan, proEntitlement)) {
-      getProPackageInfo().then(setProPackageInfo);
+      getProPlanPrices().then((plans) => {
+        setProPlans(plans);
+        // 月額がOfferingに無い構成でも購入ボタンが機能するよう選択を補正する
+        if (!plans.monthly && plans.annual) setSelectedPeriod('annual');
+      });
     }
   }, [user?.plan, proEntitlement]);
 
@@ -145,14 +150,22 @@ export default function ProfileScreen() {
 
   async function handlePurchasePro() {
     if (!user) return;
+    if (!isStoreAvailable()) {
+      Alert.alert(
+        'この環境では購入できません',
+        'アプリ内購入はExpo Goやシミュレータでは動作しません。実機のEASビルド（開発ビルド / TestFlight）でテストしてください。',
+      );
+      return;
+    }
     setPurchasing(true);
     try {
-      const ok = await purchasePro();
+      const ok = await purchasePro(selectedPeriod);
       if (ok) {
         Alert.alert('🎉 ありがとうございます！', 'Proプランが有効になりました。');
       }
-    } catch {
-      Alert.alert('エラー', '購入に失敗しました。通信状態を確認してください。');
+    } catch (e: any) {
+      // RevenueCat/StoreKit のエラー内容は原因切り分けに必須なのでそのまま見せる
+      Alert.alert('購入に失敗しました', e?.message ?? '通信状態を確認してください。');
     } finally {
       setPurchasing(false);
     }
@@ -160,6 +173,13 @@ export default function ProfileScreen() {
 
   async function handleRestore() {
     if (!user) return;
+    if (!isStoreAvailable()) {
+      Alert.alert(
+        'この環境では復元できません',
+        'アプリ内購入はExpo Goやシミュレータでは動作しません。実機のEASビルド（開発ビルド / TestFlight）でテストしてください。',
+      );
+      return;
+    }
     setPurchasing(true);
     try {
       const ok = await restorePurchases();
@@ -176,7 +196,7 @@ export default function ProfileScreen() {
     const enabled = await registerPushToken(user.id, true);
     Alert.alert(
       enabled ? '通知を有効にしました' : '通知を有効にできませんでした',
-      enabled ? '順位変動やチャレンジ終了をお知らせします。' : '端末の設定からORUNAの通知を許可してください。',
+      enabled ? '順位変動やチャレンジ終了をお知らせします。' : '端末の設定からZELIOの通知を許可してください。',
     );
   }
 
@@ -326,7 +346,7 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <Text style={styles.headerEyebrow}>ORUNA</Text>
+        <Text style={styles.headerEyebrow}>ZELIO</Text>
         <Text style={styles.headerTitle}>プロフィール</Text>
       </View>
 
@@ -395,7 +415,7 @@ export default function ProfileScreen() {
 
         <View>
           <View style={styles.sectionHead}>
-            <Text style={styles.sectionHeading}>ORUNA Pro</Text>
+            <Text style={styles.sectionHeading}>ZELIO Pro</Text>
             <View style={styles.freePlanBadge}><Text style={styles.freePlanText}>{userIsPro ? 'Proプラン' : 'Freeプラン'}</Text></View>
           </View>
           <View style={[styles.proCard, userIsPro && styles.proCardActive]}>
@@ -418,7 +438,28 @@ export default function ProfileScreen() {
                     <Text style={styles.freeDesc}>友達チャレンジ作成、バトルテーマ、透かしなし共有を利用できます。</Text>
                   </View>
                 </View>
-                {proPackageInfo && <Text style={styles.priceText}>{proPackageInfo.periodLabel} {proPackageInfo.priceString}（自動更新）</Text>}
+                {(proPlans.monthly || proPlans.annual) && (
+                  <View style={styles.planRow}>
+                    {(['monthly', 'annual'] as const).map((period) => {
+                      const plan = proPlans[period];
+                      if (!plan) return null;
+                      const selected = selectedPeriod === period;
+                      return (
+                        <TouchableOpacity
+                          key={period}
+                          style={[styles.planOption, selected && styles.planOptionSelected]}
+                          onPress={() => setSelectedPeriod(period)}
+                          accessibilityRole="radio"
+                          accessibilityState={{ selected }}
+                          accessibilityLabel={`${plan.periodLabel || (period === 'monthly' ? '月額' : '年額')} ${plan.priceString}`}
+                        >
+                          <Text style={[styles.planPeriod, selected && styles.planPeriodSelected]}>{plan.periodLabel || (period === 'monthly' ? '月額' : '年額')}</Text>
+                          <Text style={[styles.planPrice, selected && styles.planPriceSelected]}>{plan.priceString}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
                 <TouchableOpacity style={styles.proStartButton} onPress={handlePurchasePro} disabled={purchasing} activeOpacity={0.85}>
                   {purchasing ? <ActivityIndicator color={Colors.textOnAccent} /> : <><Text style={styles.proStartText}>Proをはじめる</Text><Ionicons name="chevron-forward" size={16} color={Colors.textOnAccent} /></>}
                 </TouchableOpacity>
@@ -447,7 +488,7 @@ export default function ProfileScreen() {
           <View style={[styles.surfaceCard, styles.listCard]}>
             <ProfileRow icon="help-circle-outline" title="ヘルプ・お問い合わせ" onPress={() => router.push('/help' as any)} />
             <View style={styles.rowDivider} />
-            <ProfileRow icon="information-circle-outline" title="ORUNAについて" detail={`バージョン ${Constants.expoConfig?.version ?? '—'}`} onPress={() => Alert.alert('ORUNA', '仲間と距離を競うチーム対抗ランニング・ウォーキングアプリです。')} />
+            <ProfileRow icon="information-circle-outline" title="ZELIOについて" detail={`バージョン ${Constants.expoConfig?.version ?? '—'}`} onPress={() => Alert.alert('ZELIO', '仲間と距離を競うチーム対抗ランニング・ウォーキングアプリです。')} />
           </View>
         </View>
 
@@ -592,7 +633,13 @@ const styles = StyleSheet.create({
   proIcon: { width: 40, height: 40, borderRadius: BorderRadius.sm, backgroundColor: Colors.accentLight, alignItems: 'center', justifyContent: 'center' },
   proUpsellTitle: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.extrabold, color: Colors.textPrimary },
   freeDesc: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary, lineHeight: 18, marginTop: 3 },
-  priceText: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary, fontWeight: Typography.fontWeight.semibold, marginTop: Spacing.md },
+  planRow: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md },
+  planOption: { flex: 1, alignItems: 'center', gap: 2, borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.md, paddingVertical: Spacing.sm },
+  planOptionSelected: { borderColor: Colors.accent, backgroundColor: Colors.accentLight },
+  planPeriod: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary, fontWeight: Typography.fontWeight.semibold },
+  planPeriodSelected: { color: Colors.accentDark },
+  planPrice: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.extrabold, color: Colors.textPrimary },
+  planPriceSelected: { color: Colors.accentDark },
   proStartButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.xs, backgroundColor: Colors.accent, borderRadius: BorderRadius.md, paddingVertical: Spacing.md, marginTop: Spacing.md },
   proStartText: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.extrabold, color: Colors.textOnAccent },
   restoreButton: { alignSelf: 'center', marginTop: Spacing.sm },

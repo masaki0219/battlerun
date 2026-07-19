@@ -33,9 +33,14 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (!user) return;
-    void initRevenueCat(user.id);
     void registerPushToken(user.id, false);
-    checkProEntitlement().then((active) => useAuthStore.getState().setProEntitlement(active));
+    // configure() 完了前に getCustomerInfo() を呼ぶと失敗して false で上書きされるため、
+    // 初期化を待ってから entitlement を確認する。
+    void (async () => {
+      await initRevenueCat(user.id);
+      const active = await checkProEntitlement();
+      useAuthStore.getState().setProEntitlement(active);
+    })();
   }, [user?.id]);
 
   // バトル終了後の自動表示: ログイン後に一度だけチェック

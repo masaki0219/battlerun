@@ -15,6 +15,16 @@ import { useAuthStore } from '../stores/authStore';
 
 const API_KEY = process.env['EXPO_PUBLIC_REVENUECAT_API_KEY'] ?? '';
 
+// RevenueCatダッシュボードの既存設定に合わせた識別子。ダッシュボード側を正とする。
+const PRO_ENTITLEMENT_ID = 'Zelio Pro';
+
+export type ProPlanPeriod = 'monthly' | 'annual';
+
+const PACKAGE_IDS: Record<ProPlanPeriod, string> = {
+  monthly: '$rc_monthly',
+  annual: '$rc_annual',
+};
+
 if (!API_KEY) {
   console.warn('[RevenueCat] APIキーが設定されていません。.env の EXPO_PUBLIC_REVENUECAT_API_KEY を確認してください。');
 }
@@ -34,6 +44,11 @@ function getPurchases(): any {
   }
 }
 
+/** この実行環境でアプリ内購入が使えるか。Expo Go・シミュレータ等ネイティブモジュール未リンク環境では false */
+export function isStoreAvailable(): boolean {
+  return Boolean(API_KEY) && getPurchases() !== null;
+}
+
 export async function initRevenueCat(userId: string): Promise<void> {
   if (isExpoGo || !API_KEY) return;
   const Purchases = getPurchases();
@@ -42,7 +57,8 @@ export async function initRevenueCat(userId: string): Promise<void> {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { LOG_LEVEL } = require('react-native-purchases');
     Purchases.setLogLevel(LOG_LEVEL.WARN);
-    if (Purchases.isConfigured()) {
+    // isConfigured() は Promise を返すため await 必須（truthy 判定すると configure が永久に呼ばれない）
+    if (await Purchases.isConfigured()) {
       // アカウント切替時は既存SDKセッションへ明示的にログインする。
       await Purchases.logIn(userId);
     } else {
@@ -69,23 +85,30 @@ function periodLabelFromIso(period: string | null | undefined): string {
 }
 
 /**
- * Pro単一プランの価格・課金周期を取得する（購入ボタン周辺の表示用）。
+ * Proプラン（月額・年額）の価格・課金周期を取得する（購入ボタン周辺の表示用）。
  * Apple審査ガイドライン3.1.2で、購入前に価格・期間の明示が求められるため。
+ * Offering に存在しない周期は結果に含まれない。
  */
-export async function getProPackageInfo(): Promise<ProPackageInfo | null> {
-  if (!API_KEY) return null;
+export async function getProPlanPrices(): Promise<Partial<Record<ProPlanPeriod, ProPackageInfo>>> {
+  if (!API_KEY) return {};
   const Purchases = getPurchases();
-  if (!Purchases) return null;
+  if (!Purchases) return {};
   try {
     const offerings = await Purchases.getOfferings();
-    const proPackage = offerings.current?.availablePackages[0];
-    if (!proPackage) return null;
-    return {
-      priceString: proPackage.product.priceString,
-      periodLabel: periodLabelFromIso(proPackage.product.subscriptionPeriod),
-    };
+    const packages = offerings.current?.availablePackages ?? [];
+    const plans: Partial<Record<ProPlanPeriod, ProPackageInfo>> = {};
+    for (const period of Object.keys(PACKAGE_IDS) as ProPlanPeriod[]) {
+      const pkg = packages.find((p: { identifier: string }) => p.identifier === PACKAGE_IDS[period]);
+      if (pkg) {
+        plans[period] = {
+          priceString: pkg.product.priceString,
+          periodLabel: periodLabelFromIso(pkg.product.subscriptionPeriod),
+        };
+      }
+    }
+    return plans;
   } catch {
-    return null;
+    return {};
   }
 }
 
@@ -95,7 +118,7 @@ export async function checkProEntitlement(): Promise<boolean> {
   if (!Purchases) return false;
   try {
     const info = await Purchases.getCustomerInfo();
-    return info.entitlements.active['pro'] !== undefined;
+    return info.entitlements.active[PRO_ENTITLEMENT_ID] !== undefined;
   } catch {
     return false;
   }
@@ -107,17 +130,25 @@ export async function checkProEntitlement(): Promise<boolean> {
  * Firestoreの`users/{uid}.plan`はRevenueCat Webhook経由で数秒遅れて反映されるため、
  * ここではFirestoreを直接更新せず、RevenueCat entitlementをauthStoreへ即時反映する。
  */
-export async function purchasePro(): Promise<boolean> {
-  if (!API_KEY) return false;
+export async function purchasePro(period: ProPlanPeriod): Promise<boolean> {
   const Purchases = getPurchases();
-  if (!Purchases) return false;
+  if (!API_KEY || !Purchases) {
+    // 黙って false を返すと呼び出し元がガードを忘れたとき「押しても無反応」に戻るため、理由付きで失敗させる
+    throw new Error('この環境ではアプリ内購入を利用できません。実機のEASビルド（開発ビルド / TestFlight）でお試しください。');
+  }
   try {
     const offerings = await Purchases.getOfferings();
-    const proPackage = offerings.current?.availablePackages[0];
-    if (!proPackage) throw new Error('プランが見つかりません');
+    const proPackage = offerings.current?.availablePackages.find(
+      (p: { identifier: string }) => p.identifier === PACKAGE_IDS[period],
+    );
+    if (!proPackage) {
+      throw new Error(
+        'ストアで販売中のプランが見つかりません。App Store Connect のサブスク商品登録と、RevenueCat の Offering 設定を確認してください。',
+      );
+    }
 
     const { customerInfo } = await Purchases.purchasePackage(proPackage);
-    const proEntitlement = customerInfo.entitlements.active['pro'] !== undefined;
+    const proEntitlement = customerInfo.entitlements.active[PRO_ENTITLEMENT_ID] !== undefined;
     useAuthStore.getState().setProEntitlement(proEntitlement);
     return proEntitlement;
   } catch (e: any) {
@@ -128,12 +159,13 @@ export async function purchasePro(): Promise<boolean> {
 
 /** 購入履歴を復元する。Webhookによる`plan`反映までの間はentitlementで即時判定する */
 export async function restorePurchases(): Promise<boolean> {
-  if (!API_KEY) return false;
   const Purchases = getPurchases();
-  if (!Purchases) return false;
+  if (!API_KEY || !Purchases) {
+    throw new Error('この環境では購入の復元を利用できません。実機のEASビルド（開発ビルド / TestFlight）でお試しください。');
+  }
   try {
     const info = await Purchases.restorePurchases();
-    const proEntitlement = info.entitlements.active['pro'] !== undefined;
+    const proEntitlement = info.entitlements.active[PRO_ENTITLEMENT_ID] !== undefined;
     useAuthStore.getState().setProEntitlement(proEntitlement);
     return proEntitlement;
   } catch {
