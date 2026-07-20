@@ -13,13 +13,19 @@ interface RoutePoint {
   lat: number;
   lng: number;
   timestamp: number;
+  /** 高度（m）。クライアントが取得できた場合のみ */
+  alt?: number;
+  /** 一時停止から再開した直後の点。前の点との間は距離に加算しない */
+  seg?: true;
 }
 
 interface SubmitActivityData {
+  localId?: unknown;
   measurementType?: unknown;
   steps?: unknown;
   startedAtMs?: unknown;
   endedAtMs?: unknown;
+  pausedMs?: unknown;
   route?: unknown;
 }
 
@@ -41,12 +47,16 @@ function parseRoute(value: unknown, startedAtMs: number, endedAtMs: number): Rou
   }
 
   const route: RoutePoint[] = [];
+  // seg付きの点が検証で落ちた場合、次に採用する点へセグメント境界を引き継ぐ
+  let pendingSegmentBreak = false;
   for (const raw of value) {
     if (!raw || typeof raw !== 'object') continue;
     const point = raw as Record<string, unknown>;
     const lat = point['lat'];
     const lng = point['lng'];
     const timestamp = point['timestamp'];
+    const isSegmentStart = point['seg'] === true;
+    if (isSegmentStart) pendingSegmentBreak = true;
     if (
       typeof lat !== 'number' || !Number.isFinite(lat) || lat < -90 || lat > 90 ||
       typeof lng !== 'number' || !Number.isFinite(lng) || lng < -180 || lng > 180 ||
@@ -56,14 +66,19 @@ function parseRoute(value: unknown, startedAtMs: number, endedAtMs: number): Rou
       continue;
     }
 
-    const next = { lat, lng, timestamp };
+    const next: RoutePoint = { lat, lng, timestamp };
+    const alt = point['alt'];
+    if (typeof alt === 'number' && Number.isFinite(alt)) next.alt = alt;
     const prev = route[route.length - 1];
-    if (prev) {
+    if (prev && !pendingSegmentBreak) {
       const seconds = (next.timestamp - prev.timestamp) / 1000;
       if (seconds <= 0) continue;
       const speedKmh = (haversine(prev, next) / seconds) * 3600;
       if (speedKmh > MAX_SPEED_KMH) continue;
     }
+    // セグメント境界を跨ぐペアは距離に数えないため、速度検査を免除しても距離の水増しにはならない
+    if (prev && pendingSegmentBreak) next.seg = true;
+    pendingSegmentBreak = false;
     route.push(next);
   }
   return route;
@@ -71,7 +86,7 @@ function parseRoute(value: unknown, startedAtMs: number, endedAtMs: number): Rou
 
 function routeDistance(route: RoutePoint[]): number {
   return route.reduce((sum, point, index) => (
-    index === 0 ? sum : sum + haversine(route[index - 1], point)
+    index === 0 || point.seg ? sum : sum + haversine(route[index - 1], point)
   ), 0);
 }
 
@@ -86,6 +101,31 @@ export const submitActivity = onCall(
     if (!uid) throw new HttpsError('unauthenticated', 'ログインが必要です。');
 
     const data = (request.data ?? {}) as SubmitActivityData;
+    const localId = data.localId;
+    if (
+      typeof localId !== 'string' ||
+      !/^[A-Za-z0-9_-]{8,128}$/.test(localId)
+    ) {
+      throw new HttpsError('invalid-argument', '記録IDの形式が不正です。');
+    }
+
+    const db = getFirestore();
+    const activityRef = db.collection('activities').doc(localId);
+    const existingActivity = await activityRef.get();
+    if (existingActivity.exists) {
+      const existing = existingActivity.data()!;
+      if (existing['userId'] !== uid) {
+        throw new HttpsError('permission-denied', 'この記録IDは使用できません。');
+      }
+      return {
+        activityId: activityRef.id,
+        distanceKm: existing['distanceKm'],
+        durationSeconds: existing['durationSeconds'],
+        steps: existing['steps'] ?? 0,
+        battleIds: existing['battleIds'] ?? [],
+      };
+    }
+
     const measurementType = data.measurementType;
     const startedAtMs = data.startedAtMs;
     const endedAtMs = data.endedAtMs;
@@ -98,9 +138,15 @@ export const submitActivity = onCall(
     }
 
     const now = Date.now();
-    const durationSeconds = Math.floor((endedAtMs - startedAtMs) / 1000);
+    // pausedMs は一時停止の合計。実走時間(durationSeconds)から除外する。
+    // 過大に申告しても平均速度検査が厳しくなるだけで距離の水増しには使えない。
+    const pausedMs = typeof data.pausedMs === 'number' && Number.isFinite(data.pausedMs)
+      ? Math.max(0, Math.floor(data.pausedMs))
+      : 0;
+    const wallSeconds = Math.floor((endedAtMs - startedAtMs) / 1000);
+    const durationSeconds = Math.floor((endedAtMs - startedAtMs - pausedMs) / 1000);
     if (
-      durationSeconds <= 0 || durationSeconds > MAX_DURATION_SECONDS ||
+      durationSeconds <= 0 || wallSeconds > MAX_DURATION_SECONDS ||
       endedAtMs > now + 60_000 || endedAtMs < now - MAX_OFFLINE_AGE_MS
     ) {
       throw new HttpsError('invalid-argument', '記録時刻が不正です。');
@@ -126,7 +172,6 @@ export const submitActivity = onCall(
       throw new HttpsError('invalid-argument', '距離または速度が不正です。');
     }
 
-    const db = getFirestore();
     const userRef = db.doc(`users/${uid}`);
     const userSnap = await userRef.get();
     if (!userSnap.exists) throw new HttpsError('failed-precondition', 'ユーザー情報がありません。');
@@ -154,7 +199,6 @@ export const submitActivity = onCall(
       }))
     ).filter((id): id is string => id !== null) : [];
 
-    const activityRef = db.collection('activities').doc();
     const saveBatch = db.batch();
     saveBatch.create(activityRef, {
       userId: uid,
@@ -165,6 +209,7 @@ export const submitActivity = onCall(
       distanceKm,
       steps: measurementType === 'steps' ? steps : null,
       durationSeconds,
+      pausedMs,
       measurementType,
       startedAt: Timestamp.fromMillis(startedAtMs),
       endedAt: Timestamp.fromMillis(endedAtMs),
@@ -182,7 +227,22 @@ export const submitActivity = onCall(
         saveBatch.set(chunkRef, { index: chunkIndex, points: route.slice(index, index + ROUTE_CHUNK_SIZE) });
       }
     }
-    await saveBatch.commit();
+    try {
+      await saveBatch.commit();
+    } catch (error) {
+      // 同じlocalIdの並行送信では一方のcreateだけが成功する。勝者の結果を返し、
+      // 通信切断後の再送を含めてクライアントからは同じ成功として見せる。
+      const committedActivity = await activityRef.get();
+      if (!committedActivity.exists || committedActivity.data()?.['userId'] !== uid) throw error;
+      const committed = committedActivity.data()!;
+      return {
+        activityId: activityRef.id,
+        distanceKm: committed['distanceKm'],
+        durationSeconds: committed['durationSeconds'],
+        steps: committed['steps'] ?? 0,
+        battleIds: committed['battleIds'] ?? [],
+      };
+    }
 
     return {
       activityId: activityRef.id,

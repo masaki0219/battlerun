@@ -4,16 +4,6 @@ import { useRecordStore } from '../stores/recordStore';
 import { LOCATION_TASK_NAME } from '../lib/locationTask';
 import type { RoutePoint } from '../types';
 
-function haversine(a: RoutePoint, b: RoutePoint): number {
-  const R = 6371;
-  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
-  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
-  const sin2 =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.asin(Math.sqrt(sin2));
-}
-
 // バックグラウンド追跡が登録済みでも位置更新が届かなくなる「静かな停止」を検知するまでの猶予時間
 const WATCHDOG_TIMEOUT_MS = 20000;
 // ウォッチドッグの監視間隔
@@ -86,11 +76,10 @@ export function useLocation({ enabled }: { enabled: boolean }) {
               lng: loc.coords.longitude,
               timestamp: loc.timestamp,
             };
-            useRecordStore.setState((state) => {
-              const prevRoute = state.route;
-              const added = prevRoute.length > 0 ? haversine(prevRoute[prevRoute.length - 1], newPoint) : 0;
-              return { route: [...prevRoute, newPoint], distanceKm: state.distanceKm + added };
-            });
+            if (typeof loc.coords.altitude === 'number' && Number.isFinite(loc.coords.altitude)) {
+              newPoint.alt = loc.coords.altitude;
+            }
+            useRecordStore.getState().appendRoutePoint(newPoint);
           }
         );
         if (cancelled) { watchRef.current?.remove(); watchRef.current = null; return; }

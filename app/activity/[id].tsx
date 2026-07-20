@@ -1,18 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator,
+  ActivityIndicator, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { doc, getDoc, collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
-import { db } from '../../lib/firebase';
+import { db, functions } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import type { RoutePoint, ReactionType } from '../../types';
 import { Colors, DarkColors, BorderRadius, TextStyles } from '../../design_tokens';
 import { MonoLabel } from '../../components/ui/MonoLabel';
+import { KmSplitsCard } from '../../components/run/KmSplitsCard';
+import { kmSplits, elevationGainM, estimatedCalories } from '../../utils/displayStats';
 
 function formatTime(sec: number): string {
   const h = Math.floor(sec / 3600);
@@ -70,6 +73,7 @@ export default function ActivityDetailScreen() {
   const [reactions, setReactions] = useState<ReactionCount[]>([]);
   const [battleContributions, setBattleContributions] = useState<BattleContribution[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!id || !user) return;
@@ -83,21 +87,23 @@ export default function ActivityDetailScreen() {
         const startMs: number = d['startedAt']?.toMillis?.() ?? (d['startedAt']?.seconds ? d['startedAt'].seconds * 1000 : Date.now());
         const endMs: number = d['endedAt']?.toMillis?.() ?? (d['endedAt']?.seconds ? d['endedAt'].seconds * 1000 : Date.now());
 
-        let route: RoutePoint[] = ((d['route'] as any[]) ?? []).map((p: any) => ({
-          lat: p['lat'] as number,
-          lng: p['lng'] as number,
-          timestamp: p['timestamp'] as number,
-        }));
+        const toRoutePoint = (p: any): RoutePoint => {
+          const point: RoutePoint = {
+            lat: p['lat'] as number,
+            lng: p['lng'] as number,
+            timestamp: p['timestamp'] as number,
+          };
+          if (typeof p['alt'] === 'number') point.alt = p['alt'];
+          if (p['seg'] === true) point.seg = true;
+          return point;
+        };
+        let route: RoutePoint[] = ((d['route'] as any[]) ?? []).map(toRoutePoint);
         if ((d['userId'] as string) === user.id && route.length === 0) {
           const chunks = await getDocs(query(
             collection(db, 'users', user.id, 'activityRoutes', id, 'chunks'),
             orderBy('index', 'asc'),
           ));
-          route = chunks.docs.flatMap((chunk) => ((chunk.data()['points'] as any[]) ?? []).map((p: any) => ({
-            lat: p['lat'] as number,
-            lng: p['lng'] as number,
-            timestamp: p['timestamp'] as number,
-          })));
+          route = chunks.docs.flatMap((chunk) => ((chunk.data()['points'] as any[]) ?? []).map(toRoutePoint));
         }
 
         const battleIds = ((d['battleIds'] as string[] | undefined) ?? []);
@@ -149,6 +155,35 @@ export default function ActivityDetailScreen() {
     load();
   }, [id, user]);
 
+  function handleDelete() {
+    if (!id || !activity) return;
+    Alert.alert(
+      'この記録を削除しますか？',
+      '開催中のチャレンジに加算された距離も取り消されます。この操作は元に戻せません。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: '削除する',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              const remove = httpsCallable(functions, 'deleteActivity');
+              await remove({ activityId: id });
+              router.back();
+            } catch (e: any) {
+              const message = typeof e?.message === 'string' && e.message.length > 0
+                ? e.message
+                : '通信状態を確認してもう一度お試しください。';
+              Alert.alert('削除できませんでした', message);
+              setDeleting(false);
+            }
+          },
+        },
+      ],
+    );
+  }
+
   async function handleReaction(type: ReactionType) {
     if (!id || !user || !activity) return;
     const { doc: fDoc, setDoc, deleteDoc, serverTimestamp } = await import('firebase/firestore');
@@ -192,6 +227,9 @@ export default function ActivityDetailScreen() {
   const endTimeStr = endDt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
 
   const hasRoute = activity.measurementType === 'gps' && activity.route.length > 1;
+  const splits = hasRoute ? kmSplits(activity.route) : [];
+  const elevationGain = hasRoute ? elevationGainM(activity.route) : null;
+  const calories = estimatedCalories(activity.distanceKm, activity.durationSeconds);
   let mapRegion: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number } | null = null;
   if (hasRoute) {
     const lats = activity.route.map((p) => p.lat);
@@ -214,6 +252,20 @@ export default function ActivityDetailScreen() {
         <View style={{ flex: 1 }}>
           <Text style={s.headerTitle}>{dateStr}</Text>
         </View>
+        {user?.id === activity.userId && (
+          deleting ? (
+            <ActivityIndicator size="small" color={Colors.textTertiary} />
+          ) : (
+            <TouchableOpacity
+              onPress={handleDelete}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="この記録を削除"
+            >
+              <Ionicons name="trash-outline" size={20} color={Colors.textTertiary} />
+            </TouchableOpacity>
+          )
+        )}
       </View>
 
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
@@ -250,6 +302,8 @@ export default function ActivityDetailScreen() {
           <View style={s.timeRow}>
             <Ionicons name="time-outline" size={12} color={Colors.textTertiary} />
             <Text style={s.timeText}>{startTimeStr} 〜 {endTimeStr}</Text>
+            {calories != null && <Text style={s.timeText}>・推定 {calories} kcal</Text>}
+            {elevationGain != null && <Text style={s.timeText}>・獲得標高 +{elevationGain}m</Text>}
           </View>
         </View>
 
@@ -269,6 +323,14 @@ export default function ActivityDetailScreen() {
                 strokeWidth={3}
               />
             </MapView>
+          </View>
+        )}
+
+        {/* ── 1km splits ── */}
+        {splits.length > 0 && (
+          <View style={s.section}>
+            <Text style={TextStyles.sectionTitle}>1kmラップ</Text>
+            <KmSplitsCard splits={splits} />
           </View>
         )}
 

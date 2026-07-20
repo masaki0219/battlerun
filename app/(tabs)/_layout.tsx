@@ -1,11 +1,16 @@
 import React, { useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { Alert, AppState, View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useAuthStore } from '../../stores/authStore';
-import { useRecordStore, hydrateRecordingSession, flushPendingActivities } from '../../stores/recordStore';
+import {
+  flushPendingActivities,
+  hydrateRecordingSession,
+  subscribePendingActivityDiscards,
+  useRecordStore,
+} from '../../stores/recordStore';
 import { useLocation } from '../../hooks/useLocation';
 import '../../lib/locationTask';
 import { useStepCounter } from '../../hooks/useStepCounter';
@@ -160,15 +165,42 @@ const tb = StyleSheet.create({
 export default function TabLayout() {
   const { user, isLoading } = useAuthStore();
   const isRecording = useRecordStore((s) => s.isRecording);
+  const isPaused = useRecordStore((s) => s.isPaused);
   const measurementType = useRecordStore((s) => s.measurementType);
+
+  useEffect(() => subscribePendingActivityDiscards((count) => {
+    Alert.alert(
+      '未送信の記録を確認しました',
+      `サーバーの検証条件を満たさなかった記録${count}件を、再送対象から削除しました。`,
+    );
+  }), []);
 
   useEffect(() => {
     void hydrateRecordingSession();
-    if (user) void flushPendingActivities();
+    if (!user) return;
+
+    const flush = () => {
+      void flushPendingActivities().catch((error) => {
+        console.warn('[TabLayout] pending activity flush failed:', error);
+      });
+    };
+    flush();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') flush();
+    });
+    // 接続状態ライブラリに依存せず、アプリを開いたままの電波復帰も短時間で拾う。
+    const retryTimer = setInterval(() => {
+      if (AppState.currentState === 'active') flush();
+    }, 30_000);
+    return () => {
+      clearInterval(retryTimer);
+      subscription.remove();
+    };
   }, [user?.id]);
 
-  useLocation({ enabled: isRecording });
-  useStepCounter({ enabled: isRecording && measurementType === 'steps' });
+  // 一時停止中は追跡を止める（再開時に権限は保持されたまま再起動する）
+  useLocation({ enabled: isRecording && !isPaused });
+  useStepCounter({ enabled: isRecording && !isPaused && measurementType === 'steps' });
 
   if (isLoading || !user) {
     return <View style={{ flex: 1, backgroundColor: Colors.background }} />;

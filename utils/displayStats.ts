@@ -4,7 +4,7 @@
  * ★重要: このファイルは純関数のみ。Firestore / store / 副作用の import を禁止する。
  * 入力は各画面が既に取得済みの Activity[] / CategoryStats[] / Battle のみ。
  */
-import type { Activity, CategoryStats } from '../types';
+import type { Activity, CategoryStats, RoutePoint } from '../types';
 
 const DAY_MS = 86_400_000;
 const WEEKDAY = ['日', '月', '火', '水', '木', '金', '土'] as const;
@@ -186,4 +186,105 @@ export function relativeDay(iso: string, now: Date = new Date()): string {
   if (diffDays === 1) return '昨日';
   if (diffDays >= 2 && diffDays < 7) return `${diffDays}日前`;
   return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+// ============================================================
+// GPSルートの派生値（1kmラップ・獲得標高・推定カロリー）
+// ============================================================
+
+function haversineKm(a: RoutePoint, b: RoutePoint): number {
+  const R = 6371;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const sin2 =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.asin(Math.sqrt(sin2));
+}
+
+export interface KmSplit {
+  /** 区間の終端距離（km）。整数区間は 1, 2, …、最後の端数区間のみ小数 */
+  km: number;
+  /** この区間にかかった秒数 */
+  seconds: number;
+  /** 区間の実距離（km）。整数区間は 1、端数区間のみ 1 未満 */
+  distanceKm: number;
+}
+
+/**
+ * ルートから1kmごとのラップを計算する。
+ * - km境界はペア内を時間で線形補間する。
+ * - seg 付きの点（一時停止跨ぎ）は距離・時間とも積まない。
+ * - 末尾の端数区間は 0.05km 以上のときだけ返す。
+ */
+export function kmSplits(route: RoutePoint[]): KmSplit[] {
+  const splits: KmSplit[] = [];
+  let cumDist = 0;
+  let splitSeconds = 0;
+  let nextMark = 1;
+  for (let i = 1; i < route.length; i++) {
+    const pt = route[i];
+    if (pt.seg) continue;
+    const prev = route[i - 1];
+    let pairDist = haversineKm(prev, pt);
+    let pairTime = Math.max(0, (pt.timestamp - prev.timestamp) / 1000);
+    while (pairDist > 0 && cumDist + pairDist >= nextMark) {
+      const need = nextMark - cumDist;
+      const frac = need / pairDist;
+      splitSeconds += pairTime * frac;
+      splits.push({ km: nextMark, seconds: Math.round(splitSeconds), distanceKm: 1 });
+      cumDist = nextMark;
+      pairDist -= need;
+      pairTime *= 1 - frac;
+      splitSeconds = 0;
+      nextMark += 1;
+    }
+    cumDist += pairDist;
+    splitSeconds += pairTime;
+  }
+  const partialKm = cumDist - (nextMark - 1);
+  if (partialKm >= 0.05 && splitSeconds > 0) {
+    splits.push({ km: cumDist, seconds: Math.round(splitSeconds), distanceKm: partialKm });
+  }
+  return splits;
+}
+
+/**
+ * 獲得標高（上りの合計、m）。GPS高度はノイズが大きいので3m以上の上昇だけを積む。
+ * 高度情報が1点も無ければ null。
+ */
+export function elevationGainM(route: RoutePoint[]): number | null {
+  let base: number | null = null;
+  let gain = 0;
+  let hasAlt = false;
+  for (const p of route) {
+    if (typeof p.alt !== 'number' || !Number.isFinite(p.alt)) continue;
+    hasAlt = true;
+    if (base === null) {
+      base = p.alt;
+      continue;
+    }
+    const delta = p.alt - base;
+    if (delta >= 3) {
+      gain += delta;
+      base = p.alt;
+    } else if (delta < 0) {
+      base = p.alt;
+    }
+  }
+  return hasAlt ? Math.round(gain) : null;
+}
+
+/** 推定カロリー計算の想定体重（kg）。プロフィールに体重が無いため固定値で近似する */
+export const CALORIE_WEIGHT_KG = 60;
+
+/**
+ * 推定消費カロリー（kcal）。体重60kg換算の概算で、平均速度 7km/h 以上を走行
+ * （係数1.05）、未満を歩行（係数0.55）として距離に掛ける。distanceKm<=0 は null。
+ */
+export function estimatedCalories(distanceKm: number, durationSeconds: number): number | null {
+  if (distanceKm <= 0) return null;
+  const speedKmh = durationSeconds > 0 ? distanceKm / (durationSeconds / 3600) : 0;
+  const factor = speedKmh >= 7 ? 1.05 : 0.55;
+  return Math.round(distanceKm * CALORIE_WEIGHT_KG * factor);
 }

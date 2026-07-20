@@ -13,18 +13,6 @@ import type { RoutePoint } from '../types';
 
 export const LOCATION_TASK_NAME = 'battlerun-background-location';
 
-function haversine(a: RoutePoint, b: RoutePoint): number {
-  const R = 6371;
-  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
-  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
-  const sin2 =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((a.lat * Math.PI) / 180) *
-      Math.cos((b.lat * Math.PI) / 180) *
-      Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.asin(Math.sqrt(sin2));
-}
-
 TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
   if (error) {
     console.warn('[LocationTask] error:', error.message);
@@ -35,7 +23,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
 
   await hydrateRecordingSession();
   const state = useRecordStore.getState();
-  if (!state.isRecording || state.measurementType !== 'gps') return;
+  if (!state.isRecording || state.isPaused || state.measurementType !== 'gps') return;
 
   for (const loc of locations) {
     const newPoint: RoutePoint = {
@@ -43,10 +31,9 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
       lng: loc.coords.longitude,
       timestamp: loc.timestamp,
     };
-    useRecordStore.setState((s) => {
-      const prev = s.route[s.route.length - 1];
-      const added = prev ? haversine(prev, newPoint) : 0;
-      return { route: [...s.route, newPoint], distanceKm: s.distanceKm + added };
-    });
+    if (typeof loc.coords.altitude === 'number' && Number.isFinite(loc.coords.altitude)) {
+      newPoint.alt = loc.coords.altitude;
+    }
+    useRecordStore.getState().appendRoutePoint(newPoint);
   }
 });

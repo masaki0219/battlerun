@@ -13,6 +13,8 @@ import { useAuthStore } from '../../stores/authStore';
 import { isPro } from '../../lib/pro';
 import { Colors, DarkColors, BorderRadius, TextStyles } from '../../design_tokens';
 import { MonoLabel } from '../../components/ui/MonoLabel';
+import { KmSplitsCard } from '../../components/run/KmSplitsCard';
+import { estimatedCalories, type KmSplit } from '../../utils/displayStats';
 
 function formatTime(sec: number): string {
   const h = Math.floor(sec / 3600);
@@ -37,6 +39,8 @@ export default function RecordingSummaryScreen() {
     durationSeconds: string;
     steps: string;
     pace: string;
+    splits: string;
+    elevationGain: string;
   }>();
 
   const activityId = params.activityId ?? '';
@@ -44,11 +48,22 @@ export default function RecordingSummaryScreen() {
   const durationSeconds = parseInt(params.durationSeconds ?? '0', 10);
   const steps = parseInt(params.steps ?? '0', 10);
   const pace = params.pace ?? "--'--\"";
+  const splits: KmSplit[] = (() => {
+    try {
+      const parsed = JSON.parse(params.splits ?? '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  })();
+  const elevationGain = params.elevationGain ? parseInt(params.elevationGain, 10) : null;
+  const calories = estimatedCalories(distanceKm, durationSeconds);
 
   const { user, proEntitlement } = useAuthStore();
   const userIsPro = isPro(user?.plan, proEntitlement);
   const [impacts, setImpacts] = useState<BattleImpact[]>([]);
   const [loadingImpact, setLoadingImpact] = useState(true);
+  const [impactTimedOut, setImpactTimedOut] = useState(false);
   const shareCardRef = useRef<View>(null);
 
   // サーバー集計が確定した時点の before/after を活動ドキュメントから受け取る。
@@ -56,17 +71,38 @@ export default function RecordingSummaryScreen() {
   useEffect(() => {
     if (!user || !activityId) {
       setLoadingImpact(false);
+      setImpactTimedOut(false);
       return;
     }
     setLoadingImpact(true);
-    return onSnapshot(doc(db, 'activities', activityId), (snapshot) => {
+    setImpactTimedOut(false);
+    const timeout = setTimeout(() => {
+      setLoadingImpact(false);
+      setImpactTimedOut(true);
+    }, 15_000);
+    const unsubscribe = onSnapshot(doc(db, 'activities', activityId), (snapshot) => {
       if (!snapshot.exists()) return;
       const data = snapshot.data();
       const impactMap = (data['aggregationImpacts'] as Record<string, BattleImpact> | undefined) ?? {};
-      setImpacts(Object.values(impactMap));
-      if (data['aggregated'] === true) setLoadingImpact(false);
-    }, () => setLoadingImpact(false));
-  }, [user, activityId]);
+      setImpacts(Object.values(impactMap).sort((a, b) => {
+        const rankGain = (b.rankBefore - b.rankAfter) - (a.rankBefore - a.rankAfter);
+        return rankGain || a.battleId.localeCompare(b.battleId);
+      }));
+      if (data['aggregated'] === true) {
+        clearTimeout(timeout);
+        setImpactTimedOut(false);
+        setLoadingImpact(false);
+      }
+    }, () => {
+      clearTimeout(timeout);
+      setLoadingImpact(false);
+      setImpactTimedOut(true);
+    });
+    return () => {
+      clearTimeout(timeout);
+      unsubscribe();
+    };
+  }, [user?.id, activityId]);
 
   const primaryImpact = impacts[0] ?? null;
   const rankChanged = primaryImpact && primaryImpact.rankBefore !== primaryImpact.rankAfter;
@@ -126,7 +162,26 @@ export default function RecordingSummaryScreen() {
               <Text style={s.heroStatVal}>{steps > 0 ? steps.toLocaleString() : '---'}</Text>
             </View>
           </View>
+
+          {(calories != null || elevationGain != null) && (
+            <View style={s.heroSubStats}>
+              {calories != null && (
+                <Text style={s.heroSubStatText}>推定 {calories} kcal（体重60kg換算）</Text>
+              )}
+              {elevationGain != null && (
+                <Text style={s.heroSubStatText}>獲得標高 +{elevationGain}m</Text>
+              )}
+            </View>
+          )}
         </View>
+
+        {/* ── 1km splits ────────────────────────────────── */}
+        {splits.length > 0 && (
+          <View style={s.section}>
+            <Text style={TextStyles.sectionTitle}>1kmラップ</Text>
+            <KmSplitsCard splits={splits} />
+          </View>
+        )}
 
         {/* ── Battle impact ─────────────────────────────── */}
         <View style={s.section}>
@@ -134,6 +189,12 @@ export default function RecordingSummaryScreen() {
           {loadingImpact ? (
             <View style={[s.impactCard, { alignItems: 'center', paddingVertical: 24 }]}>
               <ActivityIndicator color={Colors.primary} />
+            </View>
+          ) : impactTimedOut ? (
+            <View style={[s.impactCard, { alignItems: 'center', paddingVertical: 20 }]}>
+              <Ionicons name="time-outline" size={30} color={Colors.textTertiary} />
+              <Text style={{ color: Colors.textSecondary, marginTop: 8, fontSize: 13, fontWeight: '700' }}>集計中です</Text>
+              <Text style={{ color: Colors.textTertiary, fontSize: 11, marginTop: 3 }}>あとで活動詳細から確認できます</Text>
             </View>
           ) : primaryImpact ? (
             <View style={s.impactCard}>
@@ -266,6 +327,12 @@ const s = StyleSheet.create({
     borderTopWidth: 1, borderTopColor: DarkColors.lineStrong,
   },
   heroStat: { flex: 1, paddingHorizontal: 14, gap: 4 },
+  heroSubStats: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 12,
+    marginTop: 12, paddingTop: 12,
+    borderTopWidth: 1, borderTopColor: DarkColors.lineStrong,
+  },
+  heroSubStatText: { fontSize: 11, fontWeight: '600', color: DarkColors.textTertiary },
   heroStatVal: { fontSize: 17, fontWeight: '600', color: DarkColors.textPrimary, letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
   heroStatUnit: { fontSize: 10, color: DarkColors.textTertiary },
   heroStatDivider: { width: 1, backgroundColor: DarkColors.lineStrong },

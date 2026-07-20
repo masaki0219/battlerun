@@ -12,5 +12,6 @@ export { onReactionCreated, onUserTitlesUpdated } from './notifications';
 export { validateBattleTitleOnCreate } from './battleTitleValidation';
 export { onUserDeleted } from './onUserDeleted';
 export { submitActivity } from './submitActivity';
+export { deleteActivity } from './deleteActivity';
 export { awardBadgesOnActivityAggregated, syncMyBadges } from './badges';
 export { lookupBattleByInviteCode } from './lookupBattle';

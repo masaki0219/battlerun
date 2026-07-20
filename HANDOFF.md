@@ -1,6 +1,6 @@
 # HANDOFF
 
-最終更新: 2026-07-19
+最終更新: 2026-07-20
 
 ## プロジェクトの目的
 
@@ -21,6 +21,30 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 ※ 同フォルダの `BattleRunホーム画面作成 (コピー).zip` は旧版。パレット（`theme.css`）は同一だが、ヒーローが2陣営のVSゲージで、チーム内ランキングが無い。**最終版はこちら（コピーでない方）**。
 
 ## 最後に完了したこと
+
+### 記録停止・オフライン再送フローの堅牢化（2026-07-20）
+
+- 停止時にチャレンジ一覧の通信を待たず、最初に `stopRecording()` で計測を止めてからローカルキューへ保存する順序へ変更。オフライン停止時の記録消失と、低速回線で停止後も時間・距離が伸びる問題を解消した。
+- 未送信記録の `localId` を `submitActivity` へ渡し、その値を `activities` のドキュメントIDに使用。同じIDが既に本人の記録として存在する場合は既存結果を返すため、Functions の commit 後に応答が失われても再送で二重登録・二重集計されない。
+- AsyncStorageキューの read-modify-write を短い排他区間に直列化。ネットワーク送信中はロックせず、flush中に新しい記録が追加されても古いスナップショットで消さない方式へ変更した。flush自体の重複実行も共有Promiseで抑止している。
+- Callable の `invalid-argument` / `failed-precondition` / `permission-denied` は恒久エラーとしてキューから除外し、ユーザーへ通知。一時的な通信エラーだけを再送対象に残す。再送はログイン時に加え、foreground復帰時・アプリ使用中30秒間隔・次回保存成功時にも行う。
+- 停止連打ガードと `stopRecording` の二重停止ガードを追加。距離0は完了画面へ遷移せず未保存を通知し、ローカルキューへの書き込み自体が失敗した場合は記録をメモリ上の一時停止状態へ戻す。
+- HUDのGPS点追加にも保存時と同じ速度フィルタを適用。サマリーの主チャレンジは順位上昇幅→battleIdで決定的に選択し、集計待ちは15秒で「あとで活動詳細から確認」にフォールバックする。
+- 確認: `npx tsc --noEmit`、`npm run test:unit`、Functions の `npm run build`、`npx expo export --platform ios` はすべて成功。ルール変更はないため `npm run test:rules` は未実行。Functions の変更は未デプロイ。
+
+### ランニングアプリ基本機能の拡充（2026-07-19）
+
+単体のランニングアプリとして不足していた機能（一時停止・記録削除・1kmラップ・目標・カウントダウン・開始前GPS状態・生涯累計・推定カロリー・獲得標高）を実装した。**Functions のデプロイと実機目視は未実施**（「未解決・要確認」参照）。
+
+- **一時停止/再開**: `recordStore` に `isPaused` / `pausedAt` / `pausedTotalMs` / `appendRoutePoint` を追加。停止中は `(tabs)/_layout.tsx` で GPS・歩数の追跡自体を止め、再開後の最初の点に `seg: true`（セグメント先頭マーク）を付けて、停止中の移動距離と時間を距離・ペース・ラップから除外する。実走時間は `activeDurationSeconds()`（開始時刻差分から pausedMs を引く）で計算。記録中セッションの AsyncStorage 保全・復旧にも停止状態を含めた。復旧時は `segmentPending: true` にして再起動ギャップの直線距離を数えない（従来は数えていた）。
+- **サーバー側の対応** (`functions/src/submitActivity.ts`): `pausedMs` を受け取り実走時間で保存・平均速度検査（過大申告は検査が厳しくなる方向なのでチート不可）。`parseRoute` は `seg` / `alt`（高度）を保持し、seg 点が検証で落ちた場合は境界を次の採用点へ引き継ぐ。`routeDistance` は seg 跨ぎペアを距離に数えない（seg はセグメント内の速度検査対象外だが、距離にも数えないので水増しには使えない）。活動ドキュメントに `pausedMs` を保存。
+- **記録の削除**: `functions/src/deleteActivity.ts` を新設（index.ts で export 済み）。本人確認・`aggregated === true` 必須（集計との競合防止）。`aggregationImpacts` を基に **status が active のバトルだけ** participant / category_stats を減算（終了済みは結果確定のため戻さない）。`reversedBattleIds` の arrayUnion でバトル単位に冪等化。ルートチャンク→リアクション→（ユーザー累計減算＋本体削除）の順で削除し、途中失敗はリトライで完遂できる。UI は `app/activity/[id].tsx` ヘッダーのゴミ箱アイコン（本人のみ）＋確認ダイアログ。ルール変更は不要（Callable は Admin SDK）。
+- **1kmラップ**: `utils/displayStats.ts` に `kmSplits()`（km境界をペア内の時間で線形補間、seg 跨ぎは距離・時間とも不算入）。`components/run/KmSplitsCard.tsx`（最遅区間を100%とする相対バー、最速区間はアクセント色）をサマリーと活動詳細に表示。サマリーへはルートを渡さず、record.tsx で計算した splits を JSON パラメータで渡す。
+- **目標とカウントダウン**: 開始前に目標チップ（なし/3km/5km/10km/30分/60分）を選択。START→3・2・1 のオーバーレイカウントダウン（タップでキャンセル、音声ONなら「スタート」読み上げ）→記録開始。記録中HUDに目標プログレスバーと残り表示、達成時に一度だけ読み上げ。目標は `recordStore.goal` として保持・永続化。
+- **開始前GPS状態**: ラン画面（GPSモード・開始前）で権限を**要求せず**確認し、許可済みなら測位を1回試して「GPS 準備OK / 確認中 / 位置情報は開始時に許可できます / 取得できません」のチップを表示。
+- **生涯累計**: 記録タブの「距離」カードを `users.totalDistanceKm`（aggregateActivity がサーバー集計、authStore が onSnapshot 購読）優先に変更。無ければ従来どおり直近50件合算で「直近50件」表記。
+- **推定カロリー・獲得標高**: `estimatedCalories()`（体重60kg換算、平均7km/h以上は走行係数1.05・未満は歩行0.55）と `elevationGainM()`（3m閾値のヒステリシスでGPSノイズを抑制）。高度は `RoutePoint.alt` として foreground/background 両方の追跡で取得し、サーバーがチャンクへ保存。サマリーのヒーローカード下段と活動詳細の時刻行に表示。
+- 確認: `npx tsc --noEmit`、`functions` の `npm run build`、`npx expo export --platform ios` すべて成功。`kmSplits` / `elevationGainM` / `estimatedCalories`（16項目）とコンパイル済みサーバー `parseRoute` / `routeDistance`（seg跨ぎ距離除外・後方互換・境界引き継ぎ・ワープ除外・alt保持の7項目）を node で実測し全て成功。`npm run test:rules` は未実行（ルール変更なし）。
 
 ### 未コミット差分のコードレビューと確定バグ修正（2026-07-19）
 
@@ -132,9 +156,12 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 
 ## 次にやること
 
-`RELEASE_TEST_CHECKLIST.md` の通し確認（Day-0、GPS保存、再送、ランキング反映、アカウント削除を2アカウントの実機で）を行い、問題なければ App Store 審査へ提出する。
+1. `firebase deploy --only functions` で `submitActivity`（localId冪等化 / pausedMs / seg / alt 対応）と新設 `deleteActivity` をデプロイする。
 
 ## その次の候補
+- 実機でオフライン停止→端末キュー保存→オンライン復帰後30秒以内の再送と、サマリー集計の15秒フォールバックを確認する
+- 実機で新機能を目視確認する: 一時停止/再開、カウントダウン、目標バー、1kmラップ、記録削除、開始前GPSチップ
+- `RELEASE_TEST_CHECKLIST.md` の通し確認（Day-0、GPS保存、再送、ランキング反映、アカウント削除を2アカウントの実機で）を行う
 - 旧 `battlerun-75eb6` プロジェクトの削除（または凍結）を検討する
 - ローカル `ios/` は表示名等が旧設定のまま。ローカルでネイティブビルドする場合は `npx expo prebuild --platform ios --clean` で再生成する
 - masaki0219/app-support（GitHub Pages）の docs/battlerun/ 配下サポートページをZelio表記へ同期する
@@ -145,6 +172,8 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 
 ## 未解決・要確認
 
+- **ランニング基本機能拡充と保存冪等化のデプロイ・確認が未実施（2026-07-20）**: `submitActivity` の変更（localId冪等化 / pausedMs / seg / alt）と新設 `deleteActivity` は **`firebase deploy --only functions` が必要**。新クライアントはlocalIdを必須送信するため、オフライン再送を含む保存確認はFunctionsデプロイ後に行うこと。削除ボタンもデプロイまで「削除できませんでした」になる。実機/シミュレータでの目視（一時停止HUD・オフライン再送・カウントダウン・目標バー・ラップ表示・削除フロー）も未実施。
+- 一時停止まわりの設計メモ: 終了済みバトルの集計は削除時に減算しない（結果確定のため）。バッジは削除しても剥奪しない。セッション復旧時（アプリ再起動）は `segmentPending: true` でギャップ距離を数えない仕様に変えた。
 - `EXPO_PUBLIC_REVENUECAT_API_KEY` は `appl_RRF…`（.env側の値）が正と確認され、`eas.json` 3プロファイルを統一済み（2026-07-19）。
 - 修正済み `revenuecatWebhook` のデプロイと zelio-run 残作業（Auth メール/パスワード有効化、Firestore データコピー、RevenueCat Webhook URL 変更）はユーザー報告により完了（2026-07-19）。
 - 実機での画面目視（PeriodPicker・月額/年額選択UI等）はユーザー報告により完了（2026-07-19）。

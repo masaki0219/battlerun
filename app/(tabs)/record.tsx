@@ -7,36 +7,62 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import { Pedometer } from 'expo-sensors';
 import * as Speech from 'expo-speech';
+import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useRecordStore, saveActivityToFirestore } from '../../stores/recordStore';
+import {
+  ActivitySaveError,
+  activeDurationSeconds,
+  saveActivityToFirestore,
+  useRecordStore,
+} from '../../stores/recordStore';
 import { useAuthStore } from '../../stores/authStore';
 import { useBattleStore } from '../../stores/battleStore';
 import { useRecentActivities } from '../../hooks/useRecentActivities';
-import type { MeasurementType, RoutePoint } from '../../types';
+import type { Activity, MeasurementType, RoutePoint, RunGoal } from '../../types';
 import { Colors, DarkColors, Spacing, BorderRadius, Shadow, TextStyles } from '../../design_tokens';
 import { MonoLabel } from '../../components/ui/MonoLabel';
 import { StatBlock } from '../../components/ui/StatBlock';
 import { SectionHeader } from '../../components/ui/SectionHeader';
 import { ListRow } from '../../components/ui/ListRow';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { ProgressBar } from '../../components/ui/ProgressBar';
 import { WeeklyBarChart } from '../../components/viz/WeeklyBarChart';
 import { StreakChip } from '../../components/viz/StreakChip';
-import { weeklyBuckets, streakDays, lastRun, relativeDay } from '../../utils/displayStats';
+import { weeklyBuckets, streakDays, lastRun, relativeDay, kmSplits, elevationGainM } from '../../utils/displayStats';
 
 function useElapsedTime(): number {
   const isRecording = useRecordStore((s) => s.isRecording);
+  const isPaused = useRecordStore((s) => s.isPaused);
   const startedAt = useRecordStore((s) => s.startedAt);
+  const pausedAt = useRecordStore((s) => s.pausedAt);
+  const pausedTotalMs = useRecordStore((s) => s.pausedTotalMs);
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     if (!isRecording || !startedAt) { setElapsed(0); return; }
-    const iv = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
-    }, 1000);
+    const compute = () => setElapsed(activeDurationSeconds({ startedAt, pausedAt, pausedTotalMs }));
+    compute();
+    if (isPaused) return; // 停止中は時間が進まないのでタイマー不要
+    const iv = setInterval(compute, 1000);
     return () => clearInterval(iv);
-  }, [isRecording, startedAt]);
+  }, [isRecording, isPaused, startedAt, pausedAt, pausedTotalMs]);
   return elapsed;
 }
+
+const GOAL_OPTIONS: { label: string; goal: RunGoal | null }[] = [
+  { label: '目標なし', goal: null },
+  { label: '3km', goal: { type: 'distance', value: 3 } },
+  { label: '5km', goal: { type: 'distance', value: 5 } },
+  { label: '10km', goal: { type: 'distance', value: 10 } },
+  { label: '30分', goal: { type: 'duration', value: 1800 } },
+  { label: '60分', goal: { type: 'duration', value: 3600 } },
+];
+
+function goalLabel(goal: RunGoal): string {
+  return goal.type === 'distance' ? `${goal.value}km` : `${Math.round(goal.value / 60)}分`;
+}
+
+type GpsReadiness = 'checking' | 'ready' | 'no-permission' | 'unavailable';
 
 function formatTime(s: number): string {
   const h = Math.floor(s / 3600);
@@ -61,8 +87,8 @@ export default function RecordScreen() {
     getActiveBattleIds, fetchMyMemberships, fetchMyPrivateBattles, fetchPublicBattles,
   } = useBattleStore();
   const {
-    isRecording, measurementType, distanceKm, steps, route, locationMode, gpsWarning,
-    startRecording, stopRecording, reset,
+    isRecording, isPaused, measurementType, distanceKm, steps, route, locationMode, gpsWarning, goal,
+    startRecording, pauseRecording, resumeRecording, stopRecording, reset,
   } = useRecordStore();
   const elapsed = useElapsedTime();
 
@@ -97,7 +123,12 @@ export default function RecordScreen() {
   const [savedStats, setSavedStats] = useState<{ distanceKm: number; durationSeconds: number } | null>(null);
   const [showRouteModal, setShowRouteModal] = useState(false);
   const [voiceGuide, setVoiceGuide] = useState(true);
+  const [selectedGoalIdx, setSelectedGoalIdx] = useState(0);
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [gpsReadiness, setGpsReadiness] = useState<GpsReadiness | null>(null);
   const spokenKmRef = useRef(0);
+  const goalAnnouncedRef = useRef(false);
+  const stopGuardRef = useRef(false);
 
   // REC ドット点滅（opacity 1↔0.3、1秒周期）
   const recDotAnim = useRef(new Animated.Value(1)).current;
@@ -139,10 +170,57 @@ export default function RecordScreen() {
     }
   }, [distanceKm, isRecording, voiceGuide]);
 
+  // 目標達成を一度だけアナウンス
+  useEffect(() => {
+    if (!isRecording) { goalAnnouncedRef.current = false; return; }
+    if (!goal || goalAnnouncedRef.current) return;
+    const achieved = goal.type === 'distance' ? distanceKm >= goal.value : elapsed >= goal.value;
+    if (achieved) {
+      goalAnnouncedRef.current = true;
+      if (voiceGuide) {
+        Speech.speak(`目標の${goal.type === 'distance' ? `${goal.value}キロメートル` : `${Math.round(goal.value / 60)}分`}を達成しました`, { language: 'ja-JP', rate: 1.0 });
+      }
+    }
+  }, [distanceKm, elapsed, isRecording, goal, voiceGuide]);
+
   // 記録停止時に音声リセット
   useEffect(() => {
     if (!isRecording) spokenKmRef.current = 0;
   }, [isRecording]);
+
+  // 開始前のGPS捕捉状態。権限の要求はせず（要求は開始時）、許可済みなら測位を1回試す
+  useEffect(() => {
+    if (isRecording || selectedMode !== 'gps') { setGpsReadiness(null); return; }
+    let cancelled = false;
+    setGpsReadiness('checking');
+    (async () => {
+      const permission = await Location.getForegroundPermissionsAsync().catch(() => null);
+      if (cancelled) return;
+      if (!permission?.granted) { setGpsReadiness('no-permission'); return; }
+      try {
+        await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        if (!cancelled) setGpsReadiness('ready');
+      } catch {
+        if (!cancelled) setGpsReadiness('unavailable');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isRecording, selectedMode]);
+
+  // カウントダウン: 3→2→1→開始
+  useEffect(() => {
+    if (countdown === null) return;
+    if (countdown <= 0) {
+      setCountdown(null);
+      startRecording(selectedMode, GOAL_OPTIONS[selectedGoalIdx]?.goal ?? null);
+      if (voiceGuide) Speech.speak('スタート', { language: 'ja-JP', rate: 1.0 });
+      return;
+    }
+    const timer = setTimeout(() => {
+      setCountdown((current) => (current === null ? null : current - 1));
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [countdown, selectedMode, selectedGoalIdx, voiceGuide]);
 
   async function handleStart() {
     if (selectedMode === 'steps') {
@@ -152,24 +230,32 @@ export default function RecordScreen() {
         return;
       }
     }
-    startRecording(selectedMode);
+    setCountdown(3);
   }
 
   async function handleStop() {
+    if (stopGuardRef.current || !isRecording) return;
+    stopGuardRef.current = true;
     Alert.alert('記録を停止しますか？', '', [
-      { text: 'キャンセル', style: 'cancel' },
+      {
+        text: 'キャンセル',
+        style: 'cancel',
+        onPress: () => { stopGuardRef.current = false; },
+      },
       {
         text: '停止して保存', style: 'destructive',
         onPress: async () => {
-          if (!user) { Alert.alert('エラー', 'ログインが必要です'); return; }
+          if (!user) {
+            stopGuardRef.current = false;
+            Alert.alert('エラー', 'ログインが必要です');
+            return;
+          }
           setIsSaving(true);
+          let stoppedActivity: Activity | null = null;
           try {
-            await Promise.all([
-              fetchMyMemberships(user.id),
-              fetchMyPrivateBattles(user.id),
-              fetchPublicBattles(),
-            ]);
+            // 通信を待つ前に計測を止める。保存先チャレンジはCallableがサーバー側で確定する。
             const activity = await stopRecording();
+            stoppedActivity = activity;
             if (voiceGuide) {
               Speech.speak(
                 `記録を終了しました。${activity.distanceKm.toFixed(1)}キロメートルです`,
@@ -179,31 +265,69 @@ export default function RecordScreen() {
             const submitted = await saveActivityToFirestore({
               activity,
             });
+            if (!submitted) {
+              reset();
+              Alert.alert(
+                '記録を保存できませんでした',
+                '有効な距離が計測されていないため、この記録は保存されませんでした。',
+              );
+              return;
+            }
             setSavedRoute(activity.route ?? []);
-            const savedDistanceKm = submitted?.distanceKm ?? activity.distanceKm;
-            const savedDurationSeconds = submitted?.durationSeconds ?? activity.durationSeconds;
+            const savedDistanceKm = submitted.distanceKm;
+            const savedDurationSeconds = submitted.durationSeconds;
             setSavedStats({ distanceKm: savedDistanceKm, durationSeconds: savedDurationSeconds });
+            const splits = activity.measurementType === 'gps' ? kmSplits(activity.route ?? []) : [];
+            const elevation = elevationGainM(activity.route ?? []);
             reset();
             // Navigate to summary
             router.push({
               pathname: '/record/summary' as any,
               params: {
-                activityId: submitted?.activityId ?? '',
+                activityId: submitted.activityId,
                 distanceKm: savedDistanceKm.toFixed(2),
                 durationSeconds: String(savedDurationSeconds),
-                steps: String(submitted?.steps ?? activity.steps ?? 0),
+                steps: String(submitted.steps ?? activity.steps ?? 0),
                 pace: formatPace(savedDistanceKm, savedDurationSeconds),
+                splits: JSON.stringify(splits),
+                elevationGain: elevation != null ? String(elevation) : '',
               },
             });
-          } catch (e: any) {
-            Alert.alert(
-              '端末に保存しました',
-              '通信できなかったため、記録を端末に保管しました。次回オンライン時に自動で再送します。',
-              [{ text: 'OK', onPress: () => reset() }],
-            );
+          } catch (e: unknown) {
+            if (e instanceof ActivitySaveError && e.kind === 'queued') {
+              reset();
+              Alert.alert(
+                '端末に保存しました',
+                '通信できなかったため、記録を端末に保管しました。オンライン復帰時に自動で再送します。',
+              );
+            } else if (e instanceof ActivitySaveError && e.kind === 'rejected') {
+              reset();
+              Alert.alert(
+                '記録を保存できませんでした',
+                '記録データがサーバーの検証条件を満たさなかったため、再送対象には残していません。',
+              );
+            } else {
+              if (stoppedActivity) {
+                // ローカル保存自体が失敗した場合はメモリ上の記録を破棄せず、一時停止へ戻す。
+                useRecordStore.setState({
+                  isRecording: true,
+                  isPaused: true,
+                  pausedAt: new Date().toISOString(),
+                  pausedTotalMs: stoppedActivity.pausedMs ?? 0,
+                  locationMode: 'idle',
+                  gpsWarning: false,
+                  segmentPending: true,
+                });
+              }
+              Alert.alert(
+                '端末への保存に失敗しました',
+                '記録を端末の再送キューへ保存できなかったため、一時停止状態に戻しました。空き容量を確認して、もう一度停止してください。',
+              );
+            }
             console.error('saveActivityToFirestore error:', e);
           } finally {
             setIsSaving(false);
+            stopGuardRef.current = false;
           }
         },
       },
@@ -267,6 +391,28 @@ export default function RecordScreen() {
             />
           </View>
 
+          {/* Goal chips */}
+          <View style={s.goalRow}>
+            <Text style={s.goalRowLabel}>目標</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.goalChips}>
+              {GOAL_OPTIONS.map((option, idx) => {
+                const active = selectedGoalIdx === idx;
+                return (
+                  <TouchableOpacity
+                    key={option.label}
+                    style={[s.goalChip, active && s.goalChipActive]}
+                    onPress={() => setSelectedGoalIdx(idx)}
+                    accessibilityRole="radio"
+                    accessibilityLabel={`目標 ${option.label}`}
+                    accessibilityState={{ selected: active }}
+                  >
+                    <Text style={[s.goalChipText, active && s.goalChipTextActive]}>{option.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+
           {/* START button */}
           <View style={s.startArea}>
             <View style={s.startStack}>
@@ -282,6 +428,25 @@ export default function RecordScreen() {
               </TouchableOpacity>
             </View>
             <Text style={s.startHint}>タップしてラン開始</Text>
+
+            {/* GPS readiness */}
+            {gpsReadiness !== null && (
+              <View style={s.gpsChip}>
+                <View
+                  style={[
+                    s.gpsDot,
+                    gpsReadiness === 'ready' && { backgroundColor: Colors.primary },
+                    gpsReadiness === 'unavailable' && { backgroundColor: Colors.accent },
+                  ]}
+                />
+                <Text style={s.gpsChipText}>
+                  {gpsReadiness === 'checking' && 'GPS 確認中…'}
+                  {gpsReadiness === 'ready' && 'GPS 準備OK'}
+                  {gpsReadiness === 'no-permission' && '位置情報は開始時に許可できます'}
+                  {gpsReadiness === 'unavailable' && 'GPS信号を取得できません'}
+                </Text>
+              </View>
+            )}
 
             {/* Challenge connection badge */}
             {currentActiveBattles.length === 1 ? (
@@ -348,6 +513,19 @@ export default function RecordScreen() {
             )}
           </View>
         </ScrollView>
+
+        {/* Countdown overlay */}
+        {countdown !== null && (
+          <Pressable
+            style={s.countdownOverlay}
+            onPress={() => setCountdown(null)}
+            accessibilityRole="button"
+            accessibilityLabel="カウントダウンをキャンセル"
+          >
+            <Text style={s.countdownNum}>{countdown}</Text>
+            <Text style={s.countdownHint}>タップでキャンセル</Text>
+          </Pressable>
+        )}
       </SafeAreaView>
     );
   }
@@ -358,8 +536,16 @@ export default function RecordScreen() {
       {/* Header */}
       <SafeAreaView edges={['top']}>
         <View style={s.hudHeader}>
-          <Animated.View style={[s.recDot, { opacity: recDotAnim }]} />
-          <MonoLabel color={DarkColors.textTertiary} size={9}>RUN IN PROGRESS</MonoLabel>
+          <Animated.View
+            style={[
+              s.recDot,
+              { opacity: isPaused ? 1 : recDotAnim },
+              isPaused && { backgroundColor: DarkColors.textTertiary },
+            ]}
+          />
+          <MonoLabel color={DarkColors.textTertiary} size={9}>
+            {isPaused ? 'PAUSED' : 'RUN IN PROGRESS'}
+          </MonoLabel>
         </View>
       </SafeAreaView>
 
@@ -389,6 +575,31 @@ export default function RecordScreen() {
         </View>
       </View>
 
+      {/* Goal progress */}
+      {goal && (() => {
+        const progress = goal.type === 'distance' ? distanceKm / goal.value : elapsed / goal.value;
+        const achieved = progress >= 1;
+        const remainText = goal.type === 'distance'
+          ? `残り ${Math.max(0, goal.value - distanceKm).toFixed(1)}km`
+          : `残り ${formatTime(Math.max(0, goal.value - elapsed))}`;
+        return (
+          <View style={s.hudGoalRow}>
+            <View style={s.hudGoalHead}>
+              <Text style={s.hudGoalLabel}>目標 {goalLabel(goal)}</Text>
+              <Text style={[s.hudGoalRemain, achieved && { color: DarkColors.primary }]}>
+                {achieved ? '達成！' : remainText}
+              </Text>
+            </View>
+            <ProgressBar
+              value={progress}
+              color={DarkColors.primary}
+              trackColor={DarkColors.surface}
+              height={6}
+            />
+          </View>
+        );
+      })()}
+
       {/* Challenge contribution preview */}
       {currentActiveBattles.length > 0 && (
         <View style={s.hudContribRow}>
@@ -400,26 +611,34 @@ export default function RecordScreen() {
         </View>
       )}
 
+      {/* 一時停止バナー */}
+      {isPaused && (
+        <View style={s.warnBanner}>
+          <Ionicons name="pause-circle-outline" size={14} color={DarkColors.accent} />
+          <Text style={s.warnBannerText}>一時停止中 — この間の移動と時間は記録されません</Text>
+        </View>
+      )}
+
       {/* GPS追跡状態の警告バナー */}
-      {measurementType === 'gps' && gpsWarning && (
+      {!isPaused && measurementType === 'gps' && gpsWarning && (
         <View style={s.warnBanner}>
           <Ionicons name="warning-outline" size={14} color={DarkColors.accent} />
           <Text style={s.warnBannerText}>⚠ GPS信号が不安定です。画面を開いたまま走ってください</Text>
         </View>
       )}
-      {measurementType === 'gps' && !gpsWarning && locationMode === 'foreground' && (
+      {!isPaused && measurementType === 'gps' && !gpsWarning && locationMode === 'foreground' && (
         <View style={s.warnBanner}>
           <Ionicons name="warning-outline" size={14} color={DarkColors.accent} />
           <Text style={s.warnBannerText}>アプリを閉じると記録が止まる可能性があります</Text>
         </View>
       )}
-      {measurementType === 'gps' && locationMode === 'denied' && (
+      {!isPaused && measurementType === 'gps' && locationMode === 'denied' && (
         <View style={s.warnBanner}>
           <Ionicons name="warning-outline" size={14} color={DarkColors.accent} />
           <Text style={s.warnBannerText}>位置情報の権限がありません。設定から許可してください</Text>
         </View>
       )}
-      {measurementType === 'steps' && (
+      {!isPaused && measurementType === 'steps' && (
         <View style={s.warnBanner}>
           <Ionicons name="information-circle-outline" size={14} color={DarkColors.accent} />
           <Text style={s.warnBannerText}>歩数モードは画面を閉じると計測が止まる場合があります</Text>
@@ -462,22 +681,42 @@ export default function RecordScreen() {
         </View>
       )}
 
-      {/* STOP button */}
-      <View style={s.hudStop}>
+      {/* PAUSE / RESUME / STOP buttons */}
+      <View style={s.hudControls}>
         {isSaving ? (
           <ActivityIndicator color={DarkColors.primary} size="large" />
         ) : (
-          <TouchableOpacity
-            style={s.stopBtn}
-            onPress={handleStop}
-            activeOpacity={0.8}
-            accessibilityRole="button"
-            accessibilityLabel="ランの記録を停止"
-          >
-            <View style={s.stopSquare} />
-          </TouchableOpacity>
+          <>
+            <View style={s.hudControl}>
+              <TouchableOpacity
+                style={[s.pauseBtn, isPaused && s.resumeBtn]}
+                onPress={isPaused ? resumeRecording : pauseRecording}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={isPaused ? 'ランの記録を再開' : 'ランの記録を一時停止'}
+              >
+                <Ionicons
+                  name={isPaused ? 'play' : 'pause'}
+                  size={30}
+                  color={isPaused ? DarkColors.background : DarkColors.textPrimary}
+                />
+              </TouchableOpacity>
+              <Text style={s.stopLabel}>{isPaused ? '再開' : '一時停止'}</Text>
+            </View>
+            <View style={s.hudControl}>
+              <TouchableOpacity
+                style={s.stopBtn}
+                onPress={handleStop}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="ランの記録を停止"
+              >
+                <View style={s.stopSquare} />
+              </TouchableOpacity>
+              <Text style={s.stopLabel}>停止</Text>
+            </View>
+          </>
         )}
-        <Text style={s.stopLabel}>停止</Text>
       </View>
 
       {/* Route modal (after save) */}
@@ -592,6 +831,46 @@ const s = StyleSheet.create({
   },
   startLabel: { fontSize: 38, fontWeight: '900', color: Colors.textOnAccent, letterSpacing: 2 },
   startHint: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
+
+  goalRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 10,
+    paddingLeft: 40,
+    marginTop: 12,
+  },
+  goalRowLabel: { fontSize: 13, fontWeight: '600' as const, color: Colors.textTertiary },
+  goalChips: { flexDirection: 'row' as const, gap: 6, paddingRight: 20 },
+  goalChip: {
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.surfaceAlt,
+  },
+  goalChipActive: { backgroundColor: Colors.primary },
+  goalChipText: { fontSize: 12, fontWeight: '700' as const, color: Colors.textTertiary },
+  goalChipTextActive: { color: Colors.textOnPrimary },
+
+  gpsChip: {
+    flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6,
+    paddingHorizontal: 12, paddingVertical: 5,
+    borderRadius: BorderRadius.full, backgroundColor: Colors.surfaceAlt,
+  },
+  gpsDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: Colors.textTertiary },
+  gpsChipText: { fontSize: 11, fontWeight: '700' as const, color: Colors.textSecondary },
+
+  countdownOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: `${DarkColors.background}F2`,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 16,
+  },
+  countdownNum: {
+    fontSize: 140, fontWeight: '900' as const, color: DarkColors.textPrimary,
+    fontVariant: ['tabular-nums'] as const, letterSpacing: -4,
+  },
+  countdownHint: { fontSize: 13, fontWeight: '600' as const, color: DarkColors.textTertiary },
+
   contribBadge: {
     backgroundColor: Colors.primaryLight, borderRadius: BorderRadius.full,
     paddingHorizontal: 14, paddingVertical: 7,
@@ -660,7 +939,28 @@ const s = StyleSheet.create({
     backgroundColor: DarkColors.surface,
     alignItems: 'center', justifyContent: 'center',
   },
-  hudStop: { alignItems: 'center', paddingBottom: 32, gap: 8 },
+  hudGoalRow: {
+    marginHorizontal: 20, marginBottom: 8,
+    backgroundColor: DarkColors.surfaceDeep,
+    borderRadius: BorderRadius.sm, paddingHorizontal: 14, paddingVertical: 10, gap: 8,
+  },
+  hudGoalHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  hudGoalLabel: { fontSize: 11, fontWeight: '700', color: DarkColors.textTertiary },
+  hudGoalRemain: { fontSize: 11, fontWeight: '800', color: DarkColors.textPrimary, fontVariant: ['tabular-nums'] },
+
+  hudControls: {
+    flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center',
+    gap: 40, paddingBottom: 32, minHeight: 104,
+  },
+  hudControl: { alignItems: 'center', gap: 8 },
+  pauseBtn: {
+    width: 72, height: 72, borderRadius: 36,
+    backgroundColor: DarkColors.surface, borderWidth: 2, borderColor: DarkColors.lineStrong,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  resumeBtn: {
+    backgroundColor: DarkColors.primary, borderColor: DarkColors.primary,
+  },
   stopBtn: {
     width: 72, height: 72, borderRadius: 36,
     backgroundColor: DarkColors.surface, borderWidth: 2, borderColor: DarkColors.lineStrong,

@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useRecentActivities } from '../../hooks/useRecentActivities';
+import { useAuthStore } from '../../stores/authStore';
 import { weeklyBuckets, streakDays, relativeDay } from '../../utils/displayStats';
 import { Colors, Spacing, BorderRadius, Shadow, TextStyles, Typography } from '../../design_tokens';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -26,10 +27,14 @@ const DAY_MS = 86_400_000;
 /** 記録の振り返り画面。集計値は取得済みの直近50件から算出する。 */
 export default function StatsScreen() {
   const { activities, loading } = useRecentActivities(50);
+  const { user } = useAuthStore();
   const [filter, setFilter] = useState<ActivityFilter>('all');
   const now = new Date();
 
-  const totalKm = activities.reduce((sum, activity) => sum + activity.distanceKm, 0);
+  // 生涯累計はサーバー集計（users.totalDistanceKm）を優先し、無ければ取得済み直近50件で代用
+  const recentKm = activities.reduce((sum, activity) => sum + activity.distanceKm, 0);
+  const lifetimeKm = user?.totalDistanceKm ?? recentKm;
+  const lifetimeNote = user?.totalDistanceKm != null ? '生涯累計' : '直近50件';
   const longestRun = activities.reduce((max, activity) => Math.max(max, activity.distanceKm), 0);
   const monthKm = activities
     .filter((activity) => {
@@ -81,7 +86,7 @@ export default function StatsScreen() {
           </View>
 
           <View style={styles.grid}>
-            <SummaryCard label="距離" value={totalKm.toFixed(1)} unit="km" note="直近50件" />
+            <SummaryCard label="距離" value={lifetimeKm.toFixed(1)} unit="km" note={lifetimeNote} />
             <SummaryCard
               label="最長ラン"
               value={longestRun.toFixed(1)}

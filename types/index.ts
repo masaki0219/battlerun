@@ -37,6 +37,17 @@ export interface RoutePoint {
   lat: number;
   lng: number;
   timestamp: number; // Unix ms
+  /** 高度（m）。取得できた場合のみ */
+  alt?: number;
+  /** 一時停止から再開した直後の点。前の点との間は距離・時間とも集計しない */
+  seg?: true;
+}
+
+/** ラン開始前に設定する任意目標 */
+export interface RunGoal {
+  type: 'distance' | 'duration';
+  /** distance なら km、duration なら秒 */
+  value: number;
 }
 
 export interface Activity {
@@ -50,6 +61,8 @@ export interface Activity {
   route?: RoutePoint[];
   startedAt: string;
   endedAt: string;
+  /** 一時停止していた合計時間（ms）。durationSeconds には含まれない */
+  pausedMs?: number;
 }
 
 // ===== v2.0 型定義 =====
@@ -179,12 +192,16 @@ export type BattleTheme =
 // Zustand Store の型
 export interface RecordStore {
   isRecording: boolean;
+  isPaused: boolean;
   measurementType: MeasurementType;
   distanceKm: number;
   steps: number;
   durationSeconds: number;
   route: RoutePoint[];
-  startRecording: (type: MeasurementType) => void;
+  goal: RunGoal | null;
+  startRecording: (type: MeasurementType, goal?: RunGoal | null) => void;
+  pauseRecording: () => void;
+  resumeRecording: () => void;
   stopRecording: () => Promise<Activity>;
   reset: () => void;
 }
