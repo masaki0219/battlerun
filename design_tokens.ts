@@ -99,6 +99,7 @@ export const DarkColors = {
   surfaceAlt: '#103530',                    // ダークパネル・ヒーローのフッター帯
   surfaceDeep: '#0C2D2A',                   // ダーク面のさらに沈んだ帯（ヒーロー内のインサイト行）
   chip: 'rgba(255,255,255,0.10)',           // ダーク面のチップ・ピル背景
+  modalBackdrop: 'rgba(11,39,36,0.48)',      // ボトムシート背面のオーバーレイ
   marker: 'rgba(255,255,255,0.75)',         // ダーク面のゲージ境界線
   decor: '#1D5C55',                         // 装飾リング（太）
   decorLine: '#57938B',                     // 装飾リング（細）
@@ -118,6 +119,13 @@ export const DarkColors = {
   markStrong: '#BAF4EC',                    // 自陣営マークの地
   markStrongText: '#0C514A',                // 自陣営マークの文字
   stop: '#FF5A5F',                          // STOP ボタン
+} as const;
+
+/** 活動詳細マップの相対ラップペース（速い・通常・ゆっくり）。 */
+export const RoutePaceColors = {
+  fast: Colors.primary,
+  steady: DarkColors.decorLine,
+  slow: Colors.accent,
 } as const;
 
 // ============================================================

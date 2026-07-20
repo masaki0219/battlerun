@@ -57,6 +57,14 @@ export function weekStartLabel(now: Date = new Date()): string {
   return `${from.getMonth() + 1}月${from.getDate()}日〜`;
 }
 
+/** 同一週の既読管理に使う、ローカル月曜始まりの YYYY-MM-DD キー。 */
+export function calendarWeekKey(now: Date = new Date()): string {
+  const monday = startOfDay(now);
+  const daysFromMonday = (monday.getDay() + 6) % 7;
+  monday.setDate(monday.getDate() - daysFromMonday);
+  return `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`;
+}
+
 /**
  * 直近7日 と その前の7日 の合計km、および増減率。
  * - 前週が 0km のときは比較できないので changeRatio は null（呼び出し側でチップを出さない）。
@@ -84,6 +92,12 @@ export function weekOverWeek(
     lastWeekKm,
     changeRatio: lastWeekKm > 0 ? (thisWeekKm - lastWeekKm) / lastWeekKm : null,
   };
+}
+
+/** 先週比50%超かつ直近7日15km超なら、休息を勧める情報カードの対象。 */
+export function hasHighTrainingLoad(activities: Activity[], now: Date = new Date()): boolean {
+  const week = weekOverWeek(activities, now);
+  return week.thisWeekKm > 15 && week.changeRatio != null && week.changeRatio > 0.5;
 }
 
 /**

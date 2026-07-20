@@ -19,6 +19,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { VersusGauge } from '../../components/viz/VersusGauge';
 import { useBattleParticipants } from '../../hooks/useBattleParticipants';
 import { useTeamRanking } from '../../hooks/useTeamRanking';
+import { useBattleProcessContributions } from '../../hooks/useBattleProcessContributions';
 import { TeamRankingCard } from '../../components/battle/TeamRankingCard';
 import type { CategoryStats, Battle, Category } from '../../types';
 
@@ -66,6 +67,9 @@ export default function BattleDetailScreen() {
     limit: 20,
   });
   const teamRanking = useTeamRanking(id, myCatId, user?.id, { topCount: 10 });
+  const processContributions = useBattleProcessContributions(
+    battle && !isIndividual && myCatId ? id : undefined,
+  );
 
   // ── store に存在しない場合の fallback fetch ────────────────
   useEffect(() => {
@@ -339,7 +343,11 @@ export default function BattleDetailScreen() {
         {!isIndividual && teamRanking.top.length > 0 && (
           <View>
             <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.md }]}>陣営内ランキング</Text>
-            <TeamRankingCard ranking={teamRanking} />
+            <TeamRankingCard
+              ranking={teamRanking}
+              contributions={processContributions}
+              currentUserId={user?.id}
+            />
           </View>
         )}
 

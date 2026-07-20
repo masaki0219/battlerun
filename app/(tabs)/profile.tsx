@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
-  ScrollView, ActivityIndicator, Modal, FlatList, Pressable, Linking,
+  ScrollView, ActivityIndicator, Modal, FlatList, Pressable, Linking, Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -83,10 +83,11 @@ const ANIMAL_EMOJIS = [
 ];
 
 export default function ProfileScreen() {
-  const { user, proEntitlement, signOut } = useAuthStore();
+  const { user, proEntitlement, signOut, setRunningPresenceVisible } = useAuthStore();
   const [uploading, setUploading] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [presenceSaving, setPresenceSaving] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [proPlans, setProPlans] = useState<Partial<Record<ProPlanPeriod, ProPackageInfo>>>({});
   const [selectedPeriod, setSelectedPeriod] = useState<ProPlanPeriod>('monthly');
@@ -128,6 +129,18 @@ export default function ProfileScreen() {
       { text: 'イラストを選ぶ', onPress: () => setShowEmojiPicker(true) },
       { text: 'キャンセル', style: 'cancel' },
     ]);
+  }
+
+  async function handlePresenceVisibility(visible: boolean) {
+    setPresenceSaving(true);
+    try {
+      await setRunningPresenceVisible(visible);
+      if (visible && user) void registerPushToken(user.id, false);
+    } catch {
+      Alert.alert('設定を更新できませんでした', '通信状態を確認して、もう一度お試しください。');
+    } finally {
+      setPresenceSaving(false);
+    }
   }
 
   async function handleEmojiSelect(emoji: string) {
@@ -473,6 +486,22 @@ export default function ProfileScreen() {
         <View>
           <Text style={styles.sectionHeading}>設定</Text>
           <View style={[styles.surfaceCard, styles.listCard]}>
+            <View style={styles.profileRow}>
+              <View style={styles.profileRowIcon}><Ionicons name="radio-outline" size={18} color={Colors.primaryDark} /></View>
+              <View style={styles.profileRowBody}>
+                <Text style={styles.profileRowTitle}>走行中の表示を仲間に公開</Text>
+                <Text style={styles.profileRowDetail}>参加中のチャレンジに「ラン中」の事実だけを表示します。位置情報は共有しません。</Text>
+              </View>
+              <Switch
+                value={user.runningPresenceVisible}
+                onValueChange={(visible) => void handlePresenceVisibility(visible)}
+                disabled={presenceSaving}
+                trackColor={{ false: Colors.surfaceGray, true: Colors.primaryLight }}
+                thumbColor={user.runningPresenceVisible ? Colors.primary : Colors.textTertiary}
+                accessibilityLabel="走行中の表示を仲間に公開"
+              />
+            </View>
+            <View style={styles.rowDivider} />
             <ProfileRow icon="notifications-outline" title="通知センター" detail="チャレンジ・ランの通知を確認する" onPress={() => router.push('/notifications' as any)} />
             <View style={styles.rowDivider} />
             <ProfileRow icon="notifications-circle-outline" title="プッシュ通知を有効にする" detail="順位変動や終了時刻を受け取る" onPress={handleEnableNotifications} />

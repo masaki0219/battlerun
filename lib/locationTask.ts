@@ -23,7 +23,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
 
   await hydrateRecordingSession();
   const state = useRecordStore.getState();
-  if (!state.isRecording || state.isPaused || state.measurementType !== 'gps') return;
+  if (!state.isRecording || state.pauseKind === 'manual' || state.measurementType !== 'gps') return;
 
   for (const loc of locations) {
     const newPoint: RoutePoint = {
@@ -34,6 +34,6 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
     if (typeof loc.coords.altitude === 'number' && Number.isFinite(loc.coords.altitude)) {
       newPoint.alt = loc.coords.altitude;
     }
-    useRecordStore.getState().appendRoutePoint(newPoint);
+    useRecordStore.getState().appendRoutePoint(newPoint, loc.coords.speed);
   }
 });

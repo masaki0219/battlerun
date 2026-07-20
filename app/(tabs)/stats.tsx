@@ -1,15 +1,21 @@
-import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRecentActivities } from '../../hooks/useRecentActivities';
 import { useAuthStore } from '../../stores/authStore';
-import { weeklyBuckets, streakDays, relativeDay } from '../../utils/displayStats';
+import { calendarWeekKey, hasHighTrainingLoad, weeklyBuckets, streakDays, relativeDay } from '../../utils/displayStats';
 import { Colors, Spacing, BorderRadius, Shadow, TextStyles, Typography } from '../../design_tokens';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { WeeklyBarChart } from '../../components/viz/WeeklyBarChart';
 import { StreakChip } from '../../components/viz/StreakChip';
+import { WeeklyGoalProgress } from '../../components/run/WeeklyGoalProgress';
+import { WeeklyGoalSettingsModal } from '../../components/run/WeeklyGoalSettingsModal';
+import { MonthlyBarChart } from '../../components/viz/MonthlyBarChart';
+import { useMonthlyStats } from '../../hooks/useMonthlyStats';
+import { monthLabel, recentTokyoMonthKeys, tokyoMonthKey } from '../../utils/monthlyStats';
 import type { MeasurementType } from '../../types';
 
 type ActivityFilter = 'all' | 'gps' | 'steps';
@@ -23,19 +29,35 @@ function formatTime(seconds: number): string {
 }
 
 const DAY_MS = 86_400_000;
+const TRAINING_LOAD_SEEN_KEY = '@battlerun_training_load_seen_v1';
 
-/** 記録の振り返り画面。集計値は取得済みの直近50件から算出する。 */
+/** 記録の振り返り画面。月次はサーバー集計、それ以外は生涯値または直近50件を使う。 */
 export default function StatsScreen() {
   const { activities, loading } = useRecentActivities(50);
-  const { user } = useAuthStore();
-  const [filter, setFilter] = useState<ActivityFilter>('all');
   const now = new Date();
+  const { months: monthlyStats, loading: monthlyLoading } = useMonthlyStats(now);
+  const { user, setWeeklyGoal } = useAuthStore();
+  const [filter, setFilter] = useState<ActivityFilter>('all');
+  const [showWeeklyGoal, setShowWeeklyGoal] = useState(false);
+  const [showTrainingLoad, setShowTrainingLoad] = useState(false);
+  const [selectedMonthKey, setSelectedMonthKey] = useState(() => tokyoMonthKey(now));
 
   // 生涯累計はサーバー集計（users.totalDistanceKm）を優先し、無ければ取得済み直近50件で代用
   const recentKm = activities.reduce((sum, activity) => sum + activity.distanceKm, 0);
   const lifetimeKm = user?.totalDistanceKm ?? recentKm;
   const lifetimeNote = user?.totalDistanceKm != null ? '生涯累計' : '直近50件';
   const longestRun = activities.reduce((max, activity) => Math.max(max, activity.distanceKm), 0);
+  const recentMonthlyKm = activities.reduce<Record<string, number>>((months, activity) => {
+    const date = new Date(activity.startedAt);
+    if (Number.isNaN(date.getTime())) return months;
+    const key = `${date.getFullYear()}-${date.getMonth()}`;
+    months[key] = (months[key] ?? 0) + activity.distanceKm;
+    return months;
+  }, {});
+  const recentBestMonthKm = Math.max(0, ...Object.values(recentMonthlyKm));
+  const personalRecords = user?.personalRecords;
+  const longestRecordKm = personalRecords?.longestRunKm ?? longestRun;
+  const bestMonthRecordKm = personalRecords?.bestMonthKm ?? recentBestMonthKm;
   const monthKm = activities
     .filter((activity) => {
       const date = new Date(activity.startedAt);
@@ -48,6 +70,38 @@ export default function StatsScreen() {
     (activity) => now.getTime() - new Date(activity.startedAt).getTime() < 7 * DAY_MS,
   ).length;
   const streak = streakDays(activities, now);
+  const highTrainingLoad = hasHighTrainingLoad(activities, now);
+  const currentWeekKey = calendarWeekKey(now);
+  const recentMonthKeys = recentTokyoMonthKeys(now, 12);
+  const monthlyStatsMap = new Map(monthlyStats.map((month) => [month.monthKey, month]));
+  const monthlyChart = recentMonthKeys.map((monthKey) => ({
+    monthKey,
+    label: monthKey.endsWith('-01') ? '1月' : String(Number(monthKey.slice(5, 7))),
+    km: monthlyStatsMap.get(monthKey)?.km ?? 0,
+  }));
+  const selectedMonthlyStat = monthlyStatsMap.get(selectedMonthKey) ?? {
+    monthKey: selectedMonthKey,
+    km: 0,
+    count: 0,
+    durationSec: 0,
+    elevationM: 0,
+  };
+  const currentYear = tokyoMonthKey(now).slice(0, 4);
+  const annualKm = monthlyStats
+    .filter((month) => month.monthKey.startsWith(`${currentYear}-`))
+    .reduce((sum, month) => sum + month.km, 0);
+
+  useEffect(() => {
+    if (loading || !user || !highTrainingLoad) return;
+    let cancelled = false;
+    const storageKey = `${TRAINING_LOAD_SEEN_KEY}:${user.id}`;
+    void AsyncStorage.getItem(storageKey).then(async (seenWeek) => {
+      if (cancelled || seenWeek === currentWeekKey) return;
+      await AsyncStorage.setItem(storageKey, currentWeekKey);
+      if (!cancelled) setShowTrainingLoad(true);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [loading, user?.id, highTrainingLoad, currentWeekKey]);
 
   const filteredActivities = useMemo(
     () => activities.filter((activity) => filter === 'all' || activity.measurementType === filter),
@@ -83,13 +137,73 @@ export default function StatsScreen() {
                 </View>
               </View>
             </View>
+            <View style={styles.goalBlock}>
+              <WeeklyGoalProgress
+                goal={user?.weeklyGoal}
+                days={weekBuckets}
+                onPress={() => setShowWeeklyGoal(true)}
+              />
+            </View>
+            {showTrainingLoad && (
+              <View style={styles.trainingLoadCard}>
+                <View style={styles.trainingLoadIcon}>
+                  <Ionicons name="leaf-outline" size={19} color={Colors.primaryDark} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.trainingLoadTitle}>今週はよく走っています</Text>
+                  <Text style={styles.trainingLoadText}>休息も練習のうち。体の調子に合わせて過ごしましょう。</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setShowTrainingLoad(false)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button"
+                  accessibilityLabel="お知らせを閉じる"
+                >
+                  <Ionicons name="close" size={17} color={Colors.textTertiary} />
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          <View>
+            <View style={styles.sectionHead}>
+              <Text style={styles.sectionTitle}>月間・年間</Text>
+              <Text style={styles.yearTotalLabel}>{currentYear}年</Text>
+            </View>
+            <View style={styles.monthlyCard}>
+              <View style={styles.annualRow}>
+                <View>
+                  <Text style={styles.statLabel}>年間累計</Text>
+                  <Text style={styles.annualNumber}>
+                    {annualKm.toFixed(1)}<Text style={styles.unit}>km</Text>
+                  </Text>
+                </View>
+                {monthlyLoading && <ActivityIndicator size="small" color={Colors.primary} />}
+              </View>
+              <MonthlyBarChart
+                months={monthlyChart}
+                selectedMonthKey={selectedMonthKey}
+                onSelect={setSelectedMonthKey}
+              />
+              <View style={styles.monthDetailHeader}>
+                <Text style={styles.monthDetailTitle}>{monthLabel(selectedMonthKey)}の内訳</Text>
+                <Text style={styles.monthDetailYear}>{selectedMonthKey.slice(0, 4)}年</Text>
+              </View>
+              <View style={styles.monthDetailGrid}>
+                <MonthDetailCell label="距離" value={`${selectedMonthlyStat.km.toFixed(1)} km`} />
+                <MonthDetailCell label="記録回数" value={`${selectedMonthlyStat.count} 回`} />
+                <MonthDetailCell label="時間" value={formatTime(selectedMonthlyStat.durationSec)} />
+                <MonthDetailCell label="獲得標高" value={`${Math.round(selectedMonthlyStat.elevationM)} m`} />
+              </View>
+              <Text style={styles.monthlyNote}>機能公開後の新しい記録から集計されます。過去分の追加集計は行いません。</Text>
+            </View>
           </View>
 
           <View style={styles.grid}>
             <SummaryCard label="距離" value={lifetimeKm.toFixed(1)} unit="km" note={lifetimeNote} />
             <SummaryCard
               label="最長ラン"
-              value={longestRun.toFixed(1)}
+              value={longestRecordKm.toFixed(1)}
               unit="km"
               note="自己ベスト"
               icon="trophy-outline"
@@ -97,6 +211,26 @@ export default function StatsScreen() {
             />
             <SummaryCard label="今月" value={monthKm.toFixed(1)} unit="km" note={`${now.getMonth() + 1}月の合計`} valuePrimary />
             <SummaryCard label="連続日数" value={String(streak)} unit="日" note="現在の記録" />
+          </View>
+
+          <View>
+            <Text style={[styles.sectionTitle, { marginBottom: Spacing.md }]}>自己ベスト</Text>
+            <View style={styles.personalRecordsCard}>
+              <View style={styles.personalRecordsRow}>
+                <PersonalRecordCell label="最速 1km" value={recordTime(personalRecords?.fastest1kSec)} />
+                <PersonalRecordCell label="最速 5km" value={recordTime(personalRecords?.fastest5kSec)} />
+                <PersonalRecordCell label="最速 10km" value={recordTime(personalRecords?.fastest10kSec)} />
+              </View>
+              <View style={styles.personalRecordsDivider} />
+              <View style={styles.personalRecordsRow}>
+                <PersonalRecordCell label="最長距離" value={longestRecordKm > 0 ? `${longestRecordKm.toFixed(1)} km` : '—'} />
+                <PersonalRecordCell
+                  label="最高獲得標高"
+                  value={personalRecords?.maxElevationGainM != null ? `${Math.round(personalRecords.maxElevationGainM)} m` : '—'}
+                />
+                <PersonalRecordCell label="最高月間" value={bestMonthRecordKm > 0 ? `${bestMonthRecordKm.toFixed(1)} km` : '—'} />
+              </View>
+            </View>
           </View>
 
           <View>
@@ -131,7 +265,8 @@ export default function StatsScreen() {
               <View style={styles.historyCard}>
                 {filteredActivities.map((activity, index) => {
                   const isSteps = activity.measurementType === 'steps';
-                  const isBest = activity.distanceKm > 0 && activity.distanceKm === longestRun;
+                  const isBest = activity.distanceKm > 0
+                    && Math.abs(activity.distanceKm - longestRecordKm) < 0.000001;
                   return (
                     <React.Fragment key={activity.id}>
                       {index > 0 && <View style={styles.rowDivider} />}
@@ -170,6 +305,27 @@ export default function StatsScreen() {
           </View>
         </ScrollView>
       )}
+      <WeeklyGoalSettingsModal
+        visible={showWeeklyGoal}
+        currentGoal={user?.weeklyGoal}
+        onSave={async (goal) => {
+          try {
+            await setWeeklyGoal(goal);
+          } catch {
+            Alert.alert('保存できませんでした', '通信状態を確認して、もう一度お試しください。');
+            throw new Error('weekly goal save failed');
+          }
+        }}
+        onClear={async () => {
+          try {
+            await setWeeklyGoal(null);
+          } catch {
+            Alert.alert('解除できませんでした', '通信状態を確認して、もう一度お試しください。');
+            throw new Error('weekly goal clear failed');
+          }
+        }}
+        onClose={() => setShowWeeklyGoal(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -199,6 +355,30 @@ function SummaryCard({
   );
 }
 
+function recordTime(seconds: number | undefined): string {
+  return seconds != null && Number.isFinite(seconds) && seconds > 0
+    ? formatTime(Math.round(seconds))
+    : '—';
+}
+
+function PersonalRecordCell({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.personalRecordCell}>
+      <Text style={styles.personalRecordLabel}>{label}</Text>
+      <Text style={styles.personalRecordValue}>{value}</Text>
+    </View>
+  );
+}
+
+function MonthDetailCell({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.monthDetailCell}>
+      <Text style={styles.monthDetailLabel}>{label}</Text>
+      <Text style={styles.monthDetailValue}>{value}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
   header: { paddingHorizontal: Spacing.xl, paddingTop: Spacing.sm, paddingBottom: Spacing.md },
@@ -211,6 +391,16 @@ const styles = StyleSheet.create({
   weekCard: { backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, borderWidth: 1, borderColor: Colors.border, padding: Spacing.lg, ...Shadow.sm },
   weekTotals: { flexDirection: 'row', gap: Spacing['3xl'], borderTopWidth: 1, borderTopColor: Colors.borderLight, paddingTop: Spacing.md, marginTop: Spacing.md },
   weekTotalCell: { minWidth: 82 },
+  goalBlock: { marginTop: Spacing.md },
+  trainingLoadCard: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    marginTop: Spacing.md, padding: Spacing.md,
+    borderRadius: BorderRadius.md, backgroundColor: Colors.primaryLight,
+    borderWidth: 1, borderColor: Colors.primaryBorder,
+  },
+  trainingLoadIcon: { width: 38, height: 38, borderRadius: BorderRadius.full, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center' },
+  trainingLoadTitle: { fontSize: 13, fontWeight: Typography.fontWeight.bold, color: Colors.primaryDark },
+  trainingLoadText: { fontSize: 10, lineHeight: 15, color: Colors.textSecondary, marginTop: 2 },
   statLabel: { fontSize: 11, fontWeight: Typography.fontWeight.medium, color: Colors.textSecondary },
   weekNumber: { fontSize: 22, fontWeight: Typography.fontWeight.semibold, color: Colors.textPrimary, marginTop: 2, fontVariant: ['tabular-nums'] },
   unit: { fontSize: Typography.fontSize.xs, fontWeight: Typography.fontWeight.bold, color: Colors.textSecondary, marginLeft: 3 },
@@ -225,6 +415,26 @@ const styles = StyleSheet.create({
   summaryNumberPrimary: { color: Colors.primaryDark },
   summaryNote: { fontSize: 10, color: Colors.textTertiary, marginTop: 3 },
   summaryNoteAccent: { color: Colors.accentDark },
+
+  personalRecordsCard: { backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, borderWidth: 1, borderColor: Colors.border, padding: Spacing.lg, ...Shadow.sm },
+  personalRecordsRow: { flexDirection: 'row', gap: Spacing.md },
+  personalRecordsDivider: { height: 1, backgroundColor: Colors.borderLight, marginVertical: Spacing.lg },
+  personalRecordCell: { flex: 1, minWidth: 0 },
+  personalRecordLabel: { fontSize: 9, color: Colors.textTertiary, fontWeight: Typography.fontWeight.bold },
+  personalRecordValue: { fontSize: 15, color: Colors.textPrimary, fontWeight: Typography.fontWeight.extrabold, marginTop: 4, fontVariant: ['tabular-nums'] },
+
+  yearTotalLabel: { fontSize: 11, color: Colors.textSecondary, fontWeight: Typography.fontWeight.bold },
+  monthlyCard: { backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, borderWidth: 1, borderColor: Colors.border, padding: Spacing.lg, ...Shadow.sm },
+  annualRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.lg },
+  annualNumber: { fontSize: 28, fontWeight: Typography.fontWeight.extrabold, color: Colors.primaryDark, marginTop: 2, fontVariant: ['tabular-nums'] },
+  monthDetailHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: Colors.borderLight, marginTop: Spacing.lg, paddingTop: Spacing.lg },
+  monthDetailTitle: { fontSize: 14, color: Colors.textPrimary, fontWeight: Typography.fontWeight.bold },
+  monthDetailYear: { fontSize: 10, color: Colors.textTertiary },
+  monthDetailGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: Spacing.md },
+  monthDetailCell: { width: '50%', paddingVertical: Spacing.sm },
+  monthDetailLabel: { fontSize: 9, color: Colors.textTertiary, fontWeight: Typography.fontWeight.bold },
+  monthDetailValue: { fontSize: 15, color: Colors.textPrimary, fontWeight: Typography.fontWeight.extrabold, marginTop: 3, fontVariant: ['tabular-nums'] },
+  monthlyNote: { fontSize: 9, lineHeight: 14, color: Colors.textTertiary, marginTop: Spacing.md },
 
   filterBar: { flexDirection: 'row', gap: 2, backgroundColor: Colors.surfaceGray, borderRadius: BorderRadius.md, padding: 3 },
   filterButton: { paddingHorizontal: Spacing.sm, paddingVertical: 6, borderRadius: BorderRadius.sm },

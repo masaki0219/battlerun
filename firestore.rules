@@ -9,6 +9,26 @@ service cloud.firestore {
     function isAdmin() {
       return signedIn() && userDoc(request.auth.uid).data.role == 'admin';
     }
+    function isBattleParticipant(battleId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/battles/$(battleId)/participants/$(request.auth.uid));
+    }
+    function validWeeklyGoal(goal) {
+      return goal == null || (
+        goal is map
+        && goal.keys().hasOnly(['type', 'value'])
+        && goal.type in ['distance', 'days']
+        && goal.value is number
+        && (
+          (goal.type == 'distance' && goal.value >= 1 && goal.value <= 500)
+          || (goal.type == 'days' && goal.value is int && goal.value >= 1 && goal.value <= 7)
+        )
+      );
+    }
+    function validRunningPresenceSetting(data) {
+      return !('runningPresenceVisible' in data)
+        || data.runningPresenceVisible is bool;
+    }
     function canReadBattle(battleId) {
       let battle = get(/databases/$(database)/documents/battles/$(battleId));
       return signedIn() && exists(/databases/$(database)/documents/battles/$(battleId)) && (
@@ -28,8 +48,11 @@ service cloud.firestore {
         && !('titles' in request.resource.data)
         && !('totalDistanceKm' in request.resource.data)
         && !('activityCount' in request.resource.data)
+        && !('personalRecords' in request.resource.data)
         && !('revenuecatLastEventAtMs' in request.resource.data)
         && !('lastStatsSyncAtMs' in request.resource.data)
+        && validWeeklyGoal(request.resource.data.get('weeklyGoal', null))
+        && validRunningPresenceSetting(request.resource.data)
         && request.resource.data.name is string
         && request.resource.data.name.size() >= 1
         && request.resource.data.name.size() <= 40;
@@ -38,8 +61,11 @@ service cloud.firestore {
         && request.resource.data.name.size() >= 1
         && request.resource.data.name.size() <= 40
         && request.resource.data.plan in ['free', 'pro']
+        && validWeeklyGoal(request.resource.data.get('weeklyGoal', null))
+        && validRunningPresenceSetting(request.resource.data)
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
           'plan', 'role', 'titles', 'totalDistanceKm', 'activityCount',
+          'personalRecords',
           'revenuecatLastEventAtMs', 'revenuecatLastEventId', 'revenuecatExpirationAtMs',
           'lastStatsSyncAtMs'
         ]);
@@ -54,6 +80,11 @@ service cloud.firestore {
       }
 
       match /badges/{badgeId} {
+        allow read: if isSelf(userId);
+        allow write: if false;
+      }
+
+      match /monthlyStats/{monthId} {
         allow read: if isSelf(userId);
         allow write: if false;
       }
@@ -164,6 +195,107 @@ service cloud.firestore {
           && request.resource.data.avgDistanceKm == 0
           && request.resource.data.participantCount == 0;
         allow update, delete: if false;
+      }
+
+      match /presence/{runnerId} {
+        function validPresencePayload() {
+          return request.resource.data.keys().hasOnly([
+              'sessionId', 'startedAt', 'lastBeatAt', 'visible'
+            ])
+            && request.resource.data.sessionId is string
+            && request.resource.data.sessionId.size() >= 1
+            && request.resource.data.sessionId.size() <= 40
+            && request.resource.data.startedAt is timestamp
+            && request.resource.data.startedAt <= request.time + duration.value(5, 'm')
+            && request.resource.data.startedAt >= request.time - duration.value(7, 'd')
+            && request.resource.data.lastBeatAt == request.time
+            && request.resource.data.visible is bool;
+        }
+        function canPublishPresence() {
+          return isSelf(runnerId)
+            && isBattleParticipant(battleId)
+            && get(/databases/$(database)/documents/battles/$(battleId)).data.status == 'active'
+            && userDoc(runnerId).data.get('runningPresenceVisible', false) == true;
+        }
+
+        allow read: if isBattleParticipant(battleId);
+        allow create: if canPublishPresence()
+          && validPresencePayload()
+          && request.resource.data.visible == true;
+        allow update: if isSelf(runnerId)
+          && isBattleParticipant(battleId)
+          && validPresencePayload()
+          && (
+            canPublishPresence()
+            || (
+              request.resource.data.visible == false
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['visible', 'lastBeatAt'])
+            )
+          );
+        allow delete: if false;
+
+        match /cheers/{fromUid} {
+          function presenceDoc() {
+            return get(/databases/$(database)/documents/battles/$(battleId)/presence/$(runnerId));
+          }
+          function validPresenceCheer() {
+            return isBattleParticipant(battleId)
+              && get(/databases/$(database)/documents/battles/$(battleId)).data.status == 'active'
+              && fromUid == request.auth.uid
+              && runnerId != request.auth.uid
+              && request.resource.data.keys().hasOnly(['fromUid', 'sessionId', 'createdAt'])
+              && request.resource.data.fromUid == request.auth.uid
+              && request.resource.data.sessionId is string
+              && request.resource.data.sessionId == presenceDoc().data.sessionId
+              && request.resource.data.createdAt == request.time
+              && presenceDoc().data.visible == true
+              && presenceDoc().data.lastBeatAt >= request.time - duration.value(3, 'm');
+          }
+
+          allow read: if isBattleParticipant(battleId);
+          allow create: if validPresenceCheer();
+          allow update: if validPresenceCheer()
+            && resource.data.sessionId != request.resource.data.sessionId;
+          allow delete: if false;
+        }
+      }
+
+      match /declarations/{declarationId} {
+        allow read: if isBattleParticipant(battleId);
+        allow create: if isBattleParticipant(battleId)
+          && get(/databases/$(database)/documents/battles/$(battleId)).data.status == 'active'
+          && request.resource.data.keys().hasOnly([
+            'uid', 'dateKey', 'plannedAt', 'note', 'status', 'createdAt'
+          ])
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.dateKey is string
+          && request.resource.data.dateKey.matches('^[0-9]{8}$')
+          && declarationId == request.auth.uid + '_' + request.resource.data.dateKey
+          && request.resource.data.plannedAt is timestamp
+          && request.resource.data.plannedAt >= request.time - duration.value(5, 'm')
+          && request.resource.data.plannedAt <= request.time + duration.value(24, 'h')
+          && request.resource.data.get('note', '') is string
+          && request.resource.data.get('note', '').size() <= 20
+          && request.resource.data.status == 'planned'
+          && request.resource.data.createdAt is timestamp;
+        allow update: if isBattleParticipant(battleId)
+          && get(/databases/$(database)/documents/battles/$(battleId)).data.status == 'active'
+          && resource.data.uid == request.auth.uid
+          && resource.data.status == 'planned'
+          && request.resource.data.status == 'done'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+        allow delete: if false;
+
+        match /cheers/{fromUid} {
+          allow read: if isBattleParticipant(battleId);
+          allow create: if isBattleParticipant(battleId)
+            && fromUid == request.auth.uid
+            && request.resource.data.keys().hasOnly(['fromUid', 'createdAt'])
+            && request.resource.data.fromUid == request.auth.uid
+            && request.resource.data.createdAt is timestamp
+            && get(/databases/$(database)/documents/battles/$(battleId)/declarations/$(declarationId)).data.uid != request.auth.uid;
+          allow update, delete: if false;
+        }
       }
     }
 

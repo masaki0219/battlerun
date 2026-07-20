@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions/v2';
+import { parseMonthlyStatsImpact } from './monthlyStats';
 
 const BATCH_SIZE = 500;
 
@@ -106,19 +107,46 @@ export const deleteActivity = onCall(
       await batch.commit();
     }
 
-    // ユーザー累計の減算と本体削除
+    const initialMonthlyImpact = parseMonthlyStatsImpact(activity['monthlyStatsImpact']);
+    const monthlyStatsRef = initialMonthlyImpact
+      ? db.doc(`users/${uid}/monthlyStats/${initialMonthlyImpact.monthKey}`)
+      : null;
+
+    // ユーザー累計・月間集計の減算と本体削除
     await db.runTransaction(async (tx) => {
-      const [freshActivitySnap, userSnap] = await Promise.all([
+      const [freshActivitySnap, userSnap, monthlyStatsSnap] = await Promise.all([
         tx.get(activityRef),
         tx.get(db.doc(`users/${uid}`)),
+        monthlyStatsRef ? tx.get(monthlyStatsRef) : Promise.resolve(null),
       ]);
       if (!freshActivitySnap.exists) return;
       const fresh = freshActivitySnap.data()!;
+      const freshMonthlyImpact = parseMonthlyStatsImpact(fresh['monthlyStatsImpact']);
       if (fresh['userStatsAggregated'] === true && userSnap.exists) {
         const user = userSnap.data()!;
         tx.update(userSnap.ref, {
           totalDistanceKm: Math.max(0, ((user['totalDistanceKm'] as number | undefined) ?? 0) - distanceKm),
           activityCount: Math.max(0, ((user['activityCount'] as number | undefined) ?? 0) - 1),
+        });
+      }
+      if (
+        fresh['userStatsAggregated'] === true
+        && monthlyStatsRef && monthlyStatsSnap?.exists
+        && freshMonthlyImpact != null
+        && freshMonthlyImpact?.monthKey === initialMonthlyImpact?.monthKey
+      ) {
+        const current = monthlyStatsSnap.data()!;
+        tx.update(monthlyStatsRef, {
+          km: Math.max(0, ((current['km'] as number | undefined) ?? 0) - freshMonthlyImpact.km),
+          count: Math.max(0, ((current['count'] as number | undefined) ?? 0) - freshMonthlyImpact.count),
+          durationSec: Math.max(
+            0,
+            ((current['durationSec'] as number | undefined) ?? 0) - freshMonthlyImpact.durationSec,
+          ),
+          elevationM: Math.max(
+            0,
+            ((current['elevationM'] as number | undefined) ?? 0) - freshMonthlyImpact.elevationM,
+          ),
         });
       }
       tx.delete(activityRef);

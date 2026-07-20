@@ -8,7 +8,12 @@ export { revenuecatWebhook } from './revenuecatWebhook';
 export { battleStatusScheduler } from './battleScheduler';
 export { onBattleFinished } from './onBattleFinished';
 export { rankChangeScheduler } from './rankChangeScheduler';
-export { onReactionCreated, onUserTitlesUpdated } from './notifications';
+export {
+  onDeclarationCheerCreated,
+  onPresenceCheerWritten,
+  onReactionCreated,
+  onUserTitlesUpdated,
+} from './notifications';
 export { validateBattleTitleOnCreate } from './battleTitleValidation';
 export { onUserDeleted } from './onUserDeleted';
 export { submitActivity } from './submitActivity';

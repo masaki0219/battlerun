@@ -4,9 +4,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { Card } from '../ui/Card';
 import { Colors, Typography, Spacing, BorderRadius } from '../../design_tokens';
 import type { TeamRanking } from '../../hooks/useTeamRanking';
+import type { ProcessContribution } from '../../utils/processContributions';
 
 interface Props {
   ranking: TeamRanking;
+  contributions?: Record<string, ProcessContribution>;
+  currentUserId?: string;
   /** 「Top10を見る」の遷移先（バトル詳細） */
   onPressMore?: () => void;
 }
@@ -15,11 +18,40 @@ interface Props {
  * 自分の陣営内でのメンバーランキング（上位3名＋自分の行）。表示専用。
  * 自分が上位に入っている場合は、その行をハイライトして重複表示しない。
  */
-export function TeamRankingCard({ ranking, onPressMore }: Props) {
+export function TeamRankingCard({ ranking, contributions = {}, currentUserId, onPressMore }: Props) {
   const { top, myRank, teamSize, myKm } = ranking;
   if (top.length === 0) return null;
 
   const meInTop = top.some((m) => m.isMe);
+  const visibleUserIds = [...top.map((member) => member.userId), ...(!meInTop && currentUserId ? [currentUserId] : [])];
+  const hasVisibleContribution = visibleUserIds.some((userId) => {
+    const contribution = contributions[userId];
+    return (contribution?.declarationsDone ?? 0) > 0 || (contribution?.activeDaysThisWeek ?? 0) > 0;
+  });
+
+  const processBadges = (userId: string) => {
+    const contribution = contributions[userId];
+    if (!contribution) return null;
+    const declarationsDone = Math.max(0, Math.floor(contribution.declarationsDone));
+    const activeDays = Math.max(0, Math.floor(contribution.activeDaysThisWeek));
+    if (declarationsDone === 0 && activeDays === 0) return null;
+    return (
+      <View style={styles.processRow}>
+        {declarationsDone > 0 && (
+          <View style={[styles.processBadge, styles.declarationBadge]}>
+            <Text style={styles.processEmoji}>🔥</Text>
+            <Text style={[styles.processText, styles.declarationText]}>宣言 {declarationsDone}</Text>
+          </View>
+        )}
+        {activeDays > 0 && (
+          <View style={[styles.processBadge, styles.activeDaysBadge]}>
+            <Ionicons name="calendar-clear-outline" size={10} color={Colors.primary} />
+            <Text style={[styles.processText, styles.activeDaysText]}>今週 {activeDays}日</Text>
+          </View>
+        )}
+      </View>
+    );
+  };
 
   return (
     <Card style={styles.card} padding={Spacing.md}>
@@ -31,9 +63,12 @@ export function TeamRankingCard({ ranking, onPressMore }: Props) {
               {m.displayName.slice(0, 1)}
             </Text>
           </View>
-          <Text style={[styles.name, m.isMe && styles.textMe]} numberOfLines={1}>
-            {m.isMe ? 'あなた' : m.displayName}
-          </Text>
+          <View style={styles.nameColumn}>
+            <Text style={[styles.name, m.isMe && styles.textMe]} numberOfLines={1}>
+              {m.isMe ? 'あなた' : m.displayName}
+            </Text>
+            {processBadges(m.userId)}
+          </View>
           <Text style={[styles.km, m.isMe && styles.textMe]}>{m.totalDistanceKm.toFixed(1)} km</Text>
         </View>
       ))}
@@ -47,10 +82,17 @@ export function TeamRankingCard({ ranking, onPressMore }: Props) {
             <View style={[styles.avatar, styles.avatarMe]}>
               <Text style={[styles.avatarText, styles.avatarTextMe]}>あ</Text>
             </View>
-            <Text style={[styles.name, styles.textMe]}>あなた</Text>
+            <View style={styles.nameColumn}>
+              <Text style={[styles.name, styles.textMe]}>あなた</Text>
+              {currentUserId ? processBadges(currentUserId) : null}
+            </View>
             <Text style={[styles.km, styles.textMe]}>{myKm.toFixed(1)} km</Text>
           </View>
         </>
+      )}
+
+      {hasVisibleContribution && (
+        <Text style={styles.processNote}>宣言と参加日数は称賛表示です。距離順位には影響しません</Text>
       )}
 
       {onPressMore && (
@@ -104,8 +146,12 @@ const styles = StyleSheet.create({
   avatarMe: { backgroundColor: Colors.primary },
   avatarText: { fontSize: Typography.fontSize.xs, fontWeight: Typography.fontWeight.bold, color: Colors.textSecondary },
   avatarTextMe: { color: Colors.textOnPrimary },
-  name: {
+  nameColumn: {
     flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  name: {
     fontSize: Typography.fontSize.sm,
     fontWeight: Typography.fontWeight.medium,
     color: Colors.textPrimary,
@@ -117,6 +163,37 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   textMe: { color: Colors.primary, fontWeight: Typography.fontWeight.bold },
+  processRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: Spacing.xs,
+  },
+  processBadge: {
+    minHeight: 20,
+    paddingHorizontal: 6,
+    borderRadius: BorderRadius.full,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  declarationBadge: { backgroundColor: Colors.accentLight },
+  activeDaysBadge: { backgroundColor: Colors.primaryLight },
+  processEmoji: { fontSize: 10 },
+  processText: {
+    fontSize: Typography.fontSize.xs,
+    fontWeight: Typography.fontWeight.bold,
+    fontVariant: ['tabular-nums'],
+  },
+  declarationText: { color: Colors.accentDark },
+  activeDaysText: { color: Colors.primary },
+  processNote: {
+    marginTop: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    fontSize: Typography.fontSize.xs,
+    color: Colors.textTertiary,
+    lineHeight: 16,
+  },
   divider: {
     height: 1,
     backgroundColor: Colors.borderLight,

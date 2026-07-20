@@ -51,6 +51,20 @@ export const onUserDeleted = functionsV1.auth.user().onDelete(async (user) => {
   const authoredReactionsSnap = await db.collectionGroup('reactions').where('userId', '==', uid).get();
   await batchDelete(db, authoredReactionsSnap.docs.map((doc) => doc.ref));
 
+  // 本人の出撃宣言、その宣言に付いた応援、および本人が送った応援を削除する。
+  const [declarationsSnap, authoredCheersSnap] = await Promise.all([
+    db.collectionGroup('declarations').where('uid', '==', uid).get(),
+    db.collectionGroup('cheers').where('fromUid', '==', uid).get(),
+  ]);
+  const declarationCheerRefs = new Map<string, FirebaseFirestore.DocumentReference>();
+  for (const declarationDoc of declarationsSnap.docs) {
+    const cheersSnap = await declarationDoc.ref.collection('cheers').get();
+    cheersSnap.docs.forEach((cheer) => declarationCheerRefs.set(cheer.ref.path, cheer.ref));
+  }
+  authoredCheersSnap.docs.forEach((cheer) => declarationCheerRefs.set(cheer.ref.path, cheer.ref));
+  await batchDelete(db, [...declarationCheerRefs.values()]);
+  await batchDelete(db, declarationsSnap.docs.map((declaration) => declaration.ref));
+
   // 2. 各バトルの participants/{uid}
   //    users/{uid}.battleIds はクライアント側の削除処理で users/{uid} 自体が
   //    先に消えているため参照できない。participants ドキュメントに保存された
@@ -66,18 +80,39 @@ export const onUserDeleted = functionsV1.auth.user().onDelete(async (user) => {
     const ref = db.doc(`battles/${battleId}/participants/${uid}`);
     participantRefs.set(ref.path, ref);
   });
+
+  // 本人のライブプレゼンスと、そこへ届いた応援を削除する。
+  const presenceBattleIds = new Set(knownBattleIds);
+  participantRefs.forEach((ref) => {
+    const battleDoc = ref.parent.parent;
+    if (battleDoc) presenceBattleIds.add(battleDoc.id);
+  });
+  const presenceRefs: FirebaseFirestore.DocumentReference[] = [];
+  const receivedPresenceCheerRefs: FirebaseFirestore.DocumentReference[] = [];
+  for (const battleId of presenceBattleIds) {
+    const presenceRef = db.doc(`battles/${battleId}/presence/${uid}`);
+    const presenceSnap = await presenceRef.get();
+    if (!presenceSnap.exists) continue;
+    const cheersSnap = await presenceRef.collection('cheers').get();
+    cheersSnap.docs.forEach((cheer) => receivedPresenceCheerRefs.push(cheer.ref));
+    presenceRefs.push(presenceRef);
+  }
+  await batchDelete(db, receivedPresenceCheerRefs);
+  await batchDelete(db, presenceRefs);
   await batchDelete(db, [...participantRefs.values()]);
   // participants の削除は participantCounter (onDocumentWritten) をトリガーし、
   // category_stats.participantCount / avgDistanceKm を自動補正する。
 
-  // 3. 通知・バッジのサブコレクション
-  const [notificationsSnap, badgesSnap] = await Promise.all([
+  // 3. 通知・バッジ・月間集計のサブコレクション
+  const [notificationsSnap, badgesSnap, monthlyStatsSnap] = await Promise.all([
     db.collection(`users/${uid}/notifications`).get(),
     db.collection(`users/${uid}/badges`).get(),
+    db.collection(`users/${uid}/monthlyStats`).get(),
   ]);
   await batchDelete(db, [
     ...notificationsSnap.docs.map((d) => d.ref),
     ...badgesSnap.docs.map((d) => d.ref),
+    ...monthlyStatsSnap.docs.map((d) => d.ref),
   ]);
 
   // 4. users/{uid} 本体（クライアント側削除が何らかの理由で失敗していた場合の保険）
@@ -97,6 +132,11 @@ export const onUserDeleted = functionsV1.auth.user().onDelete(async (user) => {
     deletedParticipants: participantRefs.size,
     deletedNotifications: notificationsSnap.size,
     deletedBadges: badgesSnap.size,
+    deletedMonthlyStats: monthlyStatsSnap.size,
     deletedAuthoredReactions: authoredReactionsSnap.size,
+    deletedDeclarations: declarationsSnap.size,
+    deletedDeclarationCheers: declarationCheerRefs.size,
+    deletedPresences: presenceRefs.length,
+    deletedReceivedPresenceCheers: receivedPresenceCheerRefs.length,
   });
 });

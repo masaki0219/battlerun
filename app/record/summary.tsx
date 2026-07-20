@@ -15,6 +15,7 @@ import { Colors, DarkColors, BorderRadius, TextStyles } from '../../design_token
 import { MonoLabel } from '../../components/ui/MonoLabel';
 import { KmSplitsCard } from '../../components/run/KmSplitsCard';
 import { estimatedCalories, type KmSplit } from '../../utils/displayStats';
+import type { PersonalRecordKey } from '../../types';
 
 function formatTime(sec: number): string {
   const h = Math.floor(sec / 3600);
@@ -32,6 +33,22 @@ interface BattleImpact {
   totalKm: number;
 }
 
+const PERSONAL_RECORD_LABELS: Record<PersonalRecordKey, string> = {
+  fastest1kSec: '最速1km',
+  fastest5kSec: '最速5km',
+  fastest10kSec: '最速10km',
+  longestRunKm: '最長距離',
+  maxElevationGainM: '最高獲得標高',
+  bestMonthKm: '最高月間距離',
+};
+
+function personalRecordKeys(value: unknown): PersonalRecordKey[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((key): key is PersonalRecordKey => (
+    typeof key === 'string' && key in PERSONAL_RECORD_LABELS
+  ));
+}
+
 export default function RecordingSummaryScreen() {
   const params = useLocalSearchParams<{
     activityId: string;
@@ -41,6 +58,7 @@ export default function RecordingSummaryScreen() {
     pace: string;
     splits: string;
     elevationGain: string;
+    declarationAchieved: string;
   }>();
 
   const activityId = params.activityId ?? '';
@@ -58,12 +76,14 @@ export default function RecordingSummaryScreen() {
   })();
   const elevationGain = params.elevationGain ? parseInt(params.elevationGain, 10) : null;
   const calories = estimatedCalories(distanceKm, durationSeconds);
+  const declarationAchieved = params.declarationAchieved === '1';
 
   const { user, proEntitlement } = useAuthStore();
   const userIsPro = isPro(user?.plan, proEntitlement);
   const [impacts, setImpacts] = useState<BattleImpact[]>([]);
   const [loadingImpact, setLoadingImpact] = useState(true);
   const [impactTimedOut, setImpactTimedOut] = useState(false);
+  const [newRecords, setNewRecords] = useState<PersonalRecordKey[]>([]);
   const shareCardRef = useRef<View>(null);
 
   // サーバー集計が確定した時点の before/after を活動ドキュメントから受け取る。
@@ -83,6 +103,7 @@ export default function RecordingSummaryScreen() {
     const unsubscribe = onSnapshot(doc(db, 'activities', activityId), (snapshot) => {
       if (!snapshot.exists()) return;
       const data = snapshot.data();
+      setNewRecords(personalRecordKeys(data['newRecords']));
       const impactMap = (data['aggregationImpacts'] as Record<string, BattleImpact> | undefined) ?? {};
       setImpacts(Object.values(impactMap).sort((a, b) => {
         const rankGain = (b.rankBefore - b.rankAfter) - (a.rankBefore - a.rankAfter);
@@ -174,6 +195,34 @@ export default function RecordingSummaryScreen() {
             </View>
           )}
         </View>
+
+        {declarationAchieved && (
+          <View style={s.declarationCard}>
+            <View style={s.declarationIcon}>
+              <Ionicons name="checkmark" size={22} color={Colors.textOnPrimary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.declarationTitle}>宣言達成！</Text>
+              <Text style={s.declarationText}>自分で決めたランを完了しました</Text>
+            </View>
+          </View>
+        )}
+
+        {newRecords.length > 0 && (
+          <View style={s.section}>
+            <View style={s.badgeCard}>
+              <View style={s.badgeIcon}>
+                <Ionicons name="trophy" size={24} color={Colors.textPrimary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.badgeKicker}>自己ベスト更新！ 🎉</Text>
+                <Text style={s.badgeTitle}>{newRecords.map((key) => PERSONAL_RECORD_LABELS[key]).join('・')}</Text>
+                <Text style={s.badgeSub}>今日のランで新しい記録が生まれました</Text>
+              </View>
+              <Text style={s.badgeNew}>NEW</Text>
+            </View>
+          </View>
+        )}
 
         {/* ── 1km splits ────────────────────────────────── */}
         {splits.length > 0 && (
@@ -338,6 +387,18 @@ const s = StyleSheet.create({
   heroStatDivider: { width: 1, backgroundColor: DarkColors.lineStrong },
 
   section: { paddingHorizontal: 16, marginBottom: 4 },
+  declarationCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    marginHorizontal: 16, marginBottom: 16, padding: 14,
+    borderRadius: BorderRadius.lg, backgroundColor: Colors.primaryLight,
+    borderWidth: 1, borderColor: Colors.primaryBorder,
+  },
+  declarationIcon: {
+    width: 42, height: 42, borderRadius: BorderRadius.full,
+    backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center',
+  },
+  declarationTitle: { fontSize: 15, fontWeight: '900', color: Colors.primaryDark },
+  declarationText: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
 
   impactCard: {
     marginTop: 8, padding: 16, borderRadius: BorderRadius.lg, backgroundColor: Colors.surface,

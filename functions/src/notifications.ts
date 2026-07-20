@@ -1,4 +1,4 @@
-import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/firestore';
+import { onDocumentCreated, onDocumentUpdated, onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { logger } from 'firebase-functions/v2';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { sendPushToUser } from './push';
@@ -54,6 +54,85 @@ export const onReactionCreated = onDocumentCreated(
       createdAt: FieldValue.serverTimestamp(),
     });
     await sendPushToUser(activityOwnerId, title, body, { type: 'reaction', relatedActivityId: activityId });
+  },
+);
+
+/** 出撃宣言への応援を宣言者へ通知する。 */
+export const onDeclarationCheerCreated = onDocumentCreated(
+  'battles/{battleId}/declarations/{declarationId}/cheers/{fromUid}',
+  async (event) => {
+    const cheer = event.data;
+    if (!cheer) return;
+    const { battleId, declarationId, fromUid } = event.params;
+    const db = getFirestore();
+    const declarationSnap = await db.doc(`battles/${battleId}/declarations/${declarationId}`).get();
+    if (!declarationSnap.exists) return;
+    const ownerId = declarationSnap.data()?.['uid'] as string | undefined;
+    if (!ownerId || ownerId === fromUid) return;
+
+    const profileSnap = await db.doc(`publicProfiles/${fromUid}`).get();
+    const senderName = (profileSnap.data()?.['name'] as string | undefined) ?? 'メンバー';
+    const title = '応援が届きました 🔥';
+    const body = `${senderName}さんが応援しています`;
+    await db.collection(`users/${ownerId}/notifications`).add({
+      type: 'declaration_cheer',
+      title,
+      body,
+      isRead: false,
+      relatedBattleId: battleId,
+      relatedActivityId: null,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    await sendPushToUser(ownerId, title, body, {
+      type: 'declaration_cheer',
+      relatedBattleId: battleId,
+      declarationId,
+    });
+  },
+);
+
+/** 記録中プレゼンスへの応援を、対象ランナーの通知センターとプッシュへ送る。 */
+export const onPresenceCheerWritten = onDocumentWritten(
+  'battles/{battleId}/presence/{runnerId}/cheers/{fromUid}',
+  async (event) => {
+    const after = event.data?.after;
+    if (!after?.exists) return;
+    const cheer = after.data();
+    const sessionId = cheer?.['sessionId'] as string | undefined;
+    if (!sessionId) return;
+
+    const previousSessionId = event.data?.before.exists
+      ? event.data.before.data()?.['sessionId'] as string | undefined
+      : undefined;
+    // 同一ランへの同じ書き込みが再送されても、通知を重ねない。
+    if (previousSessionId === sessionId) return;
+
+    const { battleId, runnerId, fromUid } = event.params;
+    if (runnerId === fromUid) return;
+    const db = getFirestore();
+    const presenceSnap = await db.doc(`battles/${battleId}/presence/${runnerId}`).get();
+    if (!presenceSnap.exists
+      || presenceSnap.data()?.['sessionId'] !== sessionId
+      || presenceSnap.data()?.['visible'] !== true) return;
+
+    const profileSnap = await db.doc(`publicProfiles/${fromUid}`).get();
+    const senderName = (profileSnap.data()?.['name'] as string | undefined) ?? 'メンバー';
+    const title = 'ラン中に応援が届きました 🔥';
+    const body = `${senderName}さんが応援しています`;
+    await db.collection(`users/${runnerId}/notifications`).add({
+      type: 'presence_cheer',
+      title,
+      body,
+      isRead: false,
+      relatedBattleId: battleId,
+      relatedActivityId: null,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    await sendPushToUser(runnerId, title, body, {
+      type: 'presence_cheer',
+      relatedBattleId: battleId,
+      presenceSessionId: sessionId,
+    });
   },
 );
 

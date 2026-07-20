@@ -21,6 +21,7 @@ import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { WeeklyBarChart } from '../../components/viz/WeeklyBarChart';
 import { StreakChip } from '../../components/viz/StreakChip';
+import { WeeklyGoalProgress } from '../../components/run/WeeklyGoalProgress';
 import { CategorySelectModal } from '../../components/battle/CategorySelectModal';
 import { ActiveBattleHero } from '../../components/battle/ActiveBattleHero';
 import { PublicBattleCard } from '../../components/battle/PublicBattleCard';
@@ -29,10 +30,14 @@ import { PrivateBattleCreateForm } from '../../components/battle/PrivateBattleCr
 import { InviteCodeJoinView } from '../../components/battle/InviteCodeJoinView';
 import { JoinRecommendationCard } from '../../components/battle/JoinRecommendationCard';
 import { TeamRankingCard } from '../../components/battle/TeamRankingCard';
+import { DeclarationCard, DeclarationList } from '../../components/battle/DeclarationCard';
+import { RunningPresenceCard } from '../../components/battle/RunningPresenceCard';
 import { useTeamRanking } from '../../hooks/useTeamRanking';
+import { useBattleProcessContributions } from '../../hooks/useBattleProcessContributions';
+import { useBattlePresence } from '../../hooks/useBattlePresence';
 import { weeklyBuckets, streakDays, weekOverWeek, weekStartLabel } from '../../utils/displayStats';
 import { Colors, Typography, Spacing, BorderRadius, Shadow } from '../../design_tokens';
-import type { Battle, Category, CategoryStats } from '../../types';
+import type { Battle, Category, CategoryStats, RunningPresence } from '../../types';
 
 type Tab = 'public' | 'private';
 type PrivateView = 'list' | 'create' | 'join_code' | 'join_select';
@@ -47,7 +52,8 @@ export default function BattleScreen() {
   const {
     publicBattles, privateBattles, myMemberships, seasons, isLoading,
     fetchPublicBattles, fetchMyMemberships, fetchMyPrivateBattles, fetchSeason,
-    joinBattle, createBattle, findBattleByInviteCode,
+    joinBattle, createBattle, findBattleByInviteCode, declarationsByBattle,
+    subscribeDeclarations, declareRun, cheerDeclaration,
   } = useBattleStore();
 
   const [activeTab, setActiveTab] = useState<Tab>('public');
@@ -134,9 +140,46 @@ export default function BattleScreen() {
     ? myMemberships.find((m) => m.battleId === primaryBattle.id)
     : null;
   const primaryCategoryId = primaryMembership?.categoryId ?? null;
+  const declarations = primaryBattle ? (declarationsByBattle[primaryBattle.id] ?? []) : [];
+  const ownDeclaration = declarations.find((item) => item.uid === user?.id);
+  const { presences, cheer: cheerPresence } = useBattlePresence(primaryBattle?.id, user?.id);
+
+  useEffect(() => {
+    if (!primaryBattle || !user) return;
+    return subscribeDeclarations(primaryBattle.id, user.id);
+  }, [primaryBattle?.id, user?.id]);
 
   // 自分の陣営内での立ち位置（ヒーローのフッターとチーム内ランキングで共用）
   const teamRanking = useTeamRanking(primaryBattle?.id, primaryCategoryId, user?.id);
+  const processContributions = useBattleProcessContributions(primaryBattle?.id);
+
+  async function handleDeclareRun(plannedAt: Date, note: string) {
+    if (!primaryBattle || !user) return;
+    try {
+      await declareRun(primaryBattle.id, user.id, plannedAt, note);
+    } catch (error) {
+      Alert.alert('宣言できませんでした', error instanceof Error ? error.message : '通信状態を確認して、もう一度お試しください。');
+      throw error;
+    }
+  }
+
+  async function handleCheerDeclaration(declarationId: string) {
+    if (!primaryBattle || !user) return;
+    try {
+      await cheerDeclaration(primaryBattle.id, declarationId, user.id);
+    } catch {
+      Alert.alert('応援を送れませんでした', '通信状態を確認して、もう一度お試しください。');
+    }
+  }
+
+  async function handleCheerPresence(presence: RunningPresence) {
+    try {
+      const created = await cheerPresence(presence);
+      if (!created) Alert.alert('応援できませんでした', 'このランへの応援は送信済みか、ランが終了しています。');
+    } catch {
+      Alert.alert('応援を送れませんでした', '通信状態を確認して、もう一度お試しください。');
+    }
+  }
 
   // Day-0アクティベーション: 未参加ユーザーに開催中のパブリックランを1件だけ強く提示する
   const recommendedBattle = publicBattles.find(
@@ -384,6 +427,10 @@ export default function BattleScreen() {
             <WeeklyBarChart days={weekBuckets} height={70} showTotal={false} />
           </View>
 
+          {user?.weeklyGoal && (
+            <WeeklyGoalProgress goal={user.weeklyGoal} days={weekBuckets} compact />
+          )}
+
           <View style={styles.weekFoot}>
             <StreakChip days={streak} />
             {week.lastWeekKm > 0 && (
@@ -439,6 +486,20 @@ export default function BattleScreen() {
             onPress={() => router.push(`/battle/${primaryBattle.id}` as any)}
           />
         )}
+        {primaryBattle && (
+          <DeclarationCard
+            declaration={ownDeclaration}
+            battleTitle={primaryBattle.title}
+            onDeclare={handleDeclareRun}
+          />
+        )}
+        {primaryBattle && user && (
+          <RunningPresenceCard
+            presences={presences}
+            currentUserId={user.id}
+            onCheer={handleCheerPresence}
+          />
+        )}
         {renderWeeklyCard()}
 
         {/* チーム内ランキング（自分の陣営の中での順位） */}
@@ -447,9 +508,19 @@ export default function BattleScreen() {
             <Text style={styles.sectionTitle}>チーム内ランキング</Text>
             <TeamRankingCard
               ranking={teamRanking}
+              contributions={processContributions}
+              currentUserId={user?.id}
               onPressMore={() => router.push(`/battle/${primaryBattle.id}` as any)}
             />
           </View>
+        )}
+
+        {primaryBattle && declarations.length > 0 && user && (
+          <DeclarationList
+            declarations={declarations}
+            currentUserId={user.id}
+            onCheer={handleCheerDeclaration}
+          />
         )}
 
         {renderRunNowButton()}

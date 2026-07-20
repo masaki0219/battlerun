@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import { Pedometer } from 'expo-sensors';
 import * as Speech from 'expo-speech';
+import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -30,6 +31,13 @@ import { ProgressBar } from '../../components/ui/ProgressBar';
 import { WeeklyBarChart } from '../../components/viz/WeeklyBarChart';
 import { StreakChip } from '../../components/viz/StreakChip';
 import { weeklyBuckets, streakDays, lastRun, relativeDay, kmSplits, elevationGainM } from '../../utils/displayStats';
+import { loadVoiceCoachSettings, saveVoiceCoachSettings } from '../../lib/voiceCoach';
+import { useRunCheers } from '../../hooks/useRunCheers';
+import {
+  buildVoiceCoachAnnouncement,
+  DEFAULT_VOICE_COACH_SETTINGS,
+  type VoiceCoachSettings,
+} from '../../utils/voiceCoach';
 
 function useElapsedTime(): number {
   const isRecording = useRecordStore((s) => s.isRecording);
@@ -87,8 +95,8 @@ export default function RecordScreen() {
     getActiveBattleIds, fetchMyMemberships, fetchMyPrivateBattles, fetchPublicBattles,
   } = useBattleStore();
   const {
-    isRecording, isPaused, measurementType, distanceKm, steps, route, locationMode, gpsWarning, goal,
-    startRecording, pauseRecording, resumeRecording, stopRecording, reset,
+    isRecording, isPaused, pauseKind, autoPauseEnabled, measurementType, distanceKm, steps, route, locationMode, gpsWarning, goal, startedAt,
+    startRecording, pauseRecording, resumeRecording, stopRecording, reset, setAutoPauseEnabled,
   } = useRecordStore();
   const elapsed = useElapsedTime();
 
@@ -109,6 +117,7 @@ export default function RecordScreen() {
   const currentActiveBattles = activeBattleIds
     .map((id) => allBattles.find((b) => b.id === id))
     .filter(Boolean) as typeof allBattles;
+  const primaryPresenceBattleId = allBattles.find((battle) => activeBattleIds.includes(battle.id))?.id;
 
   // 開始前の下段データ（前回のラン・週間ミニバー・ストリーク）
   const { activities: recentActivities, loading: recentLoading } = useRecentActivities(20);
@@ -122,13 +131,23 @@ export default function RecordScreen() {
   const [savedRoute, setSavedRoute] = useState<RoutePoint[]>([]);
   const [savedStats, setSavedStats] = useState<{ distanceKm: number; durationSeconds: number } | null>(null);
   const [showRouteModal, setShowRouteModal] = useState(false);
-  const [voiceGuide, setVoiceGuide] = useState(true);
+  const [voiceSettings, setVoiceSettings] = useState<VoiceCoachSettings>(DEFAULT_VOICE_COACH_SETTINGS);
+  const [showVoiceSettings, setShowVoiceSettings] = useState(false);
   const [selectedGoalIdx, setSelectedGoalIdx] = useState(0);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [gpsReadiness, setGpsReadiness] = useState<GpsReadiness | null>(null);
-  const spokenKmRef = useRef(0);
+  const [hudCheerName, setHudCheerName] = useState<string | null>(null);
+  const spokenIntervalRef = useRef(0);
+  const lastVoiceDistanceRef = useRef(0);
+  const lastVoiceElapsedRef = useRef(0);
   const goalAnnouncedRef = useRef(false);
   const stopGuardRef = useRef(false);
+  const latestRunCheer = useRunCheers({
+    battleId: primaryPresenceBattleId,
+    runnerId: user?.id,
+    startedAt,
+    enabled: isRecording && user?.runningPresenceVisible === true,
+  });
 
   // REC ドット点滅（opacity 1↔0.3、1秒周期）
   const recDotAnim = useRef(new Animated.Value(1)).current;
@@ -137,7 +156,29 @@ export default function RecordScreen() {
 
   useEffect(() => {
     Pedometer.isAvailableAsync().then(setIsStepAvailable).catch(() => {});
+    void loadVoiceCoachSettings().then(setVoiceSettings);
   }, []);
+
+  const voiceGuide = voiceSettings.enabled;
+
+  useEffect(() => {
+    if (!latestRunCheer) return;
+    setHudCheerName(latestRunCheer.senderName);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    if (voiceSettings.enabled) {
+      Speech.speak(`${latestRunCheer.senderName}さんから応援が届きました`, { language: 'ja-JP', rate: 1.0 });
+    }
+    const timer = setTimeout(() => setHudCheerName(null), 8_000);
+    return () => clearTimeout(timer);
+  }, [latestRunCheer?.id]);
+
+  function updateVoiceSettings(patch: Partial<VoiceCoachSettings>) {
+    setVoiceSettings((current) => {
+      const next = { ...current, ...patch };
+      void saveVoiceCoachSettings(next);
+      return next;
+    });
+  }
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -160,15 +201,25 @@ export default function RecordScreen() {
   }, []);
   const ringRotate = ringAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
-  // 音声ガイド: 1km通過ごとに読み上げ
+  // 音声コーチ: 設定した距離または時間の間隔で、選択された統計を読み上げる。
   useEffect(() => {
-    if (!isRecording || !voiceGuide) return;
-    const km = Math.floor(distanceKm);
-    if (km > 0 && km > spokenKmRef.current) {
-      spokenKmRef.current = km;
-      Speech.speak(`${km}キロメートル突破しました`, { language: 'ja-JP', rate: 1.0 });
-    }
-  }, [distanceKm, isRecording, voiceGuide]);
+    if (!isRecording || isPaused || !voiceSettings.enabled) return;
+    const intervalCount = voiceSettings.intervalType === 'distance'
+      ? Math.floor((distanceKm + 0.0001) / voiceSettings.distanceKm)
+      : Math.floor(elapsed / (voiceSettings.timeMinutes * 60));
+    if (intervalCount <= 0 || intervalCount <= spokenIntervalRef.current) return;
+
+    spokenIntervalRef.current = intervalCount;
+    const message = buildVoiceCoachAnnouncement(voiceSettings, {
+      elapsedSeconds: elapsed,
+      distanceKm,
+      lapElapsedSeconds: elapsed - lastVoiceElapsedRef.current,
+      lapDistanceKm: distanceKm - lastVoiceDistanceRef.current,
+    });
+    lastVoiceElapsedRef.current = elapsed;
+    lastVoiceDistanceRef.current = distanceKm;
+    if (message) Speech.speak(message, { language: 'ja-JP', rate: 1.0 });
+  }, [distanceKm, elapsed, isPaused, isRecording, voiceSettings]);
 
   // 目標達成を一度だけアナウンス
   useEffect(() => {
@@ -185,7 +236,11 @@ export default function RecordScreen() {
 
   // 記録停止時に音声リセット
   useEffect(() => {
-    if (!isRecording) spokenKmRef.current = 0;
+    if (!isRecording) {
+      spokenIntervalRef.current = 0;
+      lastVoiceDistanceRef.current = 0;
+      lastVoiceElapsedRef.current = 0;
+    }
   }, [isRecording]);
 
   // 開始前のGPS捕捉状態。権限の要求はせず（要求は開始時）、許可済みなら測位を1回試す
@@ -291,6 +346,7 @@ export default function RecordScreen() {
                 pace: formatPace(savedDistanceKm, savedDurationSeconds),
                 splits: JSON.stringify(splits),
                 elevationGain: elevation != null ? String(elevation) : '',
+                declarationAchieved: submitted.declarationAchieved ? '1' : '',
               },
             });
           } catch (e: unknown) {
@@ -312,6 +368,7 @@ export default function RecordScreen() {
                 useRecordStore.setState({
                   isRecording: true,
                   isPaused: true,
+                  pauseKind: 'manual',
                   pausedAt: new Date().toISOString(),
                   pausedTotalMs: stoppedActivity.pausedMs ?? 0,
                   locationMode: 'idle',
@@ -378,18 +435,50 @@ export default function RecordScreen() {
             })}
           </View>
 
-          {/* Voice guide toggle */}
+          {/* Voice coach settings */}
           <View style={s.voiceRow}>
-            <Ionicons name="volume-medium-outline" size={16} color={voiceGuide ? Colors.primaryDark : Colors.textTertiary} />
-            <Text style={[s.voiceLabel, voiceGuide && { color: Colors.primaryDark }]}>音声ガイド</Text>
+            <TouchableOpacity
+              style={s.voiceSettingsButton}
+              onPress={() => setShowVoiceSettings(true)}
+              accessibilityRole="button"
+              accessibilityLabel="音声コーチの設定を開く"
+            >
+              <Ionicons name="volume-medium-outline" size={16} color={voiceGuide ? Colors.primaryDark : Colors.textTertiary} />
+              <View style={s.voiceLabelWrap}>
+                <Text style={[s.voiceLabel, voiceGuide && { color: Colors.primaryDark }]}>音声コーチ</Text>
+                {voiceGuide && (
+                  <Text style={s.voiceSummary}>
+                    {voiceSettings.intervalType === 'distance'
+                      ? `${voiceSettings.distanceKm}kmごと`
+                      : `${voiceSettings.timeMinutes}分ごと`}
+                  </Text>
+                )}
+              </View>
+              <Ionicons name="settings-outline" size={15} color={Colors.textTertiary} />
+            </TouchableOpacity>
             <Switch
               value={voiceGuide}
-              onValueChange={setVoiceGuide}
+              onValueChange={(enabled) => updateVoiceSettings({ enabled })}
               trackColor={{ false: Colors.surfaceGray, true: `${Colors.primary}60` }}
               thumbColor={voiceGuide ? Colors.primary : Colors.textTertiary}
               style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
             />
           </View>
+
+          {/* Auto pause toggle (GPS only) */}
+          {selectedMode === 'gps' && (
+            <View style={s.voiceRow}>
+              <Ionicons name="pause-circle-outline" size={16} color={autoPauseEnabled ? Colors.primaryDark : Colors.textTertiary} />
+              <Text style={[s.voiceLabel, autoPauseEnabled && { color: Colors.primaryDark }]}>オートポーズ</Text>
+              <Switch
+                value={autoPauseEnabled}
+                onValueChange={setAutoPauseEnabled}
+                trackColor={{ false: Colors.surfaceGray, true: `${Colors.primary}60` }}
+                thumbColor={autoPauseEnabled ? Colors.primary : Colors.textTertiary}
+                style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
+              />
+            </View>
+          )}
 
           {/* Goal chips */}
           <View style={s.goalRow}>
@@ -526,6 +615,13 @@ export default function RecordScreen() {
             <Text style={s.countdownHint}>タップでキャンセル</Text>
           </Pressable>
         )}
+
+        <VoiceCoachSettingsModal
+          visible={showVoiceSettings}
+          settings={voiceSettings}
+          onChange={updateVoiceSettings}
+          onClose={() => setShowVoiceSettings(false)}
+        />
       </SafeAreaView>
     );
   }
@@ -544,7 +640,7 @@ export default function RecordScreen() {
             ]}
           />
           <MonoLabel color={DarkColors.textTertiary} size={9}>
-            {isPaused ? 'PAUSED' : 'RUN IN PROGRESS'}
+            {pauseKind === 'auto' ? 'AUTO PAUSED' : isPaused ? 'PAUSED' : 'RUN IN PROGRESS'}
           </MonoLabel>
         </View>
       </SafeAreaView>
@@ -611,11 +707,22 @@ export default function RecordScreen() {
         </View>
       )}
 
+      {hudCheerName && (
+        <View style={s.hudCheerBanner} accessibilityLiveRegion="polite">
+          <Ionicons name="flame" size={15} color={DarkColors.accent} />
+          <Text style={s.hudCheerText}>{hudCheerName}さんから応援が届きました</Text>
+        </View>
+      )}
+
       {/* 一時停止バナー */}
       {isPaused && (
         <View style={s.warnBanner}>
           <Ionicons name="pause-circle-outline" size={14} color={DarkColors.accent} />
-          <Text style={s.warnBannerText}>一時停止中 — この間の移動と時間は記録されません</Text>
+          <Text style={s.warnBannerText}>
+            {pauseKind === 'auto'
+              ? '自動停止中 — 動き出すと自動で再開します'
+              : '一時停止中 — この間の移動と時間は記録されません'}
+          </Text>
         </View>
       )}
 
@@ -689,19 +796,27 @@ export default function RecordScreen() {
           <>
             <View style={s.hudControl}>
               <TouchableOpacity
-                style={[s.pauseBtn, isPaused && s.resumeBtn]}
-                onPress={isPaused ? resumeRecording : pauseRecording}
+                style={[s.pauseBtn, pauseKind === 'manual' && s.resumeBtn]}
+                onPress={pauseKind === 'manual' ? resumeRecording : pauseRecording}
                 activeOpacity={0.8}
                 accessibilityRole="button"
-                accessibilityLabel={isPaused ? 'ランの記録を再開' : 'ランの記録を一時停止'}
+                accessibilityLabel={
+                  pauseKind === 'manual'
+                    ? 'ランの記録を再開'
+                    : pauseKind === 'auto'
+                      ? '自動停止を手動停止へ切り替え'
+                      : 'ランの記録を一時停止'
+                }
               >
                 <Ionicons
-                  name={isPaused ? 'play' : 'pause'}
+                  name={pauseKind === 'manual' ? 'play' : 'pause'}
                   size={30}
-                  color={isPaused ? DarkColors.background : DarkColors.textPrimary}
+                  color={pauseKind === 'manual' ? DarkColors.background : DarkColors.textPrimary}
                 />
               </TouchableOpacity>
-              <Text style={s.stopLabel}>{isPaused ? '再開' : '一時停止'}</Text>
+              <Text style={s.stopLabel}>
+                {pauseKind === 'manual' ? '再開' : pauseKind === 'auto' ? '手動停止' : '一時停止'}
+              </Text>
             </View>
             <View style={s.hudControl}>
               <TouchableOpacity
@@ -773,6 +888,99 @@ export default function RecordScreen() {
   );
 }
 
+function VoiceCoachSettingsModal({
+  visible, settings, onChange, onClose,
+}: {
+  visible: boolean;
+  settings: VoiceCoachSettings;
+  onChange: (patch: Partial<VoiceCoachSettings>) => void;
+  onClose: () => void;
+}) {
+  const contentOptions: { key: keyof VoiceCoachSettings; label: string }[] = [
+    { key: 'announceElapsed', label: '経過時間' },
+    { key: 'announceDistance', label: '距離' },
+    { key: 'announceLapPace', label: '直近ラップペース' },
+    { key: 'announceAveragePace', label: '平均ペース' },
+  ];
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={s.sheetRoot}>
+        <Pressable style={s.sheetBackdrop} onPress={onClose} />
+        <SafeAreaView style={s.sheet} edges={['bottom']}>
+          <View style={s.sheetHandle} />
+          <View style={s.sheetHeader}>
+            <View>
+              <Text style={s.sheetTitle}>音声コーチ</Text>
+              <Text style={s.sheetHint}>ラン中に聞きたい情報を選べます</Text>
+            </View>
+            <Switch
+              value={settings.enabled}
+              onValueChange={(enabled) => onChange({ enabled })}
+              trackColor={{ false: Colors.surfaceGray, true: `${Colors.primary}60` }}
+              thumbColor={settings.enabled ? Colors.primary : Colors.textTertiary}
+            />
+          </View>
+
+          <Text style={s.sheetSectionLabel}>読み上げ間隔</Text>
+          <View style={s.sheetSegment}>
+            {(['distance', 'time'] as const).map((type) => (
+              <TouchableOpacity
+                key={type}
+                style={[s.sheetSegmentButton, settings.intervalType === type && s.sheetSegmentButtonActive]}
+                onPress={() => onChange({ intervalType: type })}
+              >
+                <Text style={[s.sheetSegmentText, settings.intervalType === type && s.sheetSegmentTextActive]}>
+                  {type === 'distance' ? '距離ごと' : '時間ごと'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={s.sheetChips}>
+            {(settings.intervalType === 'distance' ? [0.5, 1, 2] as const : [5, 10] as const).map((value) => {
+              const active = settings.intervalType === 'distance'
+                ? settings.distanceKm === value
+                : settings.timeMinutes === value;
+              return (
+                <TouchableOpacity
+                  key={value}
+                  style={[s.sheetChip, active && s.sheetChipActive]}
+                  onPress={() => settings.intervalType === 'distance'
+                    ? onChange({ distanceKm: value as VoiceCoachSettings['distanceKm'] })
+                    : onChange({ timeMinutes: value as VoiceCoachSettings['timeMinutes'] })}
+                >
+                  <Text style={[s.sheetChipText, active && s.sheetChipTextActive]}>
+                    {value}{settings.intervalType === 'distance' ? 'km' : '分'}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Text style={s.sheetSectionLabel}>読み上げる内容</Text>
+          <View style={s.sheetOptions}>
+            {contentOptions.map((option) => (
+              <View key={option.key} style={s.sheetOptionRow}>
+                <Text style={s.sheetOptionLabel}>{option.label}</Text>
+                <Switch
+                  value={settings[option.key] as boolean}
+                  onValueChange={(value) => onChange({ [option.key]: value })}
+                  trackColor={{ false: Colors.surfaceGray, true: `${Colors.primary}60` }}
+                  thumbColor={settings[option.key] ? Colors.primary : Colors.textTertiary}
+                  style={{ transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }] }}
+                />
+              </View>
+            ))}
+          </View>
+          <TouchableOpacity style={s.sheetDoneButton} onPress={onClose}>
+            <Text style={s.sheetDoneText}>完了</Text>
+          </TouchableOpacity>
+        </SafeAreaView>
+      </View>
+    </Modal>
+  );
+}
+
 const s = StyleSheet.create({
   // Pre-recording (light)
   root: { flex: 1, backgroundColor: Colors.background },
@@ -791,12 +999,16 @@ const s = StyleSheet.create({
     paddingHorizontal: 40,
     marginTop: 10,
   },
+  voiceSettingsButton: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6,
+  },
+  voiceLabelWrap: { flex: 1 },
   voiceLabel: {
-    flex: 1,
     fontSize: 13,
     fontWeight: '600' as const,
     color: Colors.textTertiary,
   },
+  voiceSummary: { fontSize: 10, color: Colors.textTertiary, marginTop: 1 },
   modeToggle: {
     flexDirection: 'row', gap: 4, padding: 4,
     backgroundColor: Colors.surfaceAlt, borderRadius: BorderRadius.full,
@@ -912,6 +1124,13 @@ const s = StyleSheet.create({
     borderRadius: BorderRadius.sm, paddingHorizontal: 14, paddingVertical: 8,
   },
   hudContribText: { fontSize: 11, fontWeight: '700', color: DarkColors.primary, textAlign: 'center' },
+  hudCheerBanner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    marginHorizontal: 20, marginBottom: 8,
+    backgroundColor: DarkColors.primarySoft,
+    borderRadius: BorderRadius.sm, paddingHorizontal: 14, paddingVertical: 9,
+  },
+  hudCheerText: { fontSize: 11, fontWeight: '700', color: DarkColors.primaryTint, textAlign: 'center' },
   warnBanner: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     marginHorizontal: 20, marginBottom: 8, gap: 6,
@@ -977,5 +1196,39 @@ const s = StyleSheet.create({
     backgroundColor: DarkColors.primary, paddingVertical: 18, alignItems: 'center',
   },
   routeCloseBtnText: { fontSize: 16, fontWeight: '800', color: DarkColors.background },
+
+  // Voice coach bottom sheet
+  sheetRoot: { flex: 1, justifyContent: 'flex-end' },
+  sheetBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: DarkColors.modalBackdrop },
+  sheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: BorderRadius.xl,
+    borderTopRightRadius: BorderRadius.xl,
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.sm,
+  },
+  sheetHandle: {
+    alignSelf: 'center', width: 40, height: 4, borderRadius: BorderRadius.full,
+    backgroundColor: Colors.border, marginBottom: Spacing.lg,
+  },
+  sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sheetTitle: { fontSize: 20, fontWeight: '800', color: Colors.textPrimary },
+  sheetHint: { fontSize: 11, color: Colors.textTertiary, marginTop: 3 },
+  sheetSectionLabel: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary, marginTop: Spacing.xl, marginBottom: Spacing.sm },
+  sheetSegment: { flexDirection: 'row', gap: 4, backgroundColor: Colors.surfaceGray, borderRadius: BorderRadius.md, padding: 4 },
+  sheetSegmentButton: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: BorderRadius.sm },
+  sheetSegmentButtonActive: { backgroundColor: Colors.surface, ...Shadow.sm },
+  sheetSegmentText: { fontSize: 12, fontWeight: '700', color: Colors.textTertiary },
+  sheetSegmentTextActive: { color: Colors.textPrimary },
+  sheetChips: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md },
+  sheetChip: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: BorderRadius.full, backgroundColor: Colors.surfaceGray },
+  sheetChipActive: { backgroundColor: Colors.primary },
+  sheetChipText: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary },
+  sheetChipTextActive: { color: Colors.textOnPrimary },
+  sheetOptions: { borderTopWidth: 1, borderTopColor: Colors.borderLight },
+  sheetOptionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 48, borderBottomWidth: 1, borderBottomColor: Colors.borderLight },
+  sheetOptionLabel: { fontSize: 14, fontWeight: '600', color: Colors.textPrimary },
+  sheetDoneButton: { backgroundColor: Colors.primary, borderRadius: BorderRadius.md, paddingVertical: 14, alignItems: 'center', marginTop: Spacing.xl, marginBottom: Spacing.md },
+  sheetDoneText: { color: Colors.textOnPrimary, fontSize: 15, fontWeight: '800' },
 
 });

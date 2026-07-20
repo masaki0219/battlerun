@@ -5,9 +5,24 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged,
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, serverTimestamp, writeBatch, onSnapshot } from 'firebase/firestore';
+import { doc, setDoc, getDoc, serverTimestamp, writeBatch, onSnapshot, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
-import type { AuthStore, User, UserTitle } from '../types';
+import type { AuthStore, PersonalRecords, User, UserTitle } from '../types';
+
+function personalRecordsFrom(value: unknown): PersonalRecords | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const raw = value as Record<string, unknown>;
+  const records: PersonalRecords = {};
+  const keys = [
+    'fastest1kSec', 'fastest5kSec', 'fastest10kSec',
+    'longestRunKm', 'maxElevationGainM', 'bestMonthKm',
+  ] as const;
+  for (const key of keys) {
+    const record = raw[key];
+    if (typeof record === 'number' && Number.isFinite(record) && record >= 0) records[key] = record;
+  }
+  return Object.keys(records).length > 0 ? records : undefined;
+}
 
 export const useAuthStore = create<AuthStore>((set) => ({
   user: null,
@@ -34,6 +49,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
         name,
         avatarUrl: null,
         plan: 'free',
+        runningPresenceVisible: false,
         createdAt: new Date(),
       });
       batch.set(doc(db, 'publicProfiles', result.user.uid), {
@@ -56,6 +72,18 @@ export const useAuthStore = create<AuthStore>((set) => ({
   },
 
   setProEntitlement: (active) => set({ proEntitlement: active }),
+
+  setWeeklyGoal: async (goal) => {
+    const user = useAuthStore.getState().user;
+    if (!user) throw new Error('ログインが必要です');
+    await updateDoc(doc(db, 'users', user.id), { weeklyGoal: goal });
+  },
+
+  setRunningPresenceVisible: async (visible) => {
+    const user = useAuthStore.getState().user;
+    if (!user) throw new Error('ログインが必要です');
+    await updateDoc(doc(db, 'users', user.id), { runningPresenceVisible: visible });
+  },
 }));
 
 // アプリ起動時に一度だけ呼ぶ。Firebase Auth のセッションを永続的に監視する。
@@ -80,6 +108,7 @@ export function initAuthListener(): () => void {
             name,
             avatarUrl: firebaseUser.photoURL ?? null,
             plan: 'free',
+            runningPresenceVisible: false,
             createdAt: new Date(),
           });
           await setDoc(doc(db, 'publicProfiles', firebaseUser.uid), {
@@ -107,6 +136,12 @@ export function initAuthListener(): () => void {
             return;
           }
           const data = userSnap.data();
+          const weeklyGoalData = data['weeklyGoal'];
+          const weeklyGoal = weeklyGoalData
+            && (weeklyGoalData.type === 'distance' || weeklyGoalData.type === 'days')
+            && typeof weeklyGoalData.value === 'number'
+            ? { type: weeklyGoalData.type, value: weeklyGoalData.value }
+            : null;
           const user: User = {
             id: firebaseUser.uid,
             authId: firebaseUser.uid,
@@ -120,6 +155,9 @@ export function initAuthListener(): () => void {
             battleIds: (data['battleIds'] as string[] | undefined) ?? [],
             totalDistanceKm: (data['totalDistanceKm'] as number | undefined) ?? undefined,
             activityCount: (data['activityCount'] as number | undefined) ?? undefined,
+            weeklyGoal,
+            personalRecords: personalRecordsFrom(data['personalRecords']),
+            runningPresenceVisible: data['runningPresenceVisible'] === true,
           };
           useAuthStore.setState({ user, isLoading: false });
         }, (error) => {

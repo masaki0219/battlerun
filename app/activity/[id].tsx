@@ -8,14 +8,21 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { doc, getDoc, collection, getDocs, query, orderBy } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { Ionicons } from '@expo/vector-icons';
-import MapView, { Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import { db, functions } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import type { RoutePoint, ReactionType } from '../../types';
-import { Colors, DarkColors, BorderRadius, TextStyles } from '../../design_tokens';
+import { Colors, DarkColors, RoutePaceColors, BorderRadius, TextStyles } from '../../design_tokens';
 import { MonoLabel } from '../../components/ui/MonoLabel';
 import { KmSplitsCard } from '../../components/run/KmSplitsCard';
 import { kmSplits, elevationGainM, estimatedCalories } from '../../utils/displayStats';
+import { buildRouteVisualization, type RoutePaceBand } from '../../utils/routeSplits';
+
+const ROUTE_PACE_COLOR: Record<RoutePaceBand, string> = {
+  fast: RoutePaceColors.fast,
+  steady: RoutePaceColors.steady,
+  slow: RoutePaceColors.slow,
+};
 
 function formatTime(sec: number): string {
   const h = Math.floor(sec / 3600);
@@ -228,6 +235,9 @@ export default function ActivityDetailScreen() {
 
   const hasRoute = activity.measurementType === 'gps' && activity.route.length > 1;
   const splits = hasRoute ? kmSplits(activity.route) : [];
+  const routeVisualization = hasRoute
+    ? buildRouteVisualization(activity.route)
+    : { segments: [], kmMarkers: [] };
   const elevationGain = hasRoute ? elevationGainM(activity.route) : null;
   const calories = estimatedCalories(activity.distanceKm, activity.durationSeconds);
   let mapRegion: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number } | null = null;
@@ -317,12 +327,43 @@ export default function ActivityDetailScreen() {
               scrollEnabled={false}
               zoomEnabled={false}
             >
-              <Polyline
-                coordinates={activity.route.map((p) => ({ latitude: p.lat, longitude: p.lng }))}
-                strokeColor={Colors.primary}
-                strokeWidth={3}
-              />
+              {routeVisualization.segments.map((segment) => (
+                <Polyline
+                  key={segment.id}
+                  coordinates={segment.coordinates}
+                  strokeColor={ROUTE_PACE_COLOR[segment.band]}
+                  strokeWidth={4}
+                />
+              ))}
+              {routeVisualization.kmMarkers.map((marker) => (
+                <Marker
+                  key={`km-marker-${marker.km}`}
+                  coordinate={marker}
+                  anchor={{ x: 0.5, y: 0.5 }}
+                  tracksViewChanges={false}
+                  zIndex={2}
+                  accessibilityLabel={`${marker.km}キロ地点`}
+                >
+                  <View style={s.kmMarker}>
+                    <Text style={s.kmMarkerText}>{marker.km}</Text>
+                  </View>
+                </Marker>
+              ))}
             </MapView>
+            <View style={s.paceLegend} pointerEvents="none">
+              <View style={s.legendItem}>
+                <View style={[s.legendDot, { backgroundColor: RoutePaceColors.fast }]} />
+                <Text style={s.legendText}>速い</Text>
+              </View>
+              <View style={s.legendItem}>
+                <View style={[s.legendDot, { backgroundColor: RoutePaceColors.steady }]} />
+                <Text style={s.legendText}>普通</Text>
+              </View>
+              <View style={s.legendItem}>
+                <View style={[s.legendDot, { backgroundColor: RoutePaceColors.slow }]} />
+                <Text style={s.legendText}>ゆっくり</Text>
+              </View>
+            </View>
           </View>
         )}
 
@@ -418,6 +459,38 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.border,
   },
   map: { flex: 1 },
+  kmMarker: {
+    minWidth: 24,
+    height: 24,
+    paddingHorizontal: 4,
+    borderRadius: BorderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surface,
+    borderWidth: 2,
+    borderColor: Colors.primary,
+  },
+  kmMarkerText: {
+    color: Colors.primary,
+    fontSize: 10,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  paceLegend: {
+    position: 'absolute',
+    left: 8,
+    bottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.surface,
+  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  legendDot: { width: 8, height: 8, borderRadius: BorderRadius.full },
+  legendText: { fontSize: 9, fontWeight: '700', color: Colors.textSecondary },
 
   section: { paddingHorizontal: 16, marginTop: 16, gap: 8 },
 

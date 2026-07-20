@@ -17,6 +17,10 @@ import Constants from 'expo-constants';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import type { Battle } from '../types';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { isQuietHours } from '../utils/notificationTiming';
+
+const DECLARATION_REMINDERS_KEY = '@battlerun_declaration_reminders_v1';
 
 // フォアグラウンドでも通知を表示する
 Notifications.setNotificationHandler({
@@ -84,13 +88,13 @@ export async function scheduleBattleEndNotification(battle: Battle): Promise<str
   const endTime = new Date(battle.endAt).getTime();
   const notifyAt = new Date(endTime - 24 * 60 * 60 * 1000); // 24時間前
 
-  if (notifyAt <= new Date()) return null; // 既に通知タイミングを過ぎている
+  if (notifyAt <= new Date() || isQuietHours(notifyAt)) return null;
 
   try {
     const id = await Notifications.scheduleNotificationAsync({
       content: {
-        title: '🏃 チャレンジ終了まで24時間！',
-        body: `「${battle.title}」の終了が近づいています。最後の追い込みを！`,
+        title: 'チャレンジ終了まで24時間',
+        body: `「${battle.title}」は明日終了します。参加できるタイミングがあれば、いつものペースでどうぞ。`,
         data: { relatedBattleId: battle.id },
       },
       trigger: {
@@ -111,12 +115,12 @@ export async function scheduleBattleEndNotification(battle: Battle): Promise<str
 export async function scheduleBattleEnd1hNotification(battle: Battle): Promise<string | null> {
   if (!battle.endAt) return null;
   const notifyAt = new Date(new Date(battle.endAt).getTime() - 60 * 60 * 1000);
-  if (notifyAt <= new Date()) return null;
+  if (notifyAt <= new Date() || isQuietHours(notifyAt)) return null;
   try {
     return await Notifications.scheduleNotificationAsync({
       content: {
-        title: '⚡ チャレンジ終了まで1時間！',
-        body: `「${battle.title}」があと1時間で終了します。最後の一走りを！`,
+        title: 'チャレンジ終了まで1時間',
+        body: `「${battle.title}」はまもなく終了します。これまでのランが記録されています。`,
         data: { relatedBattleId: battle.id },
       },
       trigger: {
@@ -125,6 +129,54 @@ export async function scheduleBattleEnd1hNotification(battle: Battle): Promise<s
       },
     });
   } catch {
+    return null;
+  }
+}
+
+async function declarationReminderMap(): Promise<Record<string, string>> {
+  try {
+    const raw = await AsyncStorage.getItem(DECLARATION_REMINDERS_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/** 出撃宣言時刻のリマインド。宣言ごとに一度だけ、静音時間外に限り登録する。 */
+export async function scheduleDeclarationReminder(params: {
+  declarationId: string;
+  battleId: string;
+  plannedAt: Date;
+}): Promise<string | null> {
+  if (params.plannedAt <= new Date() || isQuietHours(params.plannedAt)) return null;
+  const reminders = await declarationReminderMap();
+  const reminderKey = `${params.battleId}/${params.declarationId}`;
+  if (reminders[reminderKey]) return reminders[reminderKey];
+  if (!(await requestNotificationPermission())) return null;
+
+  try {
+    const id = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '宣言した時間になりました',
+        body: '準備ができたらスタート！',
+        data: {
+          type: 'declaration_reminder',
+          openRecord: true,
+          relatedBattleId: params.battleId,
+          url: 'zelio://record',
+        },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: params.plannedAt,
+      },
+    });
+    reminders[reminderKey] = id;
+    await AsyncStorage.setItem(DECLARATION_REMINDERS_KEY, JSON.stringify(reminders));
+    return id;
+  } catch (error) {
+    console.warn('[Notifications] 宣言リマインドの登録に失敗:', error);
     return null;
   }
 }

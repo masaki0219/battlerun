@@ -16,11 +16,63 @@
 
 Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*` 等）は従来値を維持している。
 
+**デプロイ方針（2026-07-20 ユーザー許可済み）**: 実装に伴う Firebase Functions / Firestore ルールは、必須テストとビルドが成功した後、Codexが `zelio-run` へデプロイしてよい。都度の再確認は不要。対象プロジェクトを明示し、完了・失敗を報告すること。commit / push / reset / rebase は従来どおり別途ユーザー許可が必要。
+
 `inst_v3/BattleRunホーム画面作成.zip`（Figma Make のホーム画面デザイン・最終版）を反映し、パレットをディープパイン系に刷新した。レイアウトの作り直しはホームタブとランタブの2画面に限定し、他画面は `design_tokens.ts` 経由で色だけ追従している。
 
 ※ 同フォルダの `BattleRunホーム画面作成 (コピー).zip` は旧版。パレット（`theme.css`）は同一だが、ヒーローが2陣営のVSゲージで、チーム内ランキングが無い。**最終版はこちら（コピーでない方）**。
 
 ## 最後に完了したこと
+
+### リリースレビューレポートの作成とRev.2改訂（2026-07-20）
+
+- コードベース全体を静的レビューしたレポートを作成し、ユーザーレビューを反映して Rev.2 へ改訂した。保存場所はユーザーがリポジトリ外の `Desktop/ZELIO/inst_v4/RELEASE_READINESS_REVIEW_2026-07-20.md` へ移動済み（リポジトリ内の docs/ には無い）。コード変更は行っていない。
+- Rev.2 の要点: P0を「本当に公開を止める項目」だけに絞った（実機E2E一式 / オンボーディングの旧ブランド「BATTLERUN」表記 `app/onboarding.tsx:33` とCTA導線不一致 / サポート・プライバシー整備 / オートポーズ初期OFFへの変更 / 公式チャレンジ運用の確立 / iOS先行かAndroid同時かの決定）。分析基盤・Node 22移行（8〜9月中、P1最上位）・Apple/GoogleログインなどはP1〜P2へ整理。GPS改善は固定値変更ではなく「accuracy保存 → 米沢市内での実走ログ → 段階的フィルタ調整」の実走データ前提へ書き直し、速度上限35km/h緩和案は削除した。
+
+### 機能ギャップ Sprint 4 / 5（T-12 プロセス貢献の可視化 / T-06 ルート表示強化）（2026-07-20）
+
+- **T-12**: チーム内ランキングの各表示メンバーへ、今週の宣言達成数を「🔥 宣言 N」、活動した日数を「今週 N日」の小さな称賛バッジとして追加した。0件は表示せず、距離順位に影響しないこともカード内に明記した。ランキングの並び・距離・順位計算は既存 `useTeamRanking` のままで変更していない。
+- 宣言は当週月曜〜当日の `battles/{battleId}/declarations`、参加日数は当週月曜以降の `public_v2` 活動を購読し、クライアントでユーザー別に集計する方式を採用した。同日複数活動は1日として数える。participant への集計書き込みを増やさず、活動クエリは既存の `battleIds + visibility + startedAt` 複合インデックスを使う。
+- **T-06**: 活動詳細のGPSマップを、既存 `kmSplits()` のラップペースに応じた相対3段階（速い / 普通 / ゆっくり）へ分割描画した。色は新規 `RoutePaceColors` トークンだけを参照する。整数km境界は点間の実距離比で座標補間し、数字マーカーとして表示する。
+- `seg` が付いた一時停止後の再開点へはポリラインを引かず、再開後を別セグメントとして描画する。ルートなし・歩数活動は従来どおりマップを表示しない。純関数テストでkm境界補間、3色分類、`seg` 分断、空ルートを確認した。
+- 確認は `npx tsc --noEmit`、`cd functions && npm run build`、`npm run test:unit`、`npx expo export --platform ios`、`git diff --check` がすべて成功。Functions / Firestoreルール / インデックスの変更はないためFirebaseデプロイとルールテストは不要。実機でランキングバッジの折り返しと、実GPSルート上の色・マーカーの目視は未確認。
+
+### 機能ギャップ Sprint 4（T-11 ライブプレゼンス + 走行中応援）（2026-07-20）
+
+- プロフィールへ「走行中の表示を仲間に公開」トグルを追加した。既定OFFで、本人がopt-inした場合だけ、記録中クライアントが参加中の主チャレンジ1件の `battles/{battleId}/presence/{uid}` へ60秒ごとに心拍を書き込む。フォアグラウンド限定で、位置・距離・ペースは保存しない。停止/opt-out時は即時非表示を試み、バックグラウンド移行などで書けない場合も3分の鮮度判定で一覧から消える。
+- チャレンジタブが表示中の間だけ、3分以内の心拍を購読する「いま走っている仲間」カードを追加した。プロフィールはキャッシュし、初回クエリも直近3分へ限定する。同じランへ1人1回だけ応援でき、セッションIDが変わった次のランでは再度応援できる。応援文書にも位置情報は含めない。
+- ランナーの記録HUDは現在のランへの応援だけを購読し、8秒の画面内バナー、`expo-haptics` の触覚フィードバック、音声コーチON時の「◯◯さんから応援が届きました」読み上げを行う。新規 `onPresenceCheerWritten` は通知センターとExpo Pushへも配信する。`onUserDeleted` は本人のプレゼンス、受信/送信した応援も削除する。
+- Firestoreルールはopt-in本人だけの心拍作成、参加者だけのread、位置情報等の余分なフィールド拒否、3分以内・本人以外・同一ラン1回の応援を保証する。鮮度境界の純関数テストと、opt-in/参加者/位置情報拒否/重複応援/次ラン再応援/opt-outのルールテストを追加した。確認は `npx tsc --noEmit`、`cd functions && npm run build`、`npm run test:unit`、`npm run test:rules`（Homebrew OpenJDKをPATH指定、全70件）、`npx expo export --platform ios` がすべて成功。`git diff --check` もクリーン。
+- **デプロイ済み/未確認**: 2026-07-20 に `firebase deploy --only functions:onPresenceCheerWritten,functions:onUserDeleted,firestore:rules --project zelio-run --non-interactive` を実行。Firestoreルールを公開し、対象Functions 2件がACTIVEであることを確認した。2台の実機を使ったopt-in→走行中表示→応援→HUD触覚/音声/Pushと、バックグラウンド後3分失効は未確認。
+
+### 機能ギャップ Sprint 3（T-03 / T-04）（2026-07-20）
+
+- `users/{uid}.personalRecords` に最速1km/5km/10km、最長距離、最高獲得標高、最高月間距離をFunctionsだけが保存するようにした。GPSルートを停止境界ごとのセグメントへ分け、累積距離のスライディングウィンドウと点間時刻の線形補間で最速区間を算出するため、一時停止区間は距離にも時間にも含めず、`seg` を跨いだ記録も作らない。
+- `aggregateActivity` は新記録だけを既存値へマージし、更新したキーを活動の `newRecords` に保存する。削除時の自己ベスト巻き戻しはバッジと同じ方針で行わない。既存ユーザーで `personalRecords` が欠ける場合は直近50件の最長距離・月間距離へフォールバックし、速度/標高記録はダッシュ表示にする。
+- サマリーへ「自己ベスト更新！ 🎉」カード、記録タブへ6項目の「自己ベスト」セクションを追加した。活動履歴のBEST表示はサーバー確定の最長記録と一致する活動だけにした。クライアントから `personalRecords` を作成・更新できないFirestoreルールとテストも追加した。
+- 最速区間の純関数テスト（距離不足、`seg` 跨ぎ除外、線形補間）に加え、獲得標高と記録マージをテストした。確認は `npx tsc --noEmit`、`cd functions && npm run build`、`npm run test:unit`、`npm run test:rules`（Homebrew OpenJDKをPATH指定、全50件）、`npx expo export --platform ios` がすべて成功。`git diff --check` もクリーン。
+- **デプロイ済み/未確認**: 2026-07-20 に `firebase deploy --only functions,firestore:rules --project zelio-run --non-interactive` を実行し、FirestoreルールとFunctions 16件をデプロイ（エラー0件）。新しいランでのPR集計、サマリー祝福、記録タブ表示は実機で未確認。過去活動のバックフィルは行わず、デプロイ後の新規活動から記録を積み上げる。
+- **T-04 月間・年間統計**: `aggregateActivity` が東京時間の `users/{uid}/monthlyStats/{YYYY-MM}` へ距離・記録回数・実走時間・獲得標高を既存の集計トランザクション内で加算し、活動へ減算用スナップショットを保存するようにした。`deleteActivity` は同じ月次値をトランザクションで減算し0未満へ落とさず、集計済み活動の再処理や同時削除でも二重反映しない。`onUserDeleted` は月次サブコレクションも削除する。公開前の活動はバックフィルせず、減算用スナップショットが無い旧活動の削除でも月次値は変更しない。
+- 記録タブへ、サーバー集計値を使う現在年の累計、直近12ヶ月の選択可能なバーチャート、選択月の距離・回数・時間・獲得標高を追加した。過去分を追加集計しない旨も画面内に注記した。月次ドキュメントは本人だけが読め、クライアントからは書けないFirestoreルールを追加した。
+- 東京時間の月境界・年跨ぎ・集計スナップショット解析の純関数テストと、月次統計の本人read可 / 他人read拒否 / クライアントwrite拒否のルールテストを追加した。確認は `npx tsc --noEmit`、`cd functions && npm run build`、`npm run test:unit`、`npm run test:rules`（Homebrew OpenJDKをPATH指定、全53件）、`npx expo export --platform ios` がすべて成功。`git diff --check` もクリーン。
+- **デプロイ済み/未確認**: 2026-07-20 に `firebase deploy --only functions:aggregateActivity,functions:deleteActivity,functions:onUserDeleted,firestore:rules --project zelio-run --non-interactive` を実行し、対象Functions 3件とFirestoreルールをデプロイ（エラー0件）。新しい活動の月次加算・削除時の減算と、月間・年間UIは実機で未確認。
+
+### 機能ギャップ Sprint 2（T-10 / T-13）（2026-07-20）
+
+- **T-10 出撃宣言**: 参加中の主チャレンジへ1日1件、当日の予定時刻（まもなく/朝/昼/夕方/夜）と任意の20字メモを宣言できるカードをホームへ追加。メモは既存の禁止語リストを再利用して検証する。宣言は `battles/{battleId}/declarations/{uid_YYYYMMDD}` に保存し、同じチャレンジの参加者による今日の宣言をリアルタイム表示する。本人以外は1人1回だけ🔥応援でき、`onDeclarationCheerCreated` が宣言者の通知センターとプッシュへ「応援が届きました」を送る。
+- 宣言時刻のローカル通知は宣言・チャレンジ単位で1回だけ登録し、タップでランタブへ直接遷移する。記録保存成功後はサーバーが確定した対象チャレンジの当日宣言を `done` にし、サマリーとホームで「宣言達成！」を祝福する。日付を過ぎた宣言は取得対象から外すため、未実行の表示や通知は出さない。
+- declarations / cheers の Firestore ルールを追加。宣言は開催中チャレンジの参加者本人だけが作成・達成更新でき、参加者だけが閲覧できる。応援は参加者が自分のUIDで他者の宣言にだけ作成できる。`onUserDeleted` は本人の宣言、その宣言に付いた応援、本人が送った応援も削除する。
+- **T-13 健全性ガードレール**: 直近7日が前の7日より50%超増え、かつ15km超のとき、記録タブに休息を肯定する情報カードを同一カレンダー週に1回だけ表示する。全ローカル通知（チャレンジ終了24時間前/1時間前、宣言）は22:00〜7:00をスケジュール対象外にした。終了通知と順位変動プッシュの焦りを誘う文言も中立化した。
+- 確認は `npx tsc --noEmit`、`cd functions && npm run build`、`npm run test:unit`、`npm run test:rules`（Homebrew OpenJDKをPATH指定、全47件）、`npx expo export --platform ios` がすべて成功。禁止文言grepと `git diff --check` もクリーン。
+- **デプロイ済み/未確認**: 2026-07-20 に `firebase deploy --only functions,firestore:rules --project zelio-run --non-interactive` を実行し、FirestoreルールとFunctions 16件（新規 `onDeclarationCheerCreated` を含む、エラー0件）をデプロイ済み。宣言カード、ローカル通知タップ、応援プッシュ、達成サマリー、過負荷カードは実機で未確認。
+
+### 機能ギャップ Sprint 1（T-01 / T-02 / T-05）（2026-07-20）
+
+- **T-01 オートポーズ**: `recordStore` に `pauseKind: 'manual' | 'auto' | null` と永続化されるオートポーズ設定（既定ON）を追加。GPS速度が 0.55m/s 未満で5秒続くと自動停止し、1.2m/s 超で自動再開する。低速判定中の点は一時バッファに置き、自動停止成立時はルート・距離へ入れない。自動停止中はGPS追跡を継続する一方、手動停止へ切り替えると追跡を止めるため、手動操作が常に優先される。HUDは「自動停止中」と手動停止を区別する。foreground/background の両方が同じ判定を通り、GPSの速度値が無い場合は点間速度へフォールバックする。
+- **T-02 音声コーチ**: ON/OFFだけだった音声ガイドを、距離（0.5/1/2km）または時間（5/10分）の間隔と、経過時間・距離・直近ラップペース・平均ペースの内容選択へ拡張。設定はボトムシートから変更し AsyncStorage へ保存する。既定値は「1kmごと・距離+平均ペース」。一時停止中は読み上げず、開始・目標達成・終了の既存音声は維持した。ペース読み上げは「キロ 6分12秒」形式。
+- **T-05 週間目標**: `users/{uid}.weeklyGoal`（距離/日数）をリアルタイム購読し、記録タブから設定・変更・解除できるようにした。既定提案は 10km / 週3日。記録タブとホーム週間カードに `ProgressRing` を使った進捗を表示し、達成時は画面内だけで穏やかに祝福する。Firestoreルールは本人の有効値（距離1〜500km、日数1〜7の整数）のみ許可し、本人許可/他人拒否/不正値拒否のテストを追加した。
+- 純関数テストへオートポーズ（5秒停止・ヒステリシス・短い低速区間の復帰）と音声文組み立てを追加。確認は `npx tsc --noEmit`、`npm run test:unit`、`npm run test:rules`（Homebrew OpenJDKをPATH指定、全38件）、`npx expo export --platform ios` がすべて成功。Functionsは変更していないため Functions build は未実行。
+- **デプロイ済み/未確認**: 週間目標用 `firestore.rules` は2026-07-20にデプロイ済み。オートポーズのバックグラウンド動作は EAS development build、音声と各ボトムシートの見た目は実機で未確認。
 
 ### 記録停止・オフライン再送フローの堅牢化（2026-07-20）
 
@@ -30,11 +82,11 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 - Callable の `invalid-argument` / `failed-precondition` / `permission-denied` は恒久エラーとしてキューから除外し、ユーザーへ通知。一時的な通信エラーだけを再送対象に残す。再送はログイン時に加え、foreground復帰時・アプリ使用中30秒間隔・次回保存成功時にも行う。
 - 停止連打ガードと `stopRecording` の二重停止ガードを追加。距離0は完了画面へ遷移せず未保存を通知し、ローカルキューへの書き込み自体が失敗した場合は記録をメモリ上の一時停止状態へ戻す。
 - HUDのGPS点追加にも保存時と同じ速度フィルタを適用。サマリーの主チャレンジは順位上昇幅→battleIdで決定的に選択し、集計待ちは15秒で「あとで活動詳細から確認」にフォールバックする。
-- 確認: `npx tsc --noEmit`、`npm run test:unit`、Functions の `npm run build`、`npx expo export --platform ios` はすべて成功。ルール変更はないため `npm run test:rules` は未実行。Functions の変更は未デプロイ。
+- 確認: `npx tsc --noEmit`、`npm run test:unit`、Functions の `npm run build`、`npx expo export --platform ios` はすべて成功。ルール変更はないため `npm run test:rules` は未実行。Functions の変更は2026-07-20にデプロイ済み。
 
 ### ランニングアプリ基本機能の拡充（2026-07-19）
 
-単体のランニングアプリとして不足していた機能（一時停止・記録削除・1kmラップ・目標・カウントダウン・開始前GPS状態・生涯累計・推定カロリー・獲得標高）を実装した。**Functions のデプロイと実機目視は未実施**（「未解決・要確認」参照）。
+単体のランニングアプリとして不足していた機能（一時停止・記録削除・1kmラップ・目標・カウントダウン・開始前GPS状態・生涯累計・推定カロリー・獲得標高）を実装した。**Functions は2026-07-20にデプロイ済み、実機目視は未実施**（「未解決・要確認」参照）。
 
 - **一時停止/再開**: `recordStore` に `isPaused` / `pausedAt` / `pausedTotalMs` / `appendRoutePoint` を追加。停止中は `(tabs)/_layout.tsx` で GPS・歩数の追跡自体を止め、再開後の最初の点に `seg: true`（セグメント先頭マーク）を付けて、停止中の移動距離と時間を距離・ペース・ラップから除外する。実走時間は `activeDurationSeconds()`（開始時刻差分から pausedMs を引く）で計算。記録中セッションの AsyncStorage 保全・復旧にも停止状態を含めた。復旧時は `segmentPending: true` にして再起動ギャップの直線距離を数えない（従来は数えていた）。
 - **サーバー側の対応** (`functions/src/submitActivity.ts`): `pausedMs` を受け取り実走時間で保存・平均速度検査（過大申告は検査が厳しくなる方向なのでチート不可）。`parseRoute` は `seg` / `alt`（高度）を保持し、seg 点が検証で落ちた場合は境界を次の採用点へ引き継ぐ。`routeDistance` は seg 跨ぎペアを距離に数えない（seg はセグメント内の速度検査対象外だが、距離にも数えないので水増しには使えない）。活動ドキュメントに `pausedMs` を保存。
@@ -50,7 +102,7 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 
 未コミット差分全体（29ファイル＋新規2ファイル）をレビューし、15件を指摘、うち確定バグを修正した。
 
-- `functions/src/revenuecatWebhook.ts`: `entitlement_ids` が**明示的な空配列**のイベントを誤ってPro扱いする退行を修正。空配列はPro対象外、`entitlement_ids` / `entitlement_id` の両方が欠落しているときだけ従来どおりPro扱い。**修正は未デプロイ**（「未解決・要確認」参照）。
+- `functions/src/revenuecatWebhook.ts`: `entitlement_ids` が**明示的な空配列**のイベントを誤ってPro扱いする退行を修正。空配列はPro対象外、`entitlement_ids` / `entitlement_id` の両方が欠落しているときだけ従来どおりPro扱い。修正は2026-07-20にデプロイ済み。
 - `app/_layout.tsx`: `initRevenueCat` の完了を待ってから `checkProEntitlement` を実行するよう変更。コールドスタートで configure 前に `getCustomerInfo` が走り、Proユーザーでも entitlement が false 上書きされる競合を解消。
 - `utils/dateInput.ts` を新設し、`pad2` / `formatDateInput` / `parseLocalDate` / `addDays` を共通化（`app/admin/battle/new.tsx`・`components/battle/PeriodPicker.tsx`・`app/(tabs)/battle.tsx` の3重複製を解消）。
 - `app/(tabs)/battle.tsx` の私的チャレンジ作成: 日付を `new Date('YYYY-MM-DD')`（UTC解釈＝JSTで朝9時締切）からローカル解釈＋終了日23:59:59へ変更し、admin側・PeriodPickerの「23:59まで」表示と整合させた。「終了日≦開始日」の拒否も追加（従来はadmin側にのみ存在）。
@@ -156,7 +208,7 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 
 ## 次にやること
 
-1. `firebase deploy --only functions` で `submitActivity`（localId冪等化 / pausedMs / seg / alt 対応）と新設 `deleteActivity` をデプロイする。
+1. 機能ギャップ Phase 3 の T-20「インターバルワークアウト」を実装する。
 
 ## その次の候補
 - 実機でオフライン停止→端末キュー保存→オンライン復帰後30秒以内の再送と、サマリー集計の15秒フォールバックを確認する
@@ -172,7 +224,8 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 
 ## 未解決・要確認
 
-- **ランニング基本機能拡充と保存冪等化のデプロイ・確認が未実施（2026-07-20）**: `submitActivity` の変更（localId冪等化 / pausedMs / seg / alt）と新設 `deleteActivity` は **`firebase deploy --only functions` が必要**。新クライアントはlocalIdを必須送信するため、オフライン再送を含む保存確認はFunctionsデプロイ後に行うこと。削除ボタンもデプロイまで「削除できませんでした」になる。実機/シミュレータでの目視（一時停止HUD・オフライン再送・カウントダウン・目標バー・ラップ表示・削除フロー）も未実施。
+- **ランニング基本機能・Sprint 1〜4（T-11まで）の実機確認が未実施（2026-07-20）**: 記録系Functions、自己ベスト・月次統計集計、出撃宣言・ライブ応援Functions、関連ルールは `zelio-run` へデプロイ済み。実機/シミュレータでの目視（一時停止HUD・オートポーズ・音声コーチ・週間目標・自己ベスト祝福/一覧・月間/年間統計・出撃宣言・通知タップ・宣言/ライブ応援プッシュ・ライブプレゼンス3分失効・HUD触覚/音声・宣言達成・過負荷カード・オフライン再送・カウントダウン・目標バー・ラップ表示・削除フロー）は未実施。新規活動の月次加算と削除時の減算も実データでは未確認。バックグラウンドのオートポーズは EAS development build が必要。
+- Functionsデプロイ時に Node.js 20 が2026-10-30に廃止予定との警告が出た。期限までにFunctionsのランタイムをサポート対象バージョンへ更新し、回帰確認して再デプロイする。
 - 一時停止まわりの設計メモ: 終了済みバトルの集計は削除時に減算しない（結果確定のため）。バッジは削除しても剥奪しない。セッション復旧時（アプリ再起動）は `segmentPending: true` でギャップ距離を数えない仕様に変えた。
 - `EXPO_PUBLIC_REVENUECAT_API_KEY` は `appl_RRF…`（.env側の値）が正と確認され、`eas.json` 3プロファイルを統一済み（2026-07-19）。
 - 修正済み `revenuecatWebhook` のデプロイと zelio-run 残作業（Auth メール/パスワード有効化、Firestore データコピー、RevenueCat Webhook URL 変更）はユーザー報告により完了（2026-07-19）。
@@ -183,14 +236,13 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 - サポート窓口の実アドレスは公開後に確認する。
 - Expo依存は `expo ~54.0.35`、`expo-font ~14.0.12`、`expo-router ~6.0.24` へ更新済み。Expo Doctorは18/18合格。
 - `npm audit --omit=dev` は34件（critical 1 / high 4）。Criticalの`shell-quote`とHighの`@grpc/grpc-js` / `protobufjs` / `ws`は親依存の許容範囲内に修正版があり、`npm audit fix`（`--force`なし）で更新可能。Highの`undici`はFirebase 10.14.1が6.19.7へ固定しており、完全解消にはFirebase 12系へのメジャー更新と回帰検証が必要。開発依存込みでは`form-data`が加わりcritical 1 / high 5。`npm audit fix --force`は未適用。
-- Firestoreルールテストはローカルの Java（openjdk 26）でエミュレータ実行できるようになった。2026-07-19 時点で全32件成功。
+- Firestoreルールテストはローカルの Java（openjdk 26）でエミュレータ実行できる。2026-07-20 時点で全70件成功。
 - `submitActivity` はサーバーで距離を再計算するが、Firebase App Checkのネイティブ導入は未実施。改造クライアント対策として導入を検討する。
 - `FactionColumns` のバー高さは **0起点ではなく「最下位〜首位」で正規化**している（僅差だと全部同じ高さに潰れて順位が読めないため。最下位でも 32% は残す）。各バーの上に実数値 km を出して誤読を防いでいるが、スケールの妥当性は要レビュー。
 - `useTeamRanking` は participants サブコレクションを全件読む（既存の `useBattleParticipants` と同じ方式）。大規模バトルでは読み取り件数が増える。上位3名の users 読みは3件に固定。
 - ダーク面（記録中HUD・結果画面）がパイン系に変わったため、`battle/result/[id].tsx` など今回レイアウトを触っていないダーク画面の見え方は要確認。
 - `app/battle/theme.tsx` の `sports` テーマだけ新ブランド色に合わせた。他テーマ（RPG / ホラー等）の hex は意図的にそのまま。
 - `feat/ui-consolidation` を `main` へマージする予定かどうかは不明。31 コミット分が未 push のままローカルにのみ存在する。
-- `npm run test:rules` は Firebase エミュレータ（`firebase emulators:exec`）が必要。未実行（今回の変更は UI のみでルールに影響しない）。
 - `firestore-debug.log` がリポジトリ直下にあるが gitignore 済み。
 
 ## 起動方法
@@ -215,7 +267,7 @@ npx expo export --platform ios  # Metro でバンドルが通るかの確認（�
 npm run test:rules              # Firestore ルールのテスト（Firebase エミュレータ必要）
 ```
 
-2026-07-19 時点: `npx tsc --noEmit`、`functions` の `npm run build`、`npx expo export --platform ios` 成功（レビュー後の修正込み）。`npm run test:rules` は全32件成功（ルール最終変更時に実行。以後ルール変更なし）。
+2026-07-20 時点: `npx tsc --noEmit`、`functions` の `npm run build`、`npm run test:unit`、`npx expo export --platform ios` 成功。`npm run test:rules` は全70件成功。
 
 ## 重要なファイル
 

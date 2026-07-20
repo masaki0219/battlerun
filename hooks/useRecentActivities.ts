@@ -2,7 +2,20 @@ import { useEffect, useState } from 'react';
 import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuthStore } from '../stores/authStore';
-import type { Activity, MeasurementType, RoutePoint } from '../types';
+import type { Activity, MeasurementType, PersonalRecordKey, RoutePoint } from '../types';
+
+const PERSONAL_RECORD_KEYS = new Set<PersonalRecordKey>([
+  'fastest1kSec',
+  'fastest5kSec',
+  'fastest10kSec',
+  'longestRunKm',
+  'maxElevationGainM',
+  'bestMonthKm',
+]);
+
+function isPersonalRecordKey(value: unknown): value is PersonalRecordKey {
+  return typeof value === 'string' && PERSONAL_RECORD_KEYS.has(value as PersonalRecordKey);
+}
 
 /** Firestore Timestamp / millis / ISO を ISO 文字列へ正規化 */
 function toIso(v: any): string {
@@ -58,6 +71,9 @@ export function useRecentActivities(limitCount = 50): {
             route: (data.route as RoutePoint[]) ?? undefined,
             startedAt: toIso(data.startedAt),
             endedAt: toIso(data.endedAt),
+            newRecords: Array.isArray(data.newRecords)
+              ? data.newRecords.filter(isPersonalRecordKey)
+              : undefined,
           };
         });
         setActivities(items);

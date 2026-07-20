@@ -58,8 +58,11 @@ export default function RootLayout() {
         type?: string;
         relatedBattleId?: string;
         relatedActivityId?: string;
+        openRecord?: boolean;
       };
-      if (data?.relatedActivityId) {
+      if (data?.openRecord || data?.type === 'declaration_reminder') {
+        router.push('/(tabs)/record' as any);
+      } else if (data?.relatedActivityId) {
         router.push(`/activity/${data.relatedActivityId}` as any);
       } else if (data?.relatedBattleId) {
         if (data.type === 'battle_ended' || data.type === 'title_earned') {

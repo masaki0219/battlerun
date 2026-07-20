@@ -14,6 +14,8 @@ import {
 import { useLocation } from '../../hooks/useLocation';
 import '../../lib/locationTask';
 import { useStepCounter } from '../../hooks/useStepCounter';
+import { useRunPresence } from '../../hooks/useRunPresence';
+import { useBattleStore } from '../../stores/battleStore';
 import { Colors, Shadow } from '../../design_tokens';
 
 const PRIMARY = Colors.primary;
@@ -166,7 +168,28 @@ export default function TabLayout() {
   const { user, isLoading } = useAuthStore();
   const isRecording = useRecordStore((s) => s.isRecording);
   const isPaused = useRecordStore((s) => s.isPaused);
+  const pauseKind = useRecordStore((s) => s.pauseKind);
   const measurementType = useRecordStore((s) => s.measurementType);
+  const startedAt = useRecordStore((s) => s.startedAt);
+  const publicBattles = useBattleStore((s) => s.publicBattles);
+  const privateBattles = useBattleStore((s) => s.privateBattles);
+  const myMemberships = useBattleStore((s) => s.myMemberships);
+  const currentTime = Date.now();
+  const membershipIds = new Set(myMemberships.map((membership) => membership.battleId));
+  const primaryActiveBattleId = [...publicBattles, ...privateBattles].find((battle) => (
+    membershipIds.has(battle.id)
+    && battle.status === 'active'
+    && new Date(battle.startAt).getTime() <= currentTime
+    && currentTime <= new Date(battle.endAt).getTime()
+  ))?.id;
+
+  useRunPresence({
+    battleId: primaryActiveBattleId,
+    userId: user?.id,
+    startedAt,
+    isRecording,
+    visible: user?.runningPresenceVisible === true,
+  });
 
   useEffect(() => subscribePendingActivityDiscards((count) => {
     Alert.alert(
@@ -198,8 +221,8 @@ export default function TabLayout() {
     };
   }, [user?.id]);
 
-  // 一時停止中は追跡を止める（再開時に権限は保持されたまま再起動する）
-  useLocation({ enabled: isRecording && !isPaused });
+  // 手動停止中だけ追跡を止める。自動停止中は再開速度を検知するためGPS更新を継続する。
+  useLocation({ enabled: isRecording && (!isPaused || pauseKind === 'auto') });
   useStepCounter({ enabled: isRecording && !isPaused && measurementType === 'steps' });
 
   if (isLoading || !user) {

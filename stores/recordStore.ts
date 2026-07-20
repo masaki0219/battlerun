@@ -1,9 +1,15 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { httpsCallable } from 'firebase/functions';
-import { functions } from '../lib/firebase';
-import type { RecordStore, Activity, MeasurementType, RoutePoint, RunGoal } from '../types';
+import { auth, functions } from '../lib/firebase';
+import type { RecordStore, Activity, MeasurementType, PauseKind, RoutePoint, RunGoal } from '../types';
 import { MAX_SPEED_KMH } from '../lib/constants';
+import {
+  emptyAutoPauseDetector,
+  evaluateAutoPause,
+  type AutoPauseDetectorState,
+} from '../utils/autoPause';
+import { completeDeclarationsForActivity } from '../lib/declarations';
 
 function haversine(a: RoutePoint, b: RoutePoint): number {
   const R = 6371;
@@ -41,6 +47,7 @@ export function routeDistanceKm(route: RoutePoint[]): number {
 
 const RECORDING_SESSION_KEY = '@battlerun_recording_session_v1';
 const PENDING_ACTIVITIES_KEY = '@battlerun_pending_activities_v1';
+const AUTO_PAUSE_ENABLED_KEY = '@battlerun_auto_pause_enabled_v1';
 
 /**
  * GPS追跡経路の状態。
@@ -60,10 +67,39 @@ interface RecordState extends RecordStore {
   pausedAt: string | null;
   // これまでに一時停止していた合計時間（ms）。現在停止中の分は含まない
   pausedTotalMs: number;
+  pauseKind: PauseKind;
   // 再開直後: 次に追加する点をセグメント先頭として扱う
   segmentPending: boolean;
-  /** GPS点の追加。停止中は捨て、再開直後の点はセグメント先頭として距離に加算しない */
-  appendRoutePoint: (point: RoutePoint) => void;
+  autoPauseDetector: AutoPauseDetectorState;
+  lastLocationAt: number | null;
+  /** GPS点の追加。手動停止中は捨て、自動停止中は再開判定だけを続ける */
+  appendRoutePoint: (point: RoutePoint, observedSpeedMps?: number | null) => void;
+}
+
+function appendAcceptedPoints(
+  state: Pick<RecordState, 'route' | 'distanceKm' | 'segmentPending'>,
+  points: RoutePoint[],
+): Pick<RecordState, 'route' | 'distanceKm' | 'segmentPending'> {
+  let route = state.route;
+  let distanceKm = state.distanceKm;
+  let segmentPending = state.segmentPending;
+
+  for (const point of points) {
+    const marked: RoutePoint = segmentPending && route.length > 0 ? { ...point, seg: true } : point;
+    const prev = route[route.length - 1];
+    let added = 0;
+    if (prev && !marked.seg) {
+      const timeSec = (marked.timestamp - prev.timestamp) / 1000;
+      const distKm = haversine(prev, marked);
+      if (timeSec <= 0 || (distKm / timeSec) * 3600 > MAX_SPEED_KMH) continue;
+      added = distKm;
+    }
+    route = [...route, marked];
+    distanceKm += added;
+    segmentPending = false;
+  }
+
+  return { route, distanceKm, segmentPending };
 }
 
 /** 一時停止分を除いた実走行時間（秒） */
@@ -77,6 +113,8 @@ export function activeDurationSeconds(state: Pick<RecordState, 'startedAt' | 'pa
 export const useRecordStore = create<RecordState>((set, get) => ({
   isRecording: false,
   isPaused: false,
+  pauseKind: null,
+  autoPauseEnabled: true,
   measurementType: 'gps',
   distanceKm: 0,
   steps: 0,
@@ -89,11 +127,14 @@ export const useRecordStore = create<RecordState>((set, get) => ({
   pausedAt: null,
   pausedTotalMs: 0,
   segmentPending: false,
+  autoPauseDetector: emptyAutoPauseDetector(),
+  lastLocationAt: null,
 
   startRecording: (type: MeasurementType, goal: RunGoal | null = null) => {
     set({
       isRecording: true,
       isPaused: false,
+      pauseKind: null,
       measurementType: type,
       distanceKm: 0,
       steps: 0,
@@ -106,13 +147,26 @@ export const useRecordStore = create<RecordState>((set, get) => ({
       pausedAt: null,
       pausedTotalMs: 0,
       segmentPending: false,
+      autoPauseDetector: emptyAutoPauseDetector(),
+      lastLocationAt: null,
     });
   },
 
   pauseRecording: () => {
     const state = get();
-    if (!state.isRecording || state.isPaused) return;
-    set({ isPaused: true, pausedAt: new Date().toISOString(), gpsWarning: false });
+    if (!state.isRecording || state.pauseKind === 'manual') return;
+    if (state.pauseKind === 'auto') {
+      // 自動停止中に明示操作された場合は、同じ停止区間を手動停止へ昇格する。
+      set({ pauseKind: 'manual', gpsWarning: false, autoPauseDetector: emptyAutoPauseDetector() });
+      return;
+    }
+    set({
+      isPaused: true,
+      pauseKind: 'manual',
+      pausedAt: new Date().toISOString(),
+      gpsWarning: false,
+      autoPauseDetector: emptyAutoPauseDetector(),
+    });
   },
 
   resumeRecording: () => {
@@ -121,32 +175,78 @@ export const useRecordStore = create<RecordState>((set, get) => ({
     const pausedMs = state.pausedAt ? Date.now() - new Date(state.pausedAt).getTime() : 0;
     set({
       isPaused: false,
+      pauseKind: null,
       pausedAt: null,
       pausedTotalMs: state.pausedTotalMs + Math.max(0, pausedMs),
       segmentPending: true,
+      autoPauseDetector: emptyAutoPauseDetector(),
     });
   },
 
-  appendRoutePoint: (point: RoutePoint) => {
+  setAutoPauseEnabled: (enabled: boolean) => {
     const state = get();
-    if (!state.isRecording || state.isPaused) return;
-    const marked: RoutePoint = state.segmentPending && state.route.length > 0
-      ? { ...point, seg: true }
-      : point;
-    const prev = state.route[state.route.length - 1];
-    let added = 0;
-    if (prev && !marked.seg) {
-      const timeSec = (marked.timestamp - prev.timestamp) / 1000;
-      const distKm = haversine(prev, marked);
-      // HUDと保存時で同じ速度フィルタを使い、GPSジャンプを走行中の距離にも加えない。
-      if (timeSec <= 0 || (distKm / timeSec) * 3600 > MAX_SPEED_KMH) return;
-      added = distKm;
+    if (!enabled && state.pauseKind === 'auto') state.resumeRecording();
+    set({ autoPauseEnabled: enabled, autoPauseDetector: emptyAutoPauseDetector() });
+    void AsyncStorage.setItem(AUTO_PAUSE_ENABLED_KEY, enabled ? 'true' : 'false');
+  },
+
+  appendRoutePoint: (point: RoutePoint, observedSpeedMps?: number | null) => {
+    const state = get();
+    if (!state.isRecording || state.pauseKind === 'manual') return;
+
+    if (state.measurementType !== 'gps' || !state.autoPauseEnabled) {
+      set({
+        ...appendAcceptedPoints(state, [point]),
+        autoPauseDetector: { ...emptyAutoPauseDetector(), lastPoint: point },
+        lastLocationAt: point.timestamp,
+      });
+      return;
     }
-    set({
-      route: [...state.route, marked],
-      distanceKm: state.distanceKm + added,
-      segmentPending: false,
-    });
+
+    const decision = evaluateAutoPause(
+      state.autoPauseDetector,
+      point,
+      state.pauseKind === 'auto',
+      observedSpeedMps,
+    );
+    if (decision.type === 'pause') {
+      const startedAtMs = state.startedAt ? new Date(state.startedAt).getTime() : decision.pausedAtMs;
+      const pausedAtMs = Math.max(startedAtMs, decision.pausedAtMs);
+      set({
+        isPaused: true,
+        pauseKind: 'auto',
+        pausedAt: new Date(pausedAtMs).toISOString(),
+        segmentPending: true,
+        autoPauseDetector: decision.next,
+        lastLocationAt: point.timestamp,
+        gpsWarning: false,
+      });
+      return;
+    }
+    if (decision.type === 'resume') {
+      const pausedAtMs = state.pausedAt ? new Date(state.pausedAt).getTime() : point.timestamp;
+      const resumed = {
+        ...appendAcceptedPoints({ ...state, segmentPending: true }, [point]),
+        isPaused: false,
+        pauseKind: null as PauseKind,
+        pausedAt: null,
+        pausedTotalMs: state.pausedTotalMs + Math.max(0, point.timestamp - pausedAtMs),
+        autoPauseDetector: decision.next,
+        lastLocationAt: point.timestamp,
+        gpsWarning: false,
+      };
+      set(resumed);
+      return;
+    }
+    if (decision.type === 'append') {
+      set({
+        ...appendAcceptedPoints(state, decision.points),
+        autoPauseDetector: decision.next,
+        lastLocationAt: point.timestamp,
+      });
+      return;
+    }
+    set({ autoPauseDetector: decision.next, lastLocationAt: point.timestamp });
   },
 
   stopRecording: async () => {
@@ -183,7 +283,14 @@ export const useRecordStore = create<RecordState>((set, get) => ({
       pausedMs,
     };
 
-    set({ isRecording: false, isPaused: false, pausedAt: null });
+    set({
+      isRecording: false,
+      isPaused: false,
+      pauseKind: null,
+      pausedAt: null,
+      autoPauseDetector: emptyAutoPauseDetector(),
+      lastLocationAt: null,
+    });
     return activity;
   },
 
@@ -191,6 +298,7 @@ export const useRecordStore = create<RecordState>((set, get) => ({
     set({
       isRecording: false,
       isPaused: false,
+      pauseKind: null,
       distanceKm: 0,
       steps: 0,
       durationSeconds: 0,
@@ -202,11 +310,13 @@ export const useRecordStore = create<RecordState>((set, get) => ({
       pausedAt: null,
       pausedTotalMs: 0,
       segmentPending: false,
+      autoPauseDetector: emptyAutoPauseDetector(),
+      lastLocationAt: null,
     }),
 }));
 
 type PersistedSession = Pick<RecordState,
-  'isRecording' | 'isPaused' | 'measurementType' | 'distanceKm' | 'steps' | 'durationSeconds' |
+  'isRecording' | 'isPaused' | 'pauseKind' | 'measurementType' | 'distanceKm' | 'steps' | 'durationSeconds' |
   'route' | 'goal' | 'startedAt' | 'locationMode' | 'gpsWarning' | 'pausedAt' | 'pausedTotalMs'>;
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -225,6 +335,7 @@ function persistRecordingSoon() {
     const persisted: PersistedSession = {
       isRecording: latest.isRecording,
       isPaused: latest.isPaused,
+      pauseKind: latest.pauseKind,
       measurementType: latest.measurementType,
       distanceKm: latest.distanceKm,
       steps: latest.steps,
@@ -247,14 +358,20 @@ useRecordStore.subscribe(() => persistRecordingSoon());
 export async function hydrateRecordingSession(): Promise<void> {
   hydrating = true;
   try {
-    const raw = await AsyncStorage.getItem(RECORDING_SESSION_KEY);
+    const [raw, autoPauseRaw] = await Promise.all([
+      AsyncStorage.getItem(RECORDING_SESSION_KEY),
+      AsyncStorage.getItem(AUTO_PAUSE_ENABLED_KEY),
+    ]);
+    useRecordStore.setState({ autoPauseEnabled: autoPauseRaw !== 'false' });
     if (!raw || useRecordStore.getState().isRecording) return;
     const saved = JSON.parse(raw) as Partial<PersistedSession>;
     if (!saved.isRecording || !saved.startedAt || !Array.isArray(saved.route)) return;
     const isPaused = saved.isPaused === true && typeof saved.pausedAt === 'string';
+    const pauseKind: PauseKind = isPaused && saved.pauseKind === 'auto' ? 'auto' : isPaused ? 'manual' : null;
     useRecordStore.setState({
       isRecording: true,
       isPaused,
+      pauseKind,
       measurementType: saved.measurementType === 'steps' ? 'steps' : 'gps',
       distanceKm: typeof saved.distanceKm === 'number' ? saved.distanceKm : 0,
       steps: typeof saved.steps === 'number' ? saved.steps : 0,
@@ -268,6 +385,8 @@ export async function hydrateRecordingSession(): Promise<void> {
       pausedTotalMs: typeof saved.pausedTotalMs === 'number' ? saved.pausedTotalMs : 0,
       // 追跡が途切れていた可能性があるため、復旧後の最初の点で距離を跨がせない
       segmentPending: true,
+      autoPauseDetector: emptyAutoPauseDetector(),
+      lastLocationAt: null,
     });
   } catch {
     await AsyncStorage.removeItem(RECORDING_SESSION_KEY);
@@ -372,12 +491,16 @@ function isPermanentSubmissionError(error: unknown): boolean {
   return ['invalid-argument', 'failed-precondition', 'permission-denied'].includes(errorCode(error));
 }
 
-async function submitPending(item: PendingActivity): Promise<{
+interface SubmittedActivityResult {
   activityId: string;
   distanceKm: number;
   durationSeconds: number;
   steps: number;
-}> {
+  battleIds: string[];
+  declarationAchieved: boolean;
+}
+
+async function submitPending(item: PendingActivity): Promise<SubmittedActivityResult> {
   const submit = httpsCallable(functions, 'submitActivity');
   const result = await submit({
     localId: item.localId,
@@ -388,12 +511,27 @@ async function submitPending(item: PendingActivity): Promise<{
     pausedMs: item.activity.pausedMs ?? 0,
     route: item.activity.route ?? [],
   });
-  return result.data as {
+  const submitted = result.data as {
     activityId: string;
     distanceKm: number;
     durationSeconds: number;
     steps: number;
+    battleIds?: string[];
   };
+  const battleIds = Array.isArray(submitted.battleIds) ? submitted.battleIds : [];
+  let declarationAchieved = false;
+  const userId = auth.currentUser?.uid;
+  if (userId && battleIds.length > 0) {
+    declarationAchieved = await completeDeclarationsForActivity({
+      battleIds,
+      userId,
+      endedAt: item.activity.endedAt,
+    }).catch((error) => {
+      console.warn('[recordStore] declaration completion failed:', error);
+      return false;
+    });
+  }
+  return { ...submitted, battleIds, declarationAchieved };
 }
 
 /** ローカルに残っている未送信記録を順番に再送する。 */
@@ -433,7 +571,7 @@ export function flushPendingActivities(): Promise<PendingActivitiesFlushResult> 
 // 検証済みCallableへのアクティビティ送信。ユーザー・表示名・反映先はサーバーで確定する。
 export async function saveActivityToFirestore(params: {
   activity: Activity;
-}): Promise<{ activityId: string; distanceKm: number; durationSeconds: number; steps: number } | null> {
+}): Promise<SubmittedActivityResult | null> {
   const { activity } = params;
 
   if (!Number.isFinite(activity.distanceKm) || activity.distanceKm <= 0) return null;

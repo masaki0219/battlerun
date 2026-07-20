@@ -3,6 +3,71 @@
 
 export type Plan = 'free' | 'pro';
 export type MeasurementType = 'gps' | 'steps';
+export type PauseKind = 'manual' | 'auto' | null;
+
+export interface WeeklyGoal {
+  type: 'distance' | 'days';
+  /** distance は km、days は日数 */
+  value: number;
+}
+
+export type PersonalRecordKey =
+  | 'fastest1kSec'
+  | 'fastest5kSec'
+  | 'fastest10kSec'
+  | 'longestRunKm'
+  | 'maxElevationGainM'
+  | 'bestMonthKm';
+
+export interface PersonalRecords {
+  fastest1kSec?: number;
+  fastest5kSec?: number;
+  fastest10kSec?: number;
+  longestRunKm?: number;
+  maxElevationGainM?: number;
+  bestMonthKm?: number;
+}
+
+export interface MonthlyStat {
+  monthKey: string;
+  km: number;
+  count: number;
+  durationSec: number;
+  elevationM: number;
+}
+
+export type DeclarationStatus = 'planned' | 'done' | 'expired';
+
+export interface RunDeclaration {
+  id: string;
+  battleId: string;
+  uid: string;
+  dateKey: string;
+  plannedAt: string;
+  note?: string;
+  status: DeclarationStatus;
+  createdAt: string;
+  displayName: string;
+  avatarEmoji?: string;
+  cheeredByMe?: boolean;
+}
+
+export interface RunningPresence {
+  uid: string;
+  sessionId: string;
+  startedAt: string;
+  lastBeatAt: string;
+  displayName: string;
+  avatarEmoji?: string;
+  cheeredByMe: boolean;
+}
+
+export interface LiveRunCheer {
+  id: string;
+  senderId: string;
+  senderName: string;
+  receivedAt: string;
+}
 
 export interface User {
   id: string;
@@ -17,6 +82,10 @@ export interface User {
   battleIds: string[];   // 未参加なら [] （authListener が常に配列を返す）
   totalDistanceKm?: number;
   activityCount?: number;
+  weeklyGoal?: WeeklyGoal | null;
+  personalRecords?: PersonalRecords;
+  /** 走行中であることだけを同じチャレンジの参加者へ公開する。既定OFF。 */
+  runningPresenceVisible: boolean;
 }
 
 export interface Event {
@@ -63,6 +132,8 @@ export interface Activity {
   endedAt: string;
   /** 一時停止していた合計時間（ms）。durationSeconds には含まれない */
   pausedMs?: number;
+  /** この活動によって更新された自己ベスト。サーバー集計後に設定される */
+  newRecords?: PersonalRecordKey[];
 }
 
 // ===== v2.0 型定義 =====
@@ -128,6 +199,8 @@ export type NotificationType =
   | 'title_earned'          // 称号獲得
   | 'battle_ended'          // バトル終了
   | 'reaction'              // 自分の記録にリアクション
+  | 'declaration_cheer'     // 出撃宣言への応援
+  | 'presence_cheer'        // 記録中に届いたライブ応援
   | 'battle_title_rejected'; // バトル名NGワードによる強制終了
 
 export interface AppNotification {
@@ -193,6 +266,8 @@ export type BattleTheme =
 export interface RecordStore {
   isRecording: boolean;
   isPaused: boolean;
+  pauseKind: PauseKind;
+  autoPauseEnabled: boolean;
   measurementType: MeasurementType;
   distanceKm: number;
   steps: number;
@@ -202,6 +277,7 @@ export interface RecordStore {
   startRecording: (type: MeasurementType, goal?: RunGoal | null) => void;
   pauseRecording: () => void;
   resumeRecording: () => void;
+  setAutoPauseEnabled: (enabled: boolean) => void;
   stopRecording: () => Promise<Activity>;
   reset: () => void;
 }
@@ -215,4 +291,6 @@ export interface AuthStore {
   signUp: (email: string, password: string, name: string) => Promise<void>;
   signOut: () => Promise<void>;
   setProEntitlement: (active: boolean) => void;
+  setWeeklyGoal: (goal: WeeklyGoal | null) => Promise<void>;
+  setRunningPresenceVisible: (visible: boolean) => Promise<void>;
 }

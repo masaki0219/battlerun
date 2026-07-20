@@ -38,6 +38,7 @@ const WATCHDOG_CHECK_INTERVAL_MS = 5000;
  */
 export function useLocation({ enabled }: { enabled: boolean }) {
   const measurementType = useRecordStore((s) => s.measurementType);
+  const autoPauseEnabled = useRecordStore((s) => s.autoPauseEnabled);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
   const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -68,7 +69,12 @@ export function useLocation({ enabled }: { enabled: boolean }) {
 
       try {
         watchRef.current = await Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1000, distanceInterval: 2 },
+          {
+            accuracy: Location.Accuracy.BestForNavigation,
+            timeInterval: 1000,
+            // オートポーズ中は静止サンプルも必要。保存対象には低速点を入れない。
+            distanceInterval: autoPauseEnabled ? 0 : 2,
+          },
           (loc) => {
             if (cancelled) return;
             const newPoint: RoutePoint = {
@@ -79,7 +85,7 @@ export function useLocation({ enabled }: { enabled: boolean }) {
             if (typeof loc.coords.altitude === 'number' && Number.isFinite(loc.coords.altitude)) {
               newPoint.alt = loc.coords.altitude;
             }
-            useRecordStore.getState().appendRoutePoint(newPoint);
+            useRecordStore.getState().appendRoutePoint(newPoint, loc.coords.speed);
           }
         );
         if (cancelled) { watchRef.current?.remove(); watchRef.current = null; return; }
@@ -97,14 +103,14 @@ export function useLocation({ enabled }: { enabled: boolean }) {
     // 記録停止までモードを問わず監視を継続し、更新が再開すれば gpsWarning を自動的に戻す。
     const startWatchdog = () => {
       stopWatchdog();
-      let lastRouteLen = useRecordStore.getState().route.length;
+      let lastLocationAt = useRecordStore.getState().lastLocationAt;
       let lastChangeAt = Date.now();
       watchdogRef.current = setInterval(() => {
         if (cancelled) return;
         const state = useRecordStore.getState();
-        const currentLen = state.route.length;
-        if (currentLen !== lastRouteLen) {
-          lastRouteLen = currentLen;
+        const currentLocationAt = state.lastLocationAt;
+        if (currentLocationAt !== lastLocationAt) {
+          lastLocationAt = currentLocationAt;
           lastChangeAt = Date.now();
           if (state.gpsWarning) useRecordStore.setState({ gpsWarning: false });
           return;
@@ -143,7 +149,7 @@ export function useLocation({ enabled }: { enabled: boolean }) {
             await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
               accuracy: Location.Accuracy.BestForNavigation,
               timeInterval: 1000,
-              distanceInterval: 2,
+              distanceInterval: autoPauseEnabled ? 0 : 2,
               showsBackgroundLocationIndicator: true,
               foregroundService: {
                 notificationTitle: '記録中',
@@ -175,5 +181,5 @@ export function useLocation({ enabled }: { enabled: boolean }) {
       stopBackgroundTask();
       useRecordStore.setState({ locationMode: 'idle', gpsWarning: false });
     };
-  }, [enabled, measurementType]);
+  }, [enabled, measurementType, autoPauseEnabled]);
 }

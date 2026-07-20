@@ -8,7 +8,12 @@ import { httpsCallable } from 'firebase/functions';
 import * as Crypto from 'expo-crypto';
 import { useAuthStore } from './authStore';
 import { validateBattleTitle } from '../lib/validation/battleTitle';
-import type { Battle, CategoryStats, Season, Category, BattleParticipation } from '../types';
+import {
+  cheerDeclaration as createDeclarationCheer,
+  createDeclaration as createRunDeclaration,
+  subscribeTodayDeclarations,
+} from '../lib/declarations';
+import type { Battle, CategoryStats, Season, Category, BattleParticipation, RunDeclaration } from '../types';
 
 interface CreateBattleParams {
   title: string;
@@ -28,6 +33,7 @@ interface BattleStore {
   myMemberships: BattleParticipation[];
   seasons: Record<string, Season>;
   isLoading: boolean;
+  declarationsByBattle: Record<string, RunDeclaration[]>;
 
   fetchPublicBattles: () => Promise<void>;
   fetchMyMemberships: (userId: string) => Promise<void>;
@@ -37,6 +43,9 @@ interface BattleStore {
   createBattle: (params: CreateBattleParams) => Promise<string>;
   findBattleByInviteCode: (inviteCode: string) => Promise<Battle>;
   getActiveBattleIds: () => string[];
+  subscribeDeclarations: (battleId: string, userId: string) => () => void;
+  declareRun: (battleId: string, userId: string, plannedAt: Date, note: string) => Promise<void>;
+  cheerDeclaration: (battleId: string, declarationId: string, fromUid: string) => Promise<boolean>;
 }
 
 // ラベルからカテゴリIDを生成する。日本語のみのラベルは英数字が残らないため
@@ -85,6 +94,7 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
   myMemberships: [],
   seasons: {},
   isLoading: false,
+  declarationsByBattle: {},
 
   fetchPublicBattles: async () => {
     set({ isLoading: true });
@@ -299,6 +309,33 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
     return get().myMemberships
       .map((m) => m.battleId)
       .filter((id) => activeBattleIds.has(id));
+  },
+
+  subscribeDeclarations: (battleId, userId) => subscribeTodayDeclarations(
+    battleId,
+    userId,
+    (declarations) => set((state) => ({
+      declarationsByBattle: { ...state.declarationsByBattle, [battleId]: declarations },
+    })),
+  ),
+
+  declareRun: async (battleId, userId, plannedAt, note) => {
+    await createRunDeclaration({ battleId, userId, plannedAt, note });
+  },
+
+  cheerDeclaration: async (battleId, declarationId, fromUid) => {
+    const created = await createDeclarationCheer({ battleId, declarationId, fromUid });
+    if (created) {
+      set((state) => ({
+        declarationsByBattle: {
+          ...state.declarationsByBattle,
+          [battleId]: (state.declarationsByBattle[battleId] ?? []).map((item) => (
+            item.id === declarationId ? { ...item, cheeredByMe: true } : item
+          )),
+        },
+      }));
+    }
+    return created;
   },
 }));
 

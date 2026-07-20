@@ -2,8 +2,79 @@ import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 import { logger } from 'firebase-functions/v2';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { MAX_ACTIVITY_DISTANCE_KM } from './constants';
+import {
+  elevationGainMeters,
+  fastestSegmentSeconds,
+  mergePersonalRecords,
+  type PersonalRecords,
+  type TimedRoutePoint,
+} from './personalRecords';
+import { tokyoMonthKey, type MonthlyStatsImpact } from './monthlyStats';
 
 const MAX_SPEED_KMH = 25;
+const TOKYO_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+function tokyoMonthBounds(timestamp: Timestamp): { from: Timestamp; to: Timestamp } {
+  const local = new Date(timestamp.toMillis() + TOKYO_OFFSET_MS);
+  const year = local.getUTCFullYear();
+  const month = local.getUTCMonth();
+  return {
+    from: Timestamp.fromMillis(Date.UTC(year, month, 1) - TOKYO_OFFSET_MS),
+    to: Timestamp.fromMillis(Date.UTC(year, month + 1, 1) - TOKYO_OFFSET_MS),
+  };
+}
+
+async function activityRoute(
+  db: FirebaseFirestore.Firestore,
+  userId: string,
+  activityId: string,
+): Promise<TimedRoutePoint[]> {
+  const chunks = await db
+    .collection(`users/${userId}/activityRoutes/${activityId}/chunks`)
+    .orderBy('index', 'asc')
+    .get();
+  return chunks.docs.flatMap((chunk) => {
+    const points = chunk.data()['points'];
+    if (!Array.isArray(points)) return [];
+    return points.flatMap((raw): TimedRoutePoint[] => {
+      if (!raw || typeof raw !== 'object') return [];
+      const point = raw as Record<string, unknown>;
+      const lat = point['lat'];
+      const lng = point['lng'];
+      const timestamp = point['timestamp'];
+      if (
+        typeof lat !== 'number' || !Number.isFinite(lat)
+        || typeof lng !== 'number' || !Number.isFinite(lng)
+        || typeof timestamp !== 'number' || !Number.isFinite(timestamp)
+      ) return [];
+      const parsed: TimedRoutePoint = { lat, lng, timestamp };
+      if (typeof point['alt'] === 'number' && Number.isFinite(point['alt'])) parsed.alt = point['alt'];
+      if (point['seg'] === true) parsed.seg = true;
+      return [parsed];
+    });
+  });
+}
+
+async function monthDistanceKm(
+  db: FirebaseFirestore.Firestore,
+  userId: string,
+  startedAt: Timestamp,
+): Promise<number> {
+  const bounds = tokyoMonthBounds(startedAt);
+  const snapshot = await db.collection('activities')
+    .where('userId', '==', userId)
+    .where('startedAt', '>=', bounds.from)
+    .where('startedAt', '<', bounds.to)
+    .select('distanceKm', 'flagged')
+    .get();
+  return snapshot.docs.reduce((sum, doc) => {
+    const data = doc.data();
+    const distance = data['distanceKm'];
+    return data['flagged'] === true || typeof distance !== 'number' || !Number.isFinite(distance)
+      ? sum
+      : sum + Math.max(0, distance);
+  }, 0);
+}
 
 function rankFor(
   stats: Array<{ id: string; total: number; average: number }>,
@@ -36,6 +107,7 @@ export const aggregateActivity = onDocumentCreated(
     const durationSeconds = initial['durationSeconds'];
     const battleIds = initial['battleIds'];
     const startedAt = initial['startedAt'];
+    const measurementType = initial['measurementType'];
 
     const invalid =
       typeof userId !== 'string' ||
@@ -141,6 +213,32 @@ export const aggregateActivity = onDocumentCreated(
       });
     }
 
+    const [route, currentMonthKm] = await Promise.all([
+      measurementType === 'gps'
+        ? activityRoute(db, userId as string, event.params['activityId'])
+        : Promise.resolve([]),
+      monthDistanceKm(db, userId as string, startedAt as Timestamp),
+    ]);
+    const elevationGain = elevationGainMeters(route);
+    const monthlyStatsImpact: MonthlyStatsImpact = {
+      monthKey: tokyoMonthKey((startedAt as Timestamp).toMillis()),
+      km: distanceKm as number,
+      count: 1,
+      durationSec: durationSeconds as number,
+      elevationM: elevationGain ?? 0,
+    };
+    const recordCandidates: PersonalRecords = {
+      longestRunKm: distanceKm as number,
+      bestMonthKm: currentMonthKm,
+    };
+    const fastest1kSec = fastestSegmentSeconds(route, 1);
+    const fastest5kSec = fastestSegmentSeconds(route, 5);
+    const fastest10kSec = fastestSegmentSeconds(route, 10);
+    if (fastest1kSec != null) recordCandidates.fastest1kSec = fastest1kSec;
+    if (fastest5kSec != null) recordCandidates.fastest5kSec = fastest5kSec;
+    if (fastest10kSec != null) recordCandidates.fastest10kSec = fastest10kSec;
+    if (elevationGain != null) recordCandidates.maxElevationGainM = elevationGain;
+
     await db.runTransaction(async (tx) => {
       const [activitySnap, userSnap] = await Promise.all([
         tx.get(activityRef),
@@ -154,10 +252,31 @@ export const aggregateActivity = onDocumentCreated(
         return;
       }
       if (userSnap.exists) {
+        const mergedRecords = mergePersonalRecords(
+          userSnap.data()?.['personalRecords'] as Record<string, unknown> | undefined,
+          recordCandidates,
+        );
         tx.update(userSnap.ref, {
           totalDistanceKm: FieldValue.increment(distanceKm),
           activityCount: FieldValue.increment(1),
+          personalRecords: mergedRecords.records,
         });
+        tx.set(
+          db.doc(`users/${userId}/monthlyStats/${monthlyStatsImpact.monthKey}`),
+          {
+            km: FieldValue.increment(monthlyStatsImpact.km),
+            count: FieldValue.increment(monthlyStatsImpact.count),
+            durationSec: FieldValue.increment(monthlyStatsImpact.durationSec),
+            elevationM: FieldValue.increment(monthlyStatsImpact.elevationM),
+          },
+          { merge: true },
+        );
+        tx.update(activityRef, {
+          newRecords: mergedRecords.newRecords,
+          monthlyStatsImpact,
+        });
+      } else {
+        tx.update(activityRef, { newRecords: [] });
       }
       tx.update(activityRef, {
         userStatsAggregated: true,

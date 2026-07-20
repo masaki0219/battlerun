@@ -16,7 +16,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   doc, setDoc, updateDoc, addDoc, deleteDoc, collection, Timestamp, getDoc,
-  getDocs, query, where, orderBy,
+  getDocs, query, where, orderBy, serverTimestamp,
 } from 'firebase/firestore';
 
 const PROJECT_ID = 'battlerun-rules-test';
@@ -71,6 +71,9 @@ async function seed() {
       totalDistanceKm: 0,
       activityCount: 0,
     });
+    await setDoc(doc(db, 'battles/battle1/participants/carol'), {
+      userId: 'carol', categoryId: 'teamA', totalDistanceKm: 0, activityCount: 0,
+    });
 
     // alice の既存アクティビティ（update/delete拒否確認用）
     await setDoc(doc(db, 'activities/act1'), {
@@ -92,12 +95,25 @@ async function seed() {
     });
     await setDoc(doc(db, 'users/bob'), { name: 'Bob', plan: 'free', role: 'user', titles: [] });
     await setDoc(doc(db, 'users/adminUser'), { name: 'Admin', plan: 'free', role: 'admin', titles: [] });
+    await setDoc(doc(db, 'users/carol'), {
+      name: 'Carol', plan: 'free', role: 'user', titles: [], runningPresenceVisible: true,
+    });
     await setDoc(doc(db, 'publicProfiles/alice'), { name: 'Alice', avatarUrl: null, avatarEmoji: null, updatedAt: Timestamp.now() });
+    await setDoc(doc(db, 'publicProfiles/carol'), { name: 'Carol', avatarUrl: null, avatarEmoji: null, updatedAt: Timestamp.now() });
     await setDoc(doc(db, 'activities/publicAct'), {
       userId: 'alice', visibility: 'public_v2', distanceKm: 2, battleIds: ['battle1'],
       startedAt: Timestamp.now(), endedAt: Timestamp.now(), durationSeconds: 1200,
     });
     await setDoc(doc(db, 'users/alice/badges/first_run'), { badgeId: 'first_run', name: '初陣ランナー' });
+    await setDoc(doc(db, 'users/alice/monthlyStats/2026-07'), {
+      km: 12.5, count: 3, durationSec: 5400, elevationM: 120,
+    });
+    await setDoc(doc(db, 'battles/battle1/presence/carol'), {
+      sessionId: 'carol-stale-session',
+      startedAt: Timestamp.fromMillis(Date.now() - 10 * 60_000),
+      lastBeatAt: Timestamp.fromMillis(Date.now() - 4 * 60_000),
+      visible: true,
+    });
   });
 }
 
@@ -113,6 +129,8 @@ async function run() {
   const aliceDb = testEnv.authenticatedContext('alice').firestore();
   const bobDb = testEnv.authenticatedContext('bob').firestore();
   const adminDb = testEnv.authenticatedContext('adminUser').firestore();
+  const carolDb = testEnv.authenticatedContext('carol').firestore();
+  const daveDb = testEnv.authenticatedContext('dave').firestore();
 
   // ── category_stats ────────────────────────────────────────────────
   await check(
@@ -270,6 +288,186 @@ async function run() {
     'fail',
   );
 
+  // ── declarations / cheers ───────────────────────────────────────
+  const declarationPath = 'battles/battle1/declarations/alice_20990101';
+  await check(
+    'declarations: 参加者本人は当日IDで宣言を作成できる',
+    setDoc(doc(aliceDb, declarationPath), {
+      uid: 'alice', dateKey: '20990101', plannedAt: Timestamp.fromMillis(Date.now() + 3_600_000),
+      note: 'ゆっくり走る', status: 'planned', createdAt: Timestamp.now(),
+    }),
+    'succeed',
+  );
+  await check(
+    'declarations: 本人以外のuidで宣言作成は拒否',
+    setDoc(doc(carolDb, 'battles/battle1/declarations/alice_20990102'), {
+      uid: 'alice', dateKey: '20990102', plannedAt: Timestamp.fromMillis(Date.now() + 3_600_000),
+      status: 'planned', createdAt: Timestamp.now(),
+    }),
+    'fail',
+  );
+  await check(
+    'declarations: 参加者は宣言を読める',
+    getDoc(doc(carolDb, declarationPath)),
+    'succeed',
+  );
+  await check(
+    'declarations: 非参加者は宣言を読めない',
+    getDoc(doc(bobDb, declarationPath)),
+    'fail',
+  );
+  await check(
+    'declaration cheers: 参加者は自分のuidで応援できる',
+    setDoc(doc(carolDb, `${declarationPath}/cheers/carol`), {
+      fromUid: 'carol', createdAt: Timestamp.now(),
+    }),
+    'succeed',
+  );
+  await check(
+    'declaration cheers: 非参加者のなりすまし応援は拒否',
+    setDoc(doc(bobDb, `${declarationPath}/cheers/carol_spoof`), {
+      fromUid: 'carol', createdAt: Timestamp.now(),
+    }),
+    'fail',
+  );
+  await check(
+    'declaration cheers: 自分自身への応援は拒否',
+    setDoc(doc(aliceDb, `${declarationPath}/cheers/alice`), {
+      fromUid: 'alice', createdAt: Timestamp.now(),
+    }),
+    'fail',
+  );
+  await check(
+    'declarations: 他の参加者によるdone更新は拒否',
+    updateDoc(doc(carolDb, declarationPath), { status: 'done' }),
+    'fail',
+  );
+  await check(
+    'declarations: 本人はplannedをdoneへ更新できる',
+    updateDoc(doc(aliceDb, declarationPath), { status: 'done' }),
+    'succeed',
+  );
+
+  // ── live presence / cheers ──────────────────────────────────────
+  const alicePresencePath = 'battles/battle1/presence/alice';
+  const alicePresenceSession = '2026-07-20T01:00:00.000Z';
+  await check(
+    'presence: opt-in前は本人でも走行中を公開できない',
+    setDoc(doc(aliceDb, alicePresencePath), {
+      sessionId: alicePresenceSession,
+      startedAt: Timestamp.now(), lastBeatAt: serverTimestamp(), visible: true,
+    }),
+    'fail',
+  );
+  await check(
+    'presence setting: 本人は走行中公開をopt-inできる',
+    updateDoc(doc(aliceDb, 'users/alice'), { runningPresenceVisible: true }),
+    'succeed',
+  );
+  await check(
+    'presence: opt-inした参加者本人は位置情報なしの心拍を作成できる',
+    setDoc(doc(aliceDb, alicePresencePath), {
+      sessionId: alicePresenceSession,
+      startedAt: Timestamp.now(), lastBeatAt: serverTimestamp(), visible: true,
+    }),
+    'succeed',
+  );
+  await check(
+    'presence: 同じチャレンジの参加者は走行中を読める',
+    getDoc(doc(carolDb, alicePresencePath)),
+    'succeed',
+  );
+  await check(
+    'presence: 非参加者は走行中を読めない',
+    getDoc(doc(bobDb, alicePresencePath)),
+    'fail',
+  );
+  await check(
+    'presence: 位置情報を含む更新は拒否',
+    setDoc(doc(aliceDb, alicePresencePath), {
+      sessionId: alicePresenceSession,
+      startedAt: Timestamp.now(), lastBeatAt: serverTimestamp(), visible: true,
+      lat: 35, lng: 139,
+    }),
+    'fail',
+  );
+  await check(
+    'presence cheers: 参加者は新しいランへ1回応援できる',
+    setDoc(doc(carolDb, `${alicePresencePath}/cheers/carol`), {
+      fromUid: 'carol', sessionId: alicePresenceSession, createdAt: serverTimestamp(),
+    }),
+    'succeed',
+  );
+  await check(
+    'presence cheers: 同じランへの同じ人の再応援は拒否',
+    setDoc(doc(carolDb, `${alicePresencePath}/cheers/carol`), {
+      fromUid: 'carol', sessionId: alicePresenceSession, createdAt: serverTimestamp(),
+    }),
+    'fail',
+  );
+  await check(
+    'presence cheers: 自分自身への応援は拒否',
+    setDoc(doc(aliceDb, `${alicePresencePath}/cheers/alice`), {
+      fromUid: 'alice', sessionId: alicePresenceSession, createdAt: serverTimestamp(),
+    }),
+    'fail',
+  );
+  await check(
+    'presence cheers: 3分より古い走行状態への応援は拒否',
+    setDoc(doc(aliceDb, 'battles/battle1/presence/carol/cheers/alice'), {
+      fromUid: 'alice', sessionId: 'carol-stale-session', createdAt: serverTimestamp(),
+    }),
+    'fail',
+  );
+  await check(
+    'presence cheers: 非参加者の応援は拒否',
+    setDoc(doc(bobDb, `${alicePresencePath}/cheers/bob`), {
+      fromUid: 'bob', sessionId: alicePresenceSession, createdAt: serverTimestamp(),
+    }),
+    'fail',
+  );
+  const nextPresenceSession = '2026-07-20T02:00:00.000Z';
+  await check(
+    'presence: 次のラン開始時は同じ文書を新しいセッションへ更新できる',
+    setDoc(doc(aliceDb, alicePresencePath), {
+      sessionId: nextPresenceSession,
+      startedAt: Timestamp.now(), lastBeatAt: serverTimestamp(), visible: true,
+    }),
+    'succeed',
+  );
+  await check(
+    'presence cheers: 同じ人でも次のランには再び1回応援できる',
+    setDoc(doc(carolDb, `${alicePresencePath}/cheers/carol`), {
+      fromUid: 'carol', sessionId: nextPresenceSession, createdAt: serverTimestamp(),
+    }),
+    'succeed',
+  );
+  await check(
+    'presence setting: opt-out後も本人は現在の表示を即時OFFにできる',
+    updateDoc(doc(aliceDb, 'users/alice'), { runningPresenceVisible: false }),
+    'succeed',
+  );
+  await check(
+    'presence: opt-out後の非表示更新は許可',
+    setDoc(doc(aliceDb, alicePresencePath), {
+      visible: false, lastBeatAt: serverTimestamp(),
+    }, { merge: true }),
+    'succeed',
+  );
+  await check(
+    'presence: opt-out中の再公開は拒否',
+    setDoc(doc(aliceDb, alicePresencePath), {
+      sessionId: alicePresenceSession,
+      startedAt: Timestamp.now(), lastBeatAt: serverTimestamp(), visible: true,
+    }),
+    'fail',
+  );
+  await check(
+    'presence setting: boolean以外の公開設定は拒否',
+    updateDoc(doc(aliceDb, 'users/alice'), { runningPresenceVisible: 'yes' }),
+    'fail',
+  );
+
   // ── users/{uid} ──────────────────────────────────────────────────
   await check(
     'users/{uid}: titlesの自己更新は拒否（Cloud Functionsのみ付与可）',
@@ -279,6 +477,25 @@ async function run() {
     'fail',
   );
   await check(
+    'users/{uid}: personalRecordsの自己更新は拒否（Cloud Functionsのみ更新可）',
+    updateDoc(doc(aliceDb, 'users/alice'), {
+      personalRecords: { fastest1kSec: 1, longestRunKm: 999 },
+    }),
+    'fail',
+  );
+  await check(
+    'users/{uid}: 新規登録時のpersonalRecords自己設定は拒否',
+    setDoc(doc(daveDb, 'users/dave'), {
+      name: 'Dave', plan: 'free', personalRecords: { fastest1kSec: 1 },
+    }),
+    'fail',
+  );
+  await check(
+    'users/{uid}: personalRecordsなしの通常登録は許可',
+    setDoc(doc(daveDb, 'users/dave'), { name: 'Dave', plan: 'free' }),
+    'succeed',
+  );
+  await check(
     'badges: 本人はサーバー付与済みバッジを読める',
     getDoc(doc(aliceDb, 'users/alice/badges/first_run')),
     'succeed',
@@ -286,6 +503,21 @@ async function run() {
   await check(
     'badges: 本人でもバッジを自己付与できない',
     setDoc(doc(aliceDb, 'users/alice/badges/fake'), { name: 'fake' }),
+    'fail',
+  );
+  await check(
+    'monthlyStats: 本人は月間集計を読める',
+    getDoc(doc(aliceDb, 'users/alice/monthlyStats/2026-07')),
+    'succeed',
+  );
+  await check(
+    'monthlyStats: 他人の月間集計は読めない',
+    getDoc(doc(bobDb, 'users/alice/monthlyStats/2026-07')),
+    'fail',
+  );
+  await check(
+    'monthlyStats: 本人でも月間集計を書き換えられない',
+    setDoc(doc(aliceDb, 'users/alice/monthlyStats/2026-07'), { km: 999 }, { merge: true }),
     'fail',
   );
   await check(
@@ -302,6 +534,36 @@ async function run() {
     'users/{uid}: titles/plan/role以外のフィールド更新は許可',
     updateDoc(doc(aliceDb, 'users/alice'), { name: 'Alice2' }),
     'succeed',
+  );
+  await check(
+    'users/{uid}: 本人は距離の週間目標を設定できる',
+    updateDoc(doc(aliceDb, 'users/alice'), { weeklyGoal: { type: 'distance', value: 10 } }),
+    'succeed',
+  );
+  await check(
+    'users/{uid}: 本人は日数の週間目標を設定できる',
+    updateDoc(doc(aliceDb, 'users/alice'), { weeklyGoal: { type: 'days', value: 3 } }),
+    'succeed',
+  );
+  await check(
+    'users/{uid}: 本人は週間目標を解除できる',
+    updateDoc(doc(aliceDb, 'users/alice'), { weeklyGoal: null }),
+    'succeed',
+  );
+  await check(
+    'users/{uid}: 8日以上の日数目標は拒否',
+    updateDoc(doc(aliceDb, 'users/alice'), { weeklyGoal: { type: 'days', value: 8 } }),
+    'fail',
+  );
+  await check(
+    'users/{uid}: 小数の日数目標は拒否',
+    updateDoc(doc(aliceDb, 'users/alice'), { weeklyGoal: { type: 'days', value: 2.5 } }),
+    'fail',
+  );
+  await check(
+    'users/{uid}: 他人の週間目標更新は拒否',
+    updateDoc(doc(bobDb, 'users/alice'), { weeklyGoal: { type: 'distance', value: 10 } }),
+    'fail',
   );
 
   // ── users/{uid}/notifications ─────────────────────────────────────

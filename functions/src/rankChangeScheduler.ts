@@ -22,7 +22,7 @@ function todayStr(): string {
  * battleStatusScheduler とは別関数として分離している。
  *
  * - 初回実行時（lastRankSnapshotが無い）は通知せずスナップショットのみ保存する
- * - 順位が下がった陣営には「抜かれた」通知、上がった陣営には「浮上」通知を送る
+ * - 順位が変わった陣営には、比較や行動を煽らない中立的な更新通知を送る
  * - 1バトルあたり1日3回まで（rankChangeNotifyCount/rankChangeNotifyDateで制御）
  */
 export const rankChangeScheduler = onSchedule('every 60 minutes', async () => {
@@ -74,25 +74,9 @@ export const rankChangeScheduler = onSchedule('every 60 minutes', async () => {
     }
 
     if (notifyCount < MAX_DAILY_NOTIFY_COUNT) {
-      const labelOf = (categoryId: string) => categories.find((c) => c.id === categoryId)?.label ?? categoryId;
-
       await Promise.all(changes.map(async (change) => {
-        const oldRank = prevSnapshot[change.categoryId];
-        const dropped = change.rank > oldRank;
-
-        let title: string;
-        let body: string;
-        if (dropped) {
-          // 自分の以前の順位を今占めている陣営が「抜いた」相手
-          const overtaker = ranked.find((r) => r.rank === oldRank);
-          const aboveTeam = ranked.find((r) => r.rank === change.rank - 1);
-          const gap = aboveTeam ? Math.max(aboveTeam.value - change.value, 0).toFixed(1) : '0.0';
-          title = `⚔「${labelOf(overtaker?.categoryId ?? '')}」に抜かれました！`;
-          body = `逆転まであと${gap}km`;
-        } else {
-          title = `🎉 陣営が${change.rank}位に浮上！`;
-          body = 'この勢いで守り切ろう';
-        }
+        const title = 'チャレンジの順位が更新されました';
+        const body = `現在のチーム順位は${change.rank}位です。最新の状況を確認できます。`;
 
         const participantsSnap = await battleDoc.ref
           .collection('participants')

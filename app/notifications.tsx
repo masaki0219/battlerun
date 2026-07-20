@@ -23,6 +23,8 @@ function notificationIcon(type: NotificationType): { name: any; color: string } 
     case 'title_earned':    return { name: 'ribbon-outline', color: Colors.accentYellow };
     case 'battle_ended':    return { name: 'flag-outline', color: Colors.textSecondary };
     case 'reaction':        return { name: 'heart-outline', color: Colors.error };
+    case 'declaration_cheer': return { name: 'flame-outline', color: Colors.accent };
+    case 'presence_cheer': return { name: 'radio-outline', color: Colors.primary };
     default:                return { name: 'notifications-outline', color: Colors.textTertiary };
   }
 }
