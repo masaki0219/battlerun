@@ -82,7 +82,7 @@ export default function RootLayout() {
     if (isLoading || !onboardingChecked) return;
     const inAuth = segments[0] === 'auth';
     const inOnboarding = segments[0] === 'onboarding';
-    const inPublicInfo = segments[0] === 'legal' || segments[0] === 'help';
+    const inPublicInfo = segments[0] === 'legal' || segments[0] === 'help' || segments[0] === 'invite';
 
     if (!user) {
       if (!inAuth && !inOnboarding && !inPublicInfo) {
@@ -116,6 +116,7 @@ export default function RootLayout() {
         <Stack.Screen name="legal/terms" />
         <Stack.Screen name="legal/privacy" />
         <Stack.Screen name="help" />
+        <Stack.Screen name="invite" />
       </Stack>
     </>
   );

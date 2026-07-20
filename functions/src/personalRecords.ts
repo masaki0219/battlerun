@@ -2,7 +2,9 @@ export interface TimedRoutePoint {
   lat: number;
   lng: number;
   timestamp: number;
+  accuracy?: number;
   alt?: number;
+  altitudeAccuracy?: number;
   seg?: true;
 }
 
@@ -113,24 +115,39 @@ export function fastestSegmentSeconds(route: TimedRoutePoint[], targetKm: number
   return Number.isFinite(bestMs) ? Math.round(bestMs / 1000) : null;
 }
 
-/** GPS高度の3m未満の揺れを除外した獲得標高。 */
+const MAX_ALTITUDE_ACCURACY_M = 20;
+const ALTITUDE_SMOOTHING_WINDOW = 3;
+
+/** 垂直精度の悪い点を除外し、3点移動平均と3mヒステリシスを通した推定獲得標高。 */
 export function elevationGainMeters(route: TimedRoutePoint[]): number | null {
   let base: number | null = null;
   let gain = 0;
   let hasAltitude = false;
+  let window: number[] = [];
   for (const point of route) {
+    if (point.seg) {
+      base = null;
+      window = [];
+    }
     if (typeof point.alt !== 'number' || !Number.isFinite(point.alt)) continue;
+    if (
+      typeof point.altitudeAccuracy === 'number'
+      && Number.isFinite(point.altitudeAccuracy)
+      && point.altitudeAccuracy > MAX_ALTITUDE_ACCURACY_M
+    ) continue;
     hasAltitude = true;
+    window = [...window.slice(-(ALTITUDE_SMOOTHING_WINDOW - 1)), point.alt];
+    const smoothedAltitude = window.reduce((sum, altitude) => sum + altitude, 0) / window.length;
     if (base == null) {
-      base = point.alt;
+      base = smoothedAltitude;
       continue;
     }
-    const delta = point.alt - base;
+    const delta = smoothedAltitude - base;
     if (delta >= 3) {
       gain += delta;
-      base = point.alt;
+      base = smoothedAltitude;
     } else if (delta < 0) {
-      base = point.alt;
+      base = smoothedAltitude;
     }
   }
   return hasAltitude ? Math.round(gain) : null;

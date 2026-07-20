@@ -30,7 +30,7 @@ const STEP_COLORS: Record<number, string> = {
 };
 
 const STEP_LABELS: Record<number, string> = {
-  1: 'STEP 01 / BATTLERUN とは',
+  1: 'STEP 01 / ZELIO とは',
   2: 'STEP 02 / 記録のしかた',
   3: 'STEP 03 / チャレンジ参加',
   4: 'STEP 04 / さっそく始める',
@@ -40,14 +40,14 @@ const STEP_HEADINGS: Record<number, string> = {
   1: '歩くと、\n陣営が強くなる。',
   2: '走るだけで、\nあとは自動。',
   3: 'あと少しで\n逆転できる。',
-  4: 'チャレンジを\n探してみよう。',
+  4: 'ZELIOを\n始めよう。',
 };
 
 const STEP_BODIES: Record<number, string> = {
   1: 'あなたの走った距離が、そのまま陣営の得点になる。友達と競い合いながら、もっと走れる。',
   2: 'アプリを開いてボタンを押すだけ。GPSでルート記録か、歩数モードか選べる。',
   3: '順位はリアルタイムで動く。あなたの一走りが、陣営の順位を変える。',
-  4: '公開されているチャレンジに参加するか、招待コードで仲間に合流できる。',
+  4: 'アカウントを作成して、最初のランや仲間とのチャレンジを始めよう。',
 };
 
 export default function OnboardingScreen() {
@@ -84,7 +84,7 @@ export default function OnboardingScreen() {
           ))}
         </View>
         {step < 4 && (
-          <TouchableOpacity onPress={() => done('/auth/login')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <TouchableOpacity onPress={() => done('/auth/signup')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Text style={styles.skip}>スキップ</Text>
           </TouchableOpacity>
         )}
@@ -113,13 +113,13 @@ export default function OnboardingScreen() {
           </TouchableOpacity>
         ) : (
           <View style={styles.finalCta}>
-            <TouchableOpacity style={styles.btnPrimary} onPress={() => done('/auth/login')} activeOpacity={0.85}>
-              <Text style={styles.btnPrimaryText}>チャレンジを探す</Text>
+            <TouchableOpacity style={styles.btnPrimary} onPress={() => done('/auth/signup')} activeOpacity={0.85}>
+              <Text style={styles.btnPrimaryText}>はじめる（新規登録）</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.btnOutline} onPress={() => done('/auth/signup')} activeOpacity={0.85}>
-              <Text style={styles.btnOutlineText}>コードで参加する</Text>
+            <TouchableOpacity style={styles.btnOutline} onPress={() => done('/auth/login')} activeOpacity={0.85}>
+              <Text style={styles.btnOutlineText}>アカウントをお持ちの方はログイン</Text>
             </TouchableOpacity>
-            <Text style={styles.footnote}>チャレンジがなければ、自分で作ることもできます</Text>
+            <Text style={styles.footnote}>登録後すぐにランを記録できます</Text>
           </View>
         )}
       </View>

@@ -1,21 +1,29 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, getDocs, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
+import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import { isPro } from '../../lib/pro';
-import { Colors, DarkColors, BorderRadius, TextStyles } from '../../design_tokens';
+import { Colors, DarkColors, RoutePaceColors, BorderRadius, TextStyles } from '../../design_tokens';
 import { MonoLabel } from '../../components/ui/MonoLabel';
 import { KmSplitsCard } from '../../components/run/KmSplitsCard';
 import { estimatedCalories, type KmSplit } from '../../utils/displayStats';
-import type { PersonalRecordKey } from '../../types';
+import { buildRouteVisualization, type RoutePaceBand } from '../../utils/routeSplits';
+import type { PersonalRecordKey, RoutePoint } from '../../types';
+
+const ROUTE_PACE_COLOR: Record<RoutePaceBand, string> = {
+  fast: RoutePaceColors.fast,
+  steady: RoutePaceColors.steady,
+  slow: RoutePaceColors.slow,
+};
 
 function formatTime(sec: number): string {
   const h = Math.floor(sec / 3600);
@@ -31,6 +39,7 @@ interface BattleImpact {
   rankBefore: number;
   rankAfter: number;
   totalKm: number;
+  creditedDistanceKm?: number;
 }
 
 const PERSONAL_RECORD_LABELS: Record<PersonalRecordKey, string> = {
@@ -38,7 +47,7 @@ const PERSONAL_RECORD_LABELS: Record<PersonalRecordKey, string> = {
   fastest5kSec: '最速5km',
   fastest10kSec: '最速10km',
   longestRunKm: '最長距離',
-  maxElevationGainM: '最高獲得標高',
+  maxElevationGainM: '最高推定獲得標高',
   bestMonthKm: '最高月間距離',
 };
 
@@ -84,7 +93,58 @@ export default function RecordingSummaryScreen() {
   const [loadingImpact, setLoadingImpact] = useState(true);
   const [impactTimedOut, setImpactTimedOut] = useState(false);
   const [newRecords, setNewRecords] = useState<PersonalRecordKey[]>([]);
+  const [activityRoute, setActivityRoute] = useState<RoutePoint[]>([]);
   const shareCardRef = useRef<View>(null);
+
+  useEffect(() => {
+    if (!user || !activityId) return;
+    let cancelled = false;
+    void getDocs(query(
+      collection(db, 'users', user.id, 'activityRoutes', activityId, 'chunks'),
+      orderBy('index', 'asc'),
+    )).then((snapshot) => {
+      if (cancelled) return;
+      const route = snapshot.docs.flatMap((chunk) => {
+        const points = chunk.data()['points'];
+        if (!Array.isArray(points)) return [];
+        return points.flatMap((raw): RoutePoint[] => {
+          if (!raw || typeof raw !== 'object') return [];
+          const point = raw as Record<string, unknown>;
+          if (
+            typeof point['lat'] !== 'number' || !Number.isFinite(point['lat'])
+            || typeof point['lng'] !== 'number' || !Number.isFinite(point['lng'])
+            || typeof point['timestamp'] !== 'number' || !Number.isFinite(point['timestamp'])
+          ) return [];
+          const parsed: RoutePoint = {
+            lat: point['lat'], lng: point['lng'], timestamp: point['timestamp'],
+          };
+          if (typeof point['accuracy'] === 'number') parsed.accuracy = point['accuracy'];
+          if (typeof point['alt'] === 'number') parsed.alt = point['alt'];
+          if (typeof point['altitudeAccuracy'] === 'number') parsed.altitudeAccuracy = point['altitudeAccuracy'];
+          if (point['seg'] === true) parsed.seg = true;
+          return [parsed];
+        });
+      });
+      setActivityRoute(route);
+    }).catch((error) => console.warn('[RecordingSummary] route load failed:', error));
+    return () => { cancelled = true; };
+  }, [user?.id, activityId]);
+
+  const routeVisualization = useMemo(
+    () => buildRouteVisualization(activityRoute),
+    [activityRoute],
+  );
+  const mapRegion = useMemo(() => {
+    if (activityRoute.length < 2) return null;
+    const lats = activityRoute.map((point) => point.lat);
+    const lngs = activityRoute.map((point) => point.lng);
+    return {
+      latitude: (Math.min(...lats) + Math.max(...lats)) / 2,
+      longitude: (Math.min(...lngs) + Math.max(...lngs)) / 2,
+      latitudeDelta: Math.max(Math.max(...lats) - Math.min(...lats), 0.002) * 1.5,
+      longitudeDelta: Math.max(Math.max(...lngs) - Math.min(...lngs), 0.002) * 1.5,
+    };
+  }, [activityRoute]);
 
   // サーバー集計が確定した時点の before/after を活動ドキュメントから受け取る。
   // クライアント側で距離を足し直さないため、Functionsとの競合や二重加算表示が起きない。
@@ -126,6 +186,7 @@ export default function RecordingSummaryScreen() {
   }, [user?.id, activityId]);
 
   const primaryImpact = impacts[0] ?? null;
+  const primaryCreditedDistanceKm = primaryImpact?.creditedDistanceKm ?? distanceKm;
   const rankChanged = primaryImpact && primaryImpact.rankBefore !== primaryImpact.rankAfter;
   const hasMultipleImpacts = impacts.length > 1;
 
@@ -190,7 +251,7 @@ export default function RecordingSummaryScreen() {
                 <Text style={s.heroSubStatText}>推定 {calories} kcal（体重60kg換算）</Text>
               )}
               {elevationGain != null && (
-                <Text style={s.heroSubStatText}>獲得標高 +{elevationGain}m</Text>
+                <Text style={s.heroSubStatText}>推定獲得標高 +{elevationGain}m</Text>
               )}
             </View>
           )}
@@ -291,9 +352,12 @@ export default function RecordingSummaryScreen() {
                 <View style={{ alignItems: 'flex-end' }}>
                   <Text style={s.impactAddLabel}>陣営加算</Text>
                   <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 2 }}>
-                    <Text style={s.impactAddVal}>+{distanceKm.toFixed(1)}</Text>
+                    <Text style={s.impactAddVal}>+{primaryCreditedDistanceKm.toFixed(1)}</Text>
                     <Text style={s.impactAddUnit}>KM</Text>
                   </View>
+                  {primaryCreditedDistanceKm + 0.0001 < distanceKm && (
+                    <Text style={s.impactLimitText}>歩数モード日次上限</Text>
+                  )}
                 </View>
               </View>
             </View>
@@ -310,7 +374,38 @@ export default function RecordingSummaryScreen() {
         <View style={s.section}>
           <Text style={TextStyles.sectionTitle}>今日のランをシェア</Text>
           <View ref={shareCardRef} collapsable={false} style={s.shareCard}>
-            <View style={{ gap: 4 }}>
+            {mapRegion && (
+              <MapView
+                style={s.shareMap}
+                provider={PROVIDER_DEFAULT}
+                initialRegion={mapRegion}
+                scrollEnabled={false}
+                zoomEnabled={false}
+                rotateEnabled={false}
+                pitchEnabled={false}
+                pointerEvents="none"
+              >
+                {routeVisualization.segments.map((segment) => (
+                  <Polyline
+                    key={segment.id}
+                    coordinates={segment.coordinates}
+                    strokeColor={ROUTE_PACE_COLOR[segment.band]}
+                    strokeWidth={4}
+                  />
+                ))}
+                {routeVisualization.kmMarkers.map((marker) => (
+                  <Marker
+                    key={`summary-km-${marker.km}`}
+                    coordinate={marker}
+                    anchor={{ x: 0.5, y: 0.5 }}
+                    tracksViewChanges={false}
+                  >
+                    <View style={s.kmMarker}><Text style={s.kmMarkerText}>{marker.km}</Text></View>
+                  </Marker>
+                ))}
+              </MapView>
+            )}
+            <View style={s.shareCardContent}>
               <Text style={s.shareCardKm}>{distanceKm.toFixed(1)}<Text style={s.shareCardKmUnit}> km</Text></Text>
               {primaryImpact ? (
                 <Text style={s.shareCardImpact}>
@@ -445,6 +540,7 @@ const s = StyleSheet.create({
   impactAddLabel: { fontSize: 10, color: Colors.textTertiary, fontWeight: '700', letterSpacing: 1 },
   impactAddVal: { fontSize: 24, color: Colors.accent, fontWeight: '800', lineHeight: 28, fontVariant: ['tabular-nums'] },
   impactAddUnit: { fontSize: 11, color: Colors.textTertiary },
+  impactLimitText: { marginTop: 2, fontSize: 8, color: Colors.textTertiary },
 
   badgeCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
@@ -466,9 +562,17 @@ const s = StyleSheet.create({
 
   // Share
   shareCard: {
-    marginTop: 8, padding: 16, borderRadius: BorderRadius.md,
+    marginTop: 8, borderRadius: BorderRadius.md,
     backgroundColor: DarkColors.background, overflow: 'hidden', position: 'relative',
   },
+  shareMap: { height: 190, width: '100%' },
+  shareCardContent: { gap: 4, padding: 16 },
+  kmMarker: {
+    width: 22, height: 22, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: DarkColors.background, borderWidth: 2, borderColor: DarkColors.primary,
+  },
+  kmMarkerText: { fontSize: 9, fontWeight: '900', color: DarkColors.textPrimary },
   shareCardKm: { fontSize: 32, fontWeight: '900', color: Colors.textOnPrimary, letterSpacing: -1, fontVariant: ['tabular-nums'] },
   shareCardKmUnit: { fontSize: 14, fontWeight: '700', color: DarkColors.textTertiary },
   shareCardImpact: { fontSize: 13, color: DarkColors.textSecondary, fontWeight: '700' },

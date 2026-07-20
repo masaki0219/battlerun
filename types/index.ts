@@ -106,8 +106,12 @@ export interface RoutePoint {
   lat: number;
   lng: number;
   timestamp: number; // Unix ms
+  /** 水平精度（m）。端末から取得できた場合のみ */
+  accuracy?: number;
   /** 高度（m）。取得できた場合のみ */
   alt?: number;
+  /** 高度の精度（m）。端末から取得できた場合のみ */
+  altitudeAccuracy?: number;
   /** 一時停止から再開した直後の点。前の点との間は距離・時間とも集計しない */
   seg?: true;
 }

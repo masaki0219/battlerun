@@ -2,7 +2,10 @@
 export const LEGAL_URLS = {
   termsOfService: 'https://zelio-run.web.app/legal/terms.html',
   privacyPolicy: 'https://zelio-run.web.app/legal/privacy.html',
+  support: 'https://zelio-run.web.app/support.html',
 };
+
+export const SUPPORT_CONTACT_URL = 'https://github.com/masaki0219/app-support/issues';
 
 /**
  * サブスクリプション購入ボタン周辺に表示する自動更新の説明文。

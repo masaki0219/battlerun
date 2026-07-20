@@ -10,6 +10,11 @@ import {
   type AutoPauseDetectorState,
 } from '../utils/autoPause';
 import { completeDeclarationsForActivity } from '../lib/declarations';
+import {
+  hasStableStartAccuracy,
+  hasUsableAutoPauseAccuracy,
+  hasUsableDistanceAccuracy,
+} from '../utils/gpsQuality';
 
 function haversine(a: RoutePoint, b: RoutePoint): number {
   const R = 6371;
@@ -24,6 +29,7 @@ function haversine(a: RoutePoint, b: RoutePoint): number {
 function filterInvalidPoints(route: RoutePoint[]): RoutePoint[] {
   const valid: RoutePoint[] = [];
   for (const point of route) {
+    if (!hasUsableDistanceAccuracy(point)) continue;
     const prev = valid[valid.length - 1];
     // セグメント先頭（一時停止からの再開点）は前の点との速度検査をしない
     if (!prev || point.seg) {
@@ -114,7 +120,7 @@ export const useRecordStore = create<RecordState>((set, get) => ({
   isRecording: false,
   isPaused: false,
   pauseKind: null,
-  autoPauseEnabled: true,
+  autoPauseEnabled: false,
   measurementType: 'gps',
   distanceKm: 0,
   steps: 0,
@@ -194,10 +200,27 @@ export const useRecordStore = create<RecordState>((set, get) => ({
     const state = get();
     if (!state.isRecording || state.pauseKind === 'manual') return;
 
+    // 位置更新自体はウォッチドッグへ伝えつつ、極端な低精度点と開始直後の不安定な点は距離へ入れない。
+    if (!hasUsableDistanceAccuracy(point) || (state.route.length === 0 && !hasStableStartAccuracy(point))) {
+      set({ lastLocationAt: point.timestamp, autoPauseDetector: emptyAutoPauseDetector() });
+      return;
+    }
+
     if (state.measurementType !== 'gps' || !state.autoPauseEnabled) {
       set({
         ...appendAcceptedPoints(state, [point]),
         autoPauseDetector: { ...emptyAutoPauseDetector(), lastPoint: point },
+        lastLocationAt: point.timestamp,
+      });
+      return;
+    }
+
+    // 距離には残せる中間精度の点でも、誤停止につながるためオートポーズ判定には使わない。
+    if (!hasUsableAutoPauseAccuracy(point)) {
+      set({
+        ...appendAcceptedPoints(state, [point]),
+        // 次の良好な点との速度計算にも低精度点を混ぜない。
+        autoPauseDetector: emptyAutoPauseDetector(),
         lastLocationAt: point.timestamp,
       });
       return;
@@ -294,7 +317,8 @@ export const useRecordStore = create<RecordState>((set, get) => ({
     return activity;
   },
 
-  reset: () =>
+  reset: () => {
+    void AsyncStorage.removeItem(RECORDING_SESSION_KEY);
     set({
       isRecording: false,
       isPaused: false,
@@ -312,7 +336,8 @@ export const useRecordStore = create<RecordState>((set, get) => ({
       segmentPending: false,
       autoPauseDetector: emptyAutoPauseDetector(),
       lastLocationAt: null,
-    }),
+    });
+  },
 }));
 
 type PersistedSession = Pick<RecordState,
@@ -362,7 +387,8 @@ export async function hydrateRecordingSession(): Promise<void> {
       AsyncStorage.getItem(RECORDING_SESSION_KEY),
       AsyncStorage.getItem(AUTO_PAUSE_ENABLED_KEY),
     ]);
-    useRecordStore.setState({ autoPauseEnabled: autoPauseRaw !== 'false' });
+    // 未設定のユーザーは初期OFF。明示的にONへ変更した場合だけ有効化する。
+    useRecordStore.setState({ autoPauseEnabled: autoPauseRaw === 'true' });
     if (!raw || useRecordStore.getState().isRecording) return;
     const saved = JSON.parse(raw) as Partial<PersistedSession>;
     if (!saved.isRecording || !saved.startedAt || !Array.isArray(saved.route)) return;

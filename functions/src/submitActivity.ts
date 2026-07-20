@@ -8,13 +8,18 @@ const MAX_OFFLINE_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_ROUTE_POINTS = 50_000;
 const ROUTE_CHUNK_SIZE = 500;
 const STEP_LENGTH_KM = 0.00075;
+const GPS_EXTREME_ACCURACY_M = 80;
 
 interface RoutePoint {
   lat: number;
   lng: number;
   timestamp: number;
+  /** 水平精度（m）。クライアントが取得できた場合のみ */
+  accuracy?: number;
   /** 高度（m）。クライアントが取得できた場合のみ */
   alt?: number;
+  /** 高度の精度（m）。クライアントが取得できた場合のみ */
+  altitudeAccuracy?: number;
   /** 一時停止から再開した直後の点。前の点との間は距離に加算しない */
   seg?: true;
 }
@@ -55,20 +60,29 @@ function parseRoute(value: unknown, startedAtMs: number, endedAtMs: number): Rou
     const lat = point['lat'];
     const lng = point['lng'];
     const timestamp = point['timestamp'];
+    const accuracy = point['accuracy'];
     const isSegmentStart = point['seg'] === true;
     if (isSegmentStart) pendingSegmentBreak = true;
     if (
       typeof lat !== 'number' || !Number.isFinite(lat) || lat < -90 || lat > 90 ||
       typeof lng !== 'number' || !Number.isFinite(lng) || lng < -180 || lng > 180 ||
       typeof timestamp !== 'number' || !Number.isFinite(timestamp) ||
-      timestamp < startedAtMs - 60_000 || timestamp > endedAtMs + 60_000
+      timestamp < startedAtMs - 60_000 || timestamp > endedAtMs + 60_000 ||
+      (typeof accuracy === 'number' && Number.isFinite(accuracy) && accuracy > GPS_EXTREME_ACCURACY_M)
     ) {
       continue;
     }
 
     const next: RoutePoint = { lat, lng, timestamp };
+    if (typeof accuracy === 'number' && Number.isFinite(accuracy) && accuracy >= 0) {
+      next.accuracy = accuracy;
+    }
     const alt = point['alt'];
     if (typeof alt === 'number' && Number.isFinite(alt)) next.alt = alt;
+    const altitudeAccuracy = point['altitudeAccuracy'];
+    if (typeof altitudeAccuracy === 'number' && Number.isFinite(altitudeAccuracy) && altitudeAccuracy >= 0) {
+      next.altitudeAccuracy = altitudeAccuracy;
+    }
     const prev = route[route.length - 1];
     if (prev && !pendingSegmentBreak) {
       const seconds = (next.timestamp - prev.timestamp) / 1000;

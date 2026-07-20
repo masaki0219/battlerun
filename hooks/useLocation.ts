@@ -82,8 +82,14 @@ export function useLocation({ enabled }: { enabled: boolean }) {
               lng: loc.coords.longitude,
               timestamp: loc.timestamp,
             };
+            if (typeof loc.coords.accuracy === 'number' && Number.isFinite(loc.coords.accuracy)) {
+              newPoint.accuracy = Math.max(0, loc.coords.accuracy);
+            }
             if (typeof loc.coords.altitude === 'number' && Number.isFinite(loc.coords.altitude)) {
               newPoint.alt = loc.coords.altitude;
+            }
+            if (typeof loc.coords.altitudeAccuracy === 'number' && Number.isFinite(loc.coords.altitudeAccuracy)) {
+              newPoint.altitudeAccuracy = Math.max(0, loc.coords.altitudeAccuracy);
             }
             useRecordStore.getState().appendRoutePoint(newPoint, loc.coords.speed);
           }

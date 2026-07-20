@@ -4,5 +4,8 @@ import './monthlyStats.test';
 import './presence.test';
 import './processContributions.test';
 import './routeSplits.test';
+import './gpsQuality.test';
+import './battleCredit.test';
+import './invite.test';
 
 console.log('all unit tests passed');

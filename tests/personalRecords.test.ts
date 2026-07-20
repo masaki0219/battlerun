@@ -48,8 +48,18 @@ assert.equal(
     { ...point(0.3, 30), alt: 11 },
     { ...point(0.4, 40), alt: 16 },
   ]),
-  9,
-  '3m未満の高度ノイズを除外して獲得標高を集計する',
+  4,
+  '3点移動平均と3mヒステリシスで高度ノイズを抑えて推定獲得標高を集計する',
+);
+
+assert.equal(
+  elevationGainMeters([
+    { ...point(0, 0), alt: 10, altitudeAccuracy: 5 },
+    { ...point(0.1, 10), alt: 100, altitudeAccuracy: 50 },
+    { ...point(0.2, 20), alt: 11, altitudeAccuracy: 5 },
+  ]),
+  0,
+  '垂直精度の悪い高度サンプルを除外する',
 );
 
 assert.deepEqual(

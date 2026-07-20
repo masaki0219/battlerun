@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -22,6 +22,7 @@ import { useTeamRanking } from '../../hooks/useTeamRanking';
 import { useBattleProcessContributions } from '../../hooks/useBattleProcessContributions';
 import { TeamRankingCard } from '../../components/battle/TeamRankingCard';
 import type { CategoryStats, Battle, Category } from '../../types';
+import { inviteWebUrl } from '../../lib/invite';
 
 // ─── countdown helpers ─────────────────────────────────────────
 function timeLeft(endAt: string): { d: number; h: number; m: number } {
@@ -198,6 +199,14 @@ export default function BattleDetailScreen() {
   const bothZero = gaugeLeft && gaugeRight && val(gaugeLeft) <= 0 && val(gaugeRight) <= 0;
   const maxVal = Math.max(...sorted.map(val), 0.01);
 
+  async function shareInvite(targetBattle: Battle) {
+    if (!targetBattle.inviteCode) return;
+    await Share.share({
+      title: `${targetBattle.title}に招待`,
+      message: `ZELIOの「${targetBattle.title}」に参加しよう！\n${inviteWebUrl(targetBattle.inviteCode)}\n招待コード: ${targetBattle.inviteCode}`,
+    }).catch((error) => console.warn('[BattleDetail] invite share failed:', error));
+  }
+
   return (
     <SafeAreaView style={s.root} edges={['top']}>
       {/* ── Nav bar ─────────────────────────────────────── */}
@@ -242,7 +251,18 @@ export default function BattleDetailScreen() {
         {/* ── Dark hero (勝負どころ) ──────────────────────── */}
         <View style={s.hero}>
           {battle.inviteCode ? (
-            <MonoLabel color={DarkColors.primary} size={9}>{`招待コード ${battle.inviteCode}`}</MonoLabel>
+            <View style={s.heroInviteRow}>
+              <MonoLabel color={DarkColors.primary} size={9}>{`招待コード ${battle.inviteCode}`}</MonoLabel>
+              <TouchableOpacity
+                style={s.heroInviteButton}
+                onPress={() => void shareInvite(battle)}
+                accessibilityRole="button"
+                accessibilityLabel="チャレンジの招待リンクを共有"
+              >
+                <Ionicons name="share-outline" size={14} color={DarkColors.primary} />
+                <Text style={s.heroInviteText}>招待する</Text>
+              </TouchableOpacity>
+            </View>
           ) : (
             <MonoLabel color={DarkColors.textTertiary} size={9}>BATTLE / ACTIVE</MonoLabel>
           )}
@@ -402,6 +422,13 @@ const s = StyleSheet.create({
     padding: Spacing.xl,
     gap: Spacing.lg,
   },
+  heroInviteRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  heroInviteButton: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 9, paddingVertical: 5,
+    borderRadius: BorderRadius.full, backgroundColor: DarkColors.primarySoft,
+  },
+  heroInviteText: { fontSize: 10, fontWeight: '800', color: DarkColors.primary },
   heroTitle: {
     fontSize: 22,
     fontWeight: '900',

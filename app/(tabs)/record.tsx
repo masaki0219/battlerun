@@ -20,7 +20,7 @@ import {
 import { useAuthStore } from '../../stores/authStore';
 import { useBattleStore } from '../../stores/battleStore';
 import { useRecentActivities } from '../../hooks/useRecentActivities';
-import type { Activity, MeasurementType, RoutePoint, RunGoal } from '../../types';
+import type { Activity, MeasurementType, RunGoal } from '../../types';
 import { Colors, DarkColors, Spacing, BorderRadius, Shadow, TextStyles } from '../../design_tokens';
 import { MonoLabel } from '../../components/ui/MonoLabel';
 import { StatBlock } from '../../components/ui/StatBlock';
@@ -38,6 +38,8 @@ import {
   DEFAULT_VOICE_COACH_SETTINGS,
   type VoiceCoachSettings,
 } from '../../utils/voiceCoach';
+import { GPS_START_ACCURACY_M } from '../../utils/gpsQuality';
+import { STEP_BATTLE_DAILY_CAP_KM } from '../../lib/constants';
 
 function useElapsedTime(): number {
   const isRecording = useRecordStore((s) => s.isRecording);
@@ -70,7 +72,7 @@ function goalLabel(goal: RunGoal): string {
   return goal.type === 'distance' ? `${goal.value}km` : `${Math.round(goal.value / 60)}分`;
 }
 
-type GpsReadiness = 'checking' | 'ready' | 'no-permission' | 'unavailable';
+type GpsReadiness = 'checking' | 'ready' | 'weak' | 'no-permission' | 'unavailable';
 
 function formatTime(s: number): string {
   const h = Math.floor(s / 3600);
@@ -128,9 +130,6 @@ export default function RecordScreen() {
   const [selectedMode, setSelectedMode] = useState<MeasurementType>('gps');
   const [isSaving, setIsSaving] = useState(false);
   const [isStepAvailable, setIsStepAvailable] = useState(false);
-  const [savedRoute, setSavedRoute] = useState<RoutePoint[]>([]);
-  const [savedStats, setSavedStats] = useState<{ distanceKm: number; durationSeconds: number } | null>(null);
-  const [showRouteModal, setShowRouteModal] = useState(false);
   const [voiceSettings, setVoiceSettings] = useState<VoiceCoachSettings>(DEFAULT_VOICE_COACH_SETTINGS);
   const [showVoiceSettings, setShowVoiceSettings] = useState(false);
   const [selectedGoalIdx, setSelectedGoalIdx] = useState(0);
@@ -253,8 +252,13 @@ export default function RecordScreen() {
       if (cancelled) return;
       if (!permission?.granted) { setGpsReadiness('no-permission'); return; }
       try {
-        await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        if (!cancelled) setGpsReadiness('ready');
+        const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        if (!cancelled) {
+          const accuracy = location.coords.accuracy;
+          setGpsReadiness(
+            typeof accuracy === 'number' && accuracy > GPS_START_ACCURACY_M ? 'weak' : 'ready',
+          );
+        }
       } catch {
         if (!cancelled) setGpsReadiness('unavailable');
       }
@@ -298,6 +302,28 @@ export default function RecordScreen() {
         onPress: () => { stopGuardRef.current = false; },
       },
       {
+        text: '破棄する',
+        style: 'destructive',
+        onPress: () => {
+          Alert.alert(
+            'この記録を破棄しますか？',
+            '距離・ルート・歩数は保存されず、元に戻せません。',
+            [
+              { text: '戻る', style: 'cancel', onPress: () => { stopGuardRef.current = false; } },
+              {
+                text: '破棄する',
+                style: 'destructive',
+                onPress: () => {
+                  Speech.stop();
+                  reset();
+                  stopGuardRef.current = false;
+                },
+              },
+            ],
+          );
+        },
+      },
+      {
         text: '停止して保存', style: 'destructive',
         onPress: async () => {
           if (!user) {
@@ -328,10 +354,8 @@ export default function RecordScreen() {
               );
               return;
             }
-            setSavedRoute(activity.route ?? []);
             const savedDistanceKm = submitted.distanceKm;
             const savedDurationSeconds = submitted.durationSeconds;
-            setSavedStats({ distanceKm: savedDistanceKm, durationSeconds: savedDurationSeconds });
             const splits = activity.measurementType === 'gps' ? kmSplits(activity.route ?? []) : [];
             const elevation = elevationGainM(activity.route ?? []);
             reset();
@@ -434,6 +458,11 @@ export default function RecordScreen() {
               );
             })}
           </View>
+          {selectedMode === 'steps' && (
+            <Text style={s.stepsFairnessNote}>
+              個人記録には全距離を保存し、チャレンジには1日{STEP_BATTLE_DAILY_CAP_KM}kmまで加算されます
+            </Text>
+          )}
 
           {/* Voice coach settings */}
           <View style={s.voiceRow}>
@@ -469,7 +498,13 @@ export default function RecordScreen() {
           {selectedMode === 'gps' && (
             <View style={s.voiceRow}>
               <Ionicons name="pause-circle-outline" size={16} color={autoPauseEnabled ? Colors.primaryDark : Colors.textTertiary} />
-              <Text style={[s.voiceLabel, autoPauseEnabled && { color: Colors.primaryDark }]}>オートポーズ</Text>
+              <View style={s.voiceLabelWrap}>
+                <View style={s.autoPauseTitleRow}>
+                  <Text style={[s.voiceLabel, autoPauseEnabled && { color: Colors.primaryDark }]}>オートポーズ</Text>
+                  <Text style={s.experimentalBadge}>試験的</Text>
+                </View>
+                <Text style={s.voiceSummary}>停止を誤検知する場合があります（初期設定OFF）</Text>
+              </View>
               <Switch
                 value={autoPauseEnabled}
                 onValueChange={setAutoPauseEnabled}
@@ -525,12 +560,13 @@ export default function RecordScreen() {
                   style={[
                     s.gpsDot,
                     gpsReadiness === 'ready' && { backgroundColor: Colors.primary },
-                    gpsReadiness === 'unavailable' && { backgroundColor: Colors.accent },
+                    (gpsReadiness === 'weak' || gpsReadiness === 'unavailable') && { backgroundColor: Colors.accent },
                   ]}
                 />
                 <Text style={s.gpsChipText}>
                   {gpsReadiness === 'checking' && 'GPS 確認中…'}
                   {gpsReadiness === 'ready' && 'GPS 準備OK'}
+                  {gpsReadiness === 'weak' && 'GPS精度が安定するまでお待ちください'}
                   {gpsReadiness === 'no-permission' && '位置情報は開始時に許可できます'}
                   {gpsReadiness === 'unavailable' && 'GPS信号を取得できません'}
                 </Text>
@@ -700,9 +736,11 @@ export default function RecordScreen() {
       {currentActiveBattles.length > 0 && (
         <View style={s.hudContribRow}>
           <Text style={s.hudContribText}>
-            {currentActiveBattles.length === 1
-              ? `+${distanceKm.toFixed(2)}km → 「${currentActiveBattles[0].title}」に加算`
-              : `+${distanceKm.toFixed(2)}km → 参加中の${currentActiveBattles.length}件のチャレンジに加算`}
+            {measurementType === 'steps'
+              ? `歩数モードは各チャレンジへ1日${STEP_BATTLE_DAILY_CAP_KM}kmまで加算`
+              : currentActiveBattles.length === 1
+                ? `+${distanceKm.toFixed(2)}km → 「${currentActiveBattles[0].title}」に加算`
+                : `+${distanceKm.toFixed(2)}km → 参加中の${currentActiveBattles.length}件のチャレンジに加算`}
           </Text>
         </View>
       )}
@@ -834,56 +872,6 @@ export default function RecordScreen() {
         )}
       </View>
 
-      {/* Route modal (after save) */}
-      <Modal visible={showRouteModal} animationType="slide" onRequestClose={() => setShowRouteModal(false)}>
-        <SafeAreaView style={{ flex: 1, backgroundColor: DarkColors.background }}>
-          <View style={s.hudHeader}>
-            <Text style={{ color: DarkColors.textPrimary, fontWeight: '700', fontSize: 17 }}>走行ルート</Text>
-          </View>
-          {savedRoute.length > 1 ? (() => {
-            const lats = savedRoute.map((p) => p.lat);
-            const lngs = savedRoute.map((p) => p.lng);
-            const minLat = Math.min(...lats); const maxLat = Math.max(...lats);
-            const minLng = Math.min(...lngs); const maxLng = Math.max(...lngs);
-            return (
-              <MapView
-                style={{ flex: 1 }}
-                provider={PROVIDER_DEFAULT}
-                initialRegion={{
-                  latitude: (minLat + maxLat) / 2, longitude: (minLng + maxLng) / 2,
-                  latitudeDelta: Math.max(maxLat - minLat, 0.002) * 1.4,
-                  longitudeDelta: Math.max(maxLng - minLng, 0.002) * 1.4,
-                }}
-              >
-                <Polyline
-                  coordinates={savedRoute.map((p) => ({ latitude: p.lat, longitude: p.lng }))}
-                  strokeColor={DarkColors.primary} strokeWidth={4}
-                />
-              </MapView>
-            );
-          })() : (
-            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ color: DarkColors.textTertiary }}>ルートデータがありません</Text>
-            </View>
-          )}
-          {savedStats && (
-            <View style={s.hudStatsRow}>
-              <View style={s.hudStat}>
-                <Text style={s.hudStatVal}>{savedStats.distanceKm.toFixed(2)}</Text>
-                <MonoLabel color={DarkColors.textTertiary} size={8.5}>km</MonoLabel>
-              </View>
-              <View style={s.hudStatDivider} />
-              <View style={s.hudStat}>
-                <Text style={s.hudStatVal}>{formatTime(savedStats.durationSeconds)}</Text>
-                <MonoLabel color={DarkColors.textTertiary} size={8.5}>経過時間</MonoLabel>
-              </View>
-            </View>
-          )}
-          <Pressable style={s.routeCloseBtn} onPress={() => setShowRouteModal(false)}>
-            <Text style={s.routeCloseBtnText}>閉じる</Text>
-          </Pressable>
-        </SafeAreaView>
-      </Modal>
     </View>
   );
 }
@@ -1009,6 +997,12 @@ const s = StyleSheet.create({
     color: Colors.textTertiary,
   },
   voiceSummary: { fontSize: 10, color: Colors.textTertiary, marginTop: 1 },
+  autoPauseTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  experimentalBadge: {
+    fontSize: 9, fontWeight: '800', color: Colors.accentDark,
+    backgroundColor: Colors.accentLight, borderRadius: BorderRadius.full,
+    paddingHorizontal: 6, paddingVertical: 1,
+  },
   modeToggle: {
     flexDirection: 'row', gap: 4, padding: 4,
     backgroundColor: Colors.surfaceAlt, borderRadius: BorderRadius.full,
@@ -1024,6 +1018,10 @@ const s = StyleSheet.create({
   },
   modeBtnText: { fontSize: 12, fontWeight: '700', color: Colors.textTertiary },
   modeBtnTextActive: { color: Colors.textPrimary },
+  stepsFairnessNote: {
+    marginHorizontal: 40, marginTop: 8,
+    fontSize: 10, lineHeight: 15, color: Colors.textTertiary, textAlign: 'center',
+  },
 
   startArea: { alignItems: 'center', justifyContent: 'center', gap: 16, paddingVertical: 36 },
   startStack: { width: 180, height: 180, alignItems: 'center', justifyContent: 'center' },
@@ -1190,12 +1188,6 @@ const s = StyleSheet.create({
     backgroundColor: DarkColors.stop,
   },
   stopLabel: { fontSize: 12, color: DarkColors.textTertiary, fontWeight: '600', letterSpacing: 0.5 },
-
-  // Route modal
-  routeCloseBtn: {
-    backgroundColor: DarkColors.primary, paddingVertical: 18, alignItems: 'center',
-  },
-  routeCloseBtnText: { fontSize: 16, fontWeight: '800', color: DarkColors.background },
 
   // Voice coach bottom sheet
   sheetRoot: { flex: 1, justifyContent: 'flex-end' },

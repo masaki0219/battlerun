@@ -43,7 +43,8 @@ export default function NewPublicBattleScreen() {
   const [rankingType, setRankingType] = useState<'average' | 'total'>('average');
   const today = useMemo(() => new Date(), []);
   const defaultStartAt = useMemo(() => formatDateInput(today), [today]);
-  const defaultEndAt = useMemo(() => formatDateInput(addDays(today, 41)), [today]);
+  // 初期運用は2週間ローテーション。開始日を含め14日間になるよう13日後を既定にする。
+  const defaultEndAt = useMemo(() => formatDateInput(addDays(today, 13)), [today]);
   const [startAt, setStartAt] = useState(defaultStartAt);
   const [endAt, setEndAt] = useState(defaultEndAt);
   const [seasons, setSeasons] = useState<Season[]>([]);
@@ -184,7 +185,7 @@ export default function NewPublicBattleScreen() {
         seasonId: resolvedSeasonId,
       });
 
-      Alert.alert('作成完了', 'パブリックランを作成しました', [
+      Alert.alert('作成完了', '公開チャレンジを作成しました', [
         { text: 'OK', onPress: () => router.back() },
       ]);
     } catch (e: any) {
@@ -200,7 +201,7 @@ export default function NewPublicBattleScreen() {
         <TouchableOpacity onPress={() => router.back()}>
           <Text style={styles.back}>← 戻る</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>パブリックラン 新規作成</Text>
+        <Text style={styles.headerTitle}>公開チャレンジ 新規作成</Text>
         <View style={{ width: 48 }} />
       </View>
 
@@ -363,7 +364,7 @@ export default function NewPublicBattleScreen() {
             />
 
             <Button
-              label="パブリックランを作成する"
+              label="公開チャレンジを作成する"
               onPress={handleCreate}
               loading={creating}
               style={{ marginTop: Spacing.xl }}

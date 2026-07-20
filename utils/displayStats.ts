@@ -5,6 +5,7 @@
  * 入力は各画面が既に取得済みの Activity[] / CategoryStats[] / Battle のみ。
  */
 import type { Activity, CategoryStats, RoutePoint } from '../types';
+import { hasUsableAltitude } from './gpsQuality';
 
 const DAY_MS = 86_400_000;
 const WEEKDAY = ['日', '月', '火', '水', '木', '金', '土'] as const;
@@ -271,19 +272,26 @@ export function elevationGainM(route: RoutePoint[]): number | null {
   let base: number | null = null;
   let gain = 0;
   let hasAlt = false;
+  let window: number[] = [];
   for (const p of route) {
-    if (typeof p.alt !== 'number' || !Number.isFinite(p.alt)) continue;
+    if (p.seg) {
+      base = null;
+      window = [];
+    }
+    if (!hasUsableAltitude(p)) continue;
     hasAlt = true;
+    window = [...window.slice(-2), p.alt!];
+    const smoothedAltitude = window.reduce((sum, altitude) => sum + altitude, 0) / window.length;
     if (base === null) {
-      base = p.alt;
+      base = smoothedAltitude;
       continue;
     }
-    const delta = p.alt - base;
+    const delta = smoothedAltitude - base;
     if (delta >= 3) {
       gain += delta;
-      base = p.alt;
+      base = smoothedAltitude;
     } else if (delta < 0) {
-      base = p.alt;
+      base = smoothedAltitude;
     }
   }
   return hasAlt ? Math.round(gain) : null;

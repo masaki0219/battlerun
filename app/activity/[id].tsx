@@ -65,6 +65,7 @@ interface ActivityData {
 interface BattleContribution {
   battleId: string;
   battleTitle: string;
+  creditedDistanceKm: number;
 }
 
 interface ReactionCount {
@@ -101,6 +102,8 @@ export default function ActivityDetailScreen() {
             timestamp: p['timestamp'] as number,
           };
           if (typeof p['alt'] === 'number') point.alt = p['alt'];
+          if (typeof p['accuracy'] === 'number') point.accuracy = p['accuracy'];
+          if (typeof p['altitudeAccuracy'] === 'number') point.altitudeAccuracy = p['altitudeAccuracy'];
           if (p['seg'] === true) point.seg = true;
           return point;
         };
@@ -114,13 +117,15 @@ export default function ActivityDetailScreen() {
         }
 
         const battleIds = ((d['battleIds'] as string[] | undefined) ?? []);
+        const impactMap = (d['aggregationImpacts'] as Record<string, { creditedDistanceKm?: number }> | undefined) ?? {};
+        const activityDistanceKm = (d['distanceKm'] as number) ?? 0;
 
         setActivity({
           id: snap.id,
           userId: d['userId'] as string,
           displayName: (d['displayName'] as string) ?? 'メンバー',
           battleIds,
-          distanceKm: (d['distanceKm'] as number) ?? 0,
+          distanceKm: activityDistanceKm,
           steps: (d['steps'] as number | null) ?? null,
           durationSeconds: (d['durationSeconds'] as number) ?? 0,
           measurementType: (d['measurementType'] as string) ?? 'gps',
@@ -133,7 +138,13 @@ export default function ActivityDetailScreen() {
         const contributions = await Promise.all(
           battleIds.map(async (bid) => {
             const bSnap = await getDoc(doc(db, 'battles', bid)).catch(() => null);
-            return bSnap?.exists() ? { battleId: bid, battleTitle: bSnap.data()['title'] as string } : null;
+            return bSnap?.exists() ? {
+              battleId: bid,
+              battleTitle: bSnap.data()['title'] as string,
+              creditedDistanceKm: typeof impactMap[bid]?.creditedDistanceKm === 'number'
+                ? impactMap[bid].creditedDistanceKm!
+                : activityDistanceKm,
+            } : null;
           })
         );
         setBattleContributions(contributions.filter((c): c is BattleContribution => c !== null));
@@ -313,7 +324,7 @@ export default function ActivityDetailScreen() {
             <Ionicons name="time-outline" size={12} color={Colors.textTertiary} />
             <Text style={s.timeText}>{startTimeStr} 〜 {endTimeStr}</Text>
             {calories != null && <Text style={s.timeText}>・推定 {calories} kcal</Text>}
-            {elevationGain != null && <Text style={s.timeText}>・獲得標高 +{elevationGain}m</Text>}
+            {elevationGain != null && <Text style={s.timeText}>・推定獲得標高 +{elevationGain}m</Text>}
           </View>
         </View>
 
@@ -389,7 +400,7 @@ export default function ActivityDetailScreen() {
                 <Ionicons name="flash" size={18} color={Colors.accent} />
                 <View style={{ flex: 1 }}>
                   <Text style={s.battleTitle}>{c.battleTitle}</Text>
-                  <Text style={s.battleContrib}>+{activity.distanceKm.toFixed(2)}km 貢献</Text>
+                  <Text style={s.battleContrib}>+{c.creditedDistanceKm.toFixed(2)}km 貢献</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
               </TouchableOpacity>

@@ -24,6 +24,17 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 
 ## 最後に完了したこと
 
+### リリースレビュー Rev.2 の実装対応（2026-07-20）
+
+- 作業開始前の既存差分を `10079b2 feat: ランニング体験とチーム機能を拡充` として `origin/feat/ui-consolidation` へpushした。その後の本節の変更は未コミット・未push。
+- P0: オンボーディングの旧ブランドとCTAを修正し、オートポーズを初期OFFかつ「試験的」に変更。停止確認へ二重確認つき「破棄」を追加した。ZELIO Hosting用のサポートページ、アプリ内問い合わせ導線、同期したプライバシー文面、App Privacy回答案と英語審査ノートを `APP_STORE_SUBMISSION.md` に追加した。
+- GPS: RoutePointとサーバー保存へ水平/垂直精度を追加。距離は80m超を端末・サーバーで除外、開始点は50m以内まで保留、オートポーズは35m以内だけで判定する。推定獲得標高は垂直精度20m超を除外し、3点移動平均と3mヒステリシスを適用。UI表記を「推定獲得標高」に統一した。閾値は暫定で、米沢市内の実走ログに基づく再調整が必要。
+- 公平性: 歩数活動の個人履歴は全距離を残しつつ、チャレンジ加算は参加者・チャレンジ・東京時間の日付ごとに5kmを上限化した。Functionsのトランザクションで競合を防ぎ、活動削除時は実際の加算距離だけを戻す。日次加算値をクライアントから作成・改変できないルールテストも追加した。
+- 招待: `https://zelio-run.web.app/invite?code=XXXXXX`、OS共有シート、`zelio://invite`、未認証時のコード一時保存、登録/ログイン後の参加フォーム自動入力を追加した。未インストール時のWebフォールバックはコードを表示・コピーする。App Storeの正式掲載URLが未確定のため、ストアへの直接誘導だけは未実装。
+- チャレンジ運用: 新規ユーザーのおすすめを終了日時が最も近い1件へ決定的に集約し、少人数時の文言を改善。`OPERATIONS.md` に週次担当・作成期限・テストユーザー配置・参加者0〜2人の受け入れ基準を明文化した。実際の公式チャレンジ作成と担当者決定は運用作業として未実施。
+- サマリー: 本人専用ルートチャンクを読み込み、ペース色・kmマーカーつき地図を画面と共有画像へ追加。旧デッドコードのルートモーダルを削除した。FunctionsランタイムをNode.js 22へ変更し、rootに `typecheck` / `test` scriptsを追加。`npm audit fix`（`--force`なし）をroot/functionsへ適用した。
+- 確認は `npm run typecheck`、Functions build、unit tests（GPS品質・歩数上限・招待を追加）、Firestore rules tests **全72件**、Expo Doctor 18/18、iOS Expo export、`git diff --check` が成功。Node 22のFunctionsとHostingのデプロイは実行承認を得られず未反映。
+
 ### リリースレビューレポートの作成とRev.2改訂（2026-07-20）
 
 - コードベース全体を静的レビューしたレポートを作成し、ユーザーレビューを反映して Rev.2 へ改訂した。保存場所はユーザーがリポジトリ外の `Desktop/ZELIO/inst_v4/RELEASE_READINESS_REVIEW_2026-07-20.md` へ移動済み（リポジトリ内の docs/ には無い）。コード変更は行っていない。
@@ -208,7 +219,7 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 
 ## 次にやること
 
-1. 機能ギャップ Phase 3 の T-20「インターバルワークアウト」を実装する。
+1. iOS先行かAndroid同時公開かを決定し、対象OSのTestFlight/development buildで `RELEASE_TEST_CHECKLIST.md` シナリオ1〜8を完走する。
 
 ## その次の候補
 - 実機でオフライン停止→端末キュー保存→オンライン復帰後30秒以内の再送と、サマリー集計の15秒フォールバックを確認する
@@ -219,13 +230,14 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 - masaki0219/app-support（GitHub Pages）の docs/battlerun/ 配下サポートページをZelio表記へ同期する
 - `feat/ui-consolidation` を `main` へマージするか判断する（origin へは push 済み）
 - 使われていないブランチ `feat/ui-refresh` / `feat/ui-redesign` を整理する
-- `package.json` に `typecheck` / `lint` スクリプトを追加する（現在は `test:rules` のみ）
+- `package.json` に `lint` スクリプトを追加する（`typecheck` / `test` は追加済み）
 - バックグラウンドGPS を EAS development build で確認する（Expo Go ではフォアグラウンドのみ）
+- 機能ギャップ Phase 3 の T-20「インターバルワークアウト」を実装する
 
 ## 未解決・要確認
 
 - **ランニング基本機能・Sprint 1〜4（T-11まで）の実機確認が未実施（2026-07-20）**: 記録系Functions、自己ベスト・月次統計集計、出撃宣言・ライブ応援Functions、関連ルールは `zelio-run` へデプロイ済み。実機/シミュレータでの目視（一時停止HUD・オートポーズ・音声コーチ・週間目標・自己ベスト祝福/一覧・月間/年間統計・出撃宣言・通知タップ・宣言/ライブ応援プッシュ・ライブプレゼンス3分失効・HUD触覚/音声・宣言達成・過負荷カード・オフライン再送・カウントダウン・目標バー・ラップ表示・削除フロー）は未実施。新規活動の月次加算と削除時の減算も実データでは未確認。バックグラウンドのオートポーズは EAS development build が必要。
-- Functionsデプロイ時に Node.js 20 が2026-10-30に廃止予定との警告が出た。期限までにFunctionsのランタイムをサポート対象バージョンへ更新し、回帰確認して再デプロイする。
+- Functionsのランタイム指定はNode.js 22へ更新してビルド済みだが、`zelio-run` への再デプロイは未実施。歩数チャレンジ上限のFunctionsとSupport/Invite/PrivacyのHostingも同じくローカルのみ。
 - 一時停止まわりの設計メモ: 終了済みバトルの集計は削除時に減算しない（結果確定のため）。バッジは削除しても剥奪しない。セッション復旧時（アプリ再起動）は `segmentPending: true` でギャップ距離を数えない仕様に変えた。
 - `EXPO_PUBLIC_REVENUECAT_API_KEY` は `appl_RRF…`（.env側の値）が正と確認され、`eas.json` 3プロファイルを統一済み（2026-07-19）。
 - 修正済み `revenuecatWebhook` のデプロイと zelio-run 残作業（Auth メール/パスワード有効化、Firestore データコピー、RevenueCat Webhook URL 変更）はユーザー報告により完了（2026-07-19）。
@@ -233,16 +245,18 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 - 2026-07-19 の functions デプロイで `revenuecatWebhook` が「No changes detected」でスキップされた＝それ以前に現行ソースでデプロイ済みだったことを意味する（他13関数は今回更新）。Webhook が us-central1 なのに対し Firestore トリガー系は asia-northeast1 と、リージョンが混在している点は把握しておく。
 - RevenueCat 側 Webhook 設定の URL（us-central1 の revenuecatWebhook）と Authorization ヘッダが `REVENUECAT_WEBHOOK_AUTH` シークレットと一致しているかは、ダッシュボードで要確認（コード側からは確認不可）。
 - zelio-run 移行の残作業（Auth メール/パスワード有効化・Firestore データコピー・Webhook URL 変更）はユーザー報告により完了。移行した Auth ユーザー2件のパスワード再設定は各アカウントの「パスワードを忘れた」から行う（未実施の場合）。
-- サポート窓口の実アドレスは公開後に確認する。
+- サポート窓口は `https://github.com/masaki0219/app-support/issues` を使用し、ZELIO Hostingの `/support.html` から案内する。個人情報を含む問い合わせを公開Issueへ書かせない注意文を表示済み。非公開窓口を用意できたら差し替える。
 - Expo依存は `expo ~54.0.35`、`expo-font ~14.0.12`、`expo-router ~6.0.24` へ更新済み。Expo Doctorは18/18合格。
-- `npm audit --omit=dev` は34件（critical 1 / high 4）。Criticalの`shell-quote`とHighの`@grpc/grpc-js` / `protobufjs` / `ws`は親依存の許容範囲内に修正版があり、`npm audit fix`（`--force`なし）で更新可能。Highの`undici`はFirebase 10.14.1が6.19.7へ固定しており、完全解消にはFirebase 12系へのメジャー更新と回帰検証が必要。開発依存込みでは`form-data`が加わりcritical 1 / high 5。`npm audit fix --force`は未適用。
-- Firestoreルールテストはローカルの Java（openjdk 26）でエミュレータ実行できる。2026-07-20 時点で全70件成功。
+- `npm audit fix`（`--force`なし）適用後、rootの `npm audit --omit=dev` は critical 0 / high 1 / moderate 34。残るhighの`undici`はFirebase 12系が必要。functionsはhigh 0 / moderate 9で、残りはfirebase-admin配下の`uuid`系。いずれも破壊的な `--force` は未適用。
+- Firestoreルールテストはローカルの Java（openjdk 26）でエミュレータ実行できる。2026-07-20 時点で全72件成功。
 - `submitActivity` はサーバーで距離を再計算するが、Firebase App Checkのネイティブ導入は未実施。改造クライアント対策として導入を検討する。
+- クラッシュ監視・分析イベントはSDK/送信先・プライバシー申告を決める外部設定が必要なため未導入。App CheckもApple App Attest / DeviceCheck、Android Play Integrity、Firebase Console設定とdevelopment buildでの確認が必要。
+- リリース対象（iOS先行 / Android同時）はプロダクト判断のため未決定。公式チャレンジの実データ作成、テストユーザー配置、App Store Connectへの回答転記も人手の運用作業として残る。
 - `FactionColumns` のバー高さは **0起点ではなく「最下位〜首位」で正規化**している（僅差だと全部同じ高さに潰れて順位が読めないため。最下位でも 32% は残す）。各バーの上に実数値 km を出して誤読を防いでいるが、スケールの妥当性は要レビュー。
 - `useTeamRanking` は participants サブコレクションを全件読む（既存の `useBattleParticipants` と同じ方式）。大規模バトルでは読み取り件数が増える。上位3名の users 読みは3件に固定。
 - ダーク面（記録中HUD・結果画面）がパイン系に変わったため、`battle/result/[id].tsx` など今回レイアウトを触っていないダーク画面の見え方は要確認。
 - `app/battle/theme.tsx` の `sports` テーマだけ新ブランド色に合わせた。他テーマ（RPG / ホラー等）の hex は意図的にそのまま。
-- `feat/ui-consolidation` を `main` へマージする予定かどうかは不明。31 コミット分が未 push のままローカルにのみ存在する。
+- `feat/ui-consolidation` を `main` へマージする予定かどうかは不明。`10079b2` まではoriginへpush済みで、リリースレビュー対応差分は未コミット・未push。
 - `firestore-debug.log` がリポジトリ直下にあるが gitignore 済み。
 
 ## 起動方法

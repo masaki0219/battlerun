@@ -193,7 +193,7 @@ export default function StatsScreen() {
                 <MonthDetailCell label="距離" value={`${selectedMonthlyStat.km.toFixed(1)} km`} />
                 <MonthDetailCell label="記録回数" value={`${selectedMonthlyStat.count} 回`} />
                 <MonthDetailCell label="時間" value={formatTime(selectedMonthlyStat.durationSec)} />
-                <MonthDetailCell label="獲得標高" value={`${Math.round(selectedMonthlyStat.elevationM)} m`} />
+                <MonthDetailCell label="推定獲得標高" value={`${Math.round(selectedMonthlyStat.elevationM)} m`} />
               </View>
               <Text style={styles.monthlyNote}>機能公開後の新しい記録から集計されます。過去分の追加集計は行いません。</Text>
             </View>
@@ -225,7 +225,7 @@ export default function StatsScreen() {
               <View style={styles.personalRecordsRow}>
                 <PersonalRecordCell label="最長距離" value={longestRecordKm > 0 ? `${longestRecordKm.toFixed(1)} km` : '—'} />
                 <PersonalRecordCell
-                  label="最高獲得標高"
+                  label="最高推定獲得標高"
                   value={personalRecords?.maxElevationGainM != null ? `${Math.round(personalRecords.maxElevationGainM)} m` : '—'}
                 />
                 <PersonalRecordCell label="最高月間" value={bestMonthRecordKm > 0 ? `${bestMonthRecordKm.toFixed(1)} km` : '—'} />

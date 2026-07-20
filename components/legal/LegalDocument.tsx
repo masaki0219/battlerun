@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,6 +8,7 @@ import { Colors, Spacing, Typography } from '../../design_tokens';
 export interface LegalSection {
   heading: string;
   body: string;
+  action?: { label: string; url: string };
 }
 
 export function LegalDocument({ title, updatedAt, sections }: {
@@ -30,6 +31,17 @@ export function LegalDocument({ title, updatedAt, sections }: {
           <View key={section.heading} style={styles.section}>
             <Text style={styles.heading}>{section.heading}</Text>
             <Text style={styles.body}>{section.body}</Text>
+            {section.action && (
+              <TouchableOpacity
+                style={styles.action}
+                onPress={() => void Linking.openURL(section.action!.url)}
+                accessibilityRole="link"
+                accessibilityLabel={section.action.label}
+              >
+                <Text style={styles.actionText}>{section.action.label}</Text>
+                <Ionicons name="open-outline" size={14} color={Colors.primaryDark} />
+              </TouchableOpacity>
+            )}
           </View>
         ))}
       </ScrollView>
@@ -50,4 +62,10 @@ const styles = StyleSheet.create({
   section: { gap: Spacing.sm },
   heading: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
   body: { fontSize: Typography.fontSize.sm, lineHeight: 22, color: Colors.textSecondary },
+  action: {
+    alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 5,
+    marginTop: Spacing.xs, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
+    borderRadius: 999, backgroundColor: Colors.primaryLight,
+  },
+  actionText: { fontSize: Typography.fontSize.sm, fontWeight: '700', color: Colors.primaryDark },
 });

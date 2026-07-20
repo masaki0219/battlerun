@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  ActivityIndicator, Alert, TextInput,
+  ActivityIndicator, Alert, TextInput, Share,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { getDoc, doc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../lib/firebase';
@@ -38,6 +39,7 @@ import { useBattlePresence } from '../../hooks/useBattlePresence';
 import { weeklyBuckets, streakDays, weekOverWeek, weekStartLabel } from '../../utils/displayStats';
 import { Colors, Typography, Spacing, BorderRadius, Shadow } from '../../design_tokens';
 import type { Battle, Category, CategoryStats, RunningPresence } from '../../types';
+import { inviteWebUrl, normalizeInviteCode, PENDING_INVITE_CODE_KEY } from '../../lib/invite';
 
 type Tab = 'public' | 'private';
 type PrivateView = 'list' | 'create' | 'join_code' | 'join_select';
@@ -46,6 +48,7 @@ type PrivateView = 'list' | 'create' | 'join_code' | 'join_select';
 // メイン画面（state・購読・handler を集約。表示は components/battle/* に委譲）
 // ────────────────────────────────────────────────────────────────
 export default function BattleScreen() {
+  const params = useLocalSearchParams<{ inviteCode?: string }>();
   const { user } = useAuthStore();
   const userIsPro = user?.plan === 'pro';
   const unreadNotifications = useUnreadNotifications();
@@ -73,6 +76,25 @@ export default function BattleScreen() {
   const [inviteCode, setInviteCode] = useState('');
   const [foundBattle, setFoundBattle] = useState<Battle | null>(null);
   const [searching, setSearching] = useState(false);
+
+  // Web招待リンクや認証前に保管したコードを、友達チャレンジ参加フォームへ引き継ぐ。
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const fromParam = normalizeInviteCode(params.inviteCode);
+      const fromStorage = fromParam
+        ? null
+        : normalizeInviteCode(await AsyncStorage.getItem(PENDING_INVITE_CODE_KEY));
+      const pendingCode = fromParam ?? fromStorage;
+      if (!pendingCode || cancelled) return;
+      setInviteCode(pendingCode);
+      setFoundBattle(null);
+      setActiveTab('private');
+      setPrivateView('join_code');
+      await AsyncStorage.removeItem(PENDING_INVITE_CODE_KEY);
+    })();
+    return () => { cancelled = true; };
+  }, [params.inviteCode]);
 
   // 友達チャレンジ作成フォーム
   const [createTitle, setCreateTitle] = useState('');
@@ -182,9 +204,13 @@ export default function BattleScreen() {
   }
 
   // Day-0アクティベーション: 未参加ユーザーに開催中のパブリックランを1件だけ強く提示する
-  const recommendedBattle = publicBattles.find(
-    (b) => b.status === 'active' && !myMemberships.some((m) => m.battleId === b.id),
-  ) ?? null;
+  const recommendedBattle = publicBattles
+    .filter((battle) => (
+      battle.status === 'active' && !myMemberships.some((membership) => membership.battleId === battle.id)
+    ))
+    .sort((a, b) => (
+      new Date(a.endAt).getTime() - new Date(b.endAt).getTime() || a.id.localeCompare(b.id)
+    ))[0] ?? null;
   const recommendedStats = recommendedBattle ? (categoryStatsMap[recommendedBattle.id] ?? []) : [];
   const recommendedShortageCategory = recommendedBattle
     ? recommendedBattle.categories.reduce<Category | null>((min, cat) => {
@@ -328,6 +354,19 @@ export default function BattleScreen() {
     Alert.alert('コピーしました', `招待コード: ${code}`);
   }
 
+  async function shareInvite(battle: Battle) {
+    if (!battle.inviteCode) return;
+    try {
+      await Share.share({
+        title: `${battle.title}に招待`,
+        message: `ZELIOの「${battle.title}」に参加しよう！\n${inviteWebUrl(battle.inviteCode)}\n招待コード: ${battle.inviteCode}`,
+      });
+    } catch (error) {
+      console.warn('[BattleScreen] invite share failed:', error);
+      Alert.alert('共有できませんでした', '時間をおいてもう一度お試しください。');
+    }
+  }
+
   // ── 表示部品（小さいものは inline） ────────────────────────
   const publicCard = (battle: Battle) => {
     const membership = myMembershipFor(battle.id);
@@ -357,6 +396,7 @@ export default function BattleScreen() {
       onToggleExpand={() => toggleExpanded(battle.id)}
       onPress={() => router.push(`/battle/${battle.id}` as any)}
       onCopyInvite={copyInvite}
+      onShareInvite={shareInvite}
     />
   );
 

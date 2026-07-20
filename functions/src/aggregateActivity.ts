@@ -10,6 +10,7 @@ import {
   type TimedRoutePoint,
 } from './personalRecords';
 import { tokyoMonthKey, type MonthlyStatsImpact } from './monthlyStats';
+import { creditedBattleDistanceKm, tokyoDayKey } from './battleCredit';
 
 const MAX_SPEED_KMH = 25;
 const TOKYO_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -48,7 +49,11 @@ async function activityRoute(
         || typeof timestamp !== 'number' || !Number.isFinite(timestamp)
       ) return [];
       const parsed: TimedRoutePoint = { lat, lng, timestamp };
+      if (typeof point['accuracy'] === 'number' && Number.isFinite(point['accuracy'])) parsed.accuracy = point['accuracy'];
       if (typeof point['alt'] === 'number' && Number.isFinite(point['alt'])) parsed.alt = point['alt'];
+      if (typeof point['altitudeAccuracy'] === 'number' && Number.isFinite(point['altitudeAccuracy'])) {
+        parsed.altitudeAccuracy = point['altitudeAccuracy'];
+      }
       if (point['seg'] === true) parsed.seg = true;
       return [parsed];
     });
@@ -182,8 +187,18 @@ export const aggregateActivity = onDocumentCreated(
           (categoryStatsDoc.data()['participantCount'] as number | undefined) ?? 0,
           1,
         );
+        const stepDayKey = measurementType === 'steps' ? tokyoDayKey(startedAt.toMillis()) : null;
+        const stepCredits = (participant['stepCreditKmByDay'] as Record<string, number> | undefined) ?? {};
+        const alreadyCreditedKm = stepDayKey && typeof stepCredits[stepDayKey] === 'number'
+          ? stepCredits[stepDayKey]
+          : 0;
+        const creditedDistanceKm = creditedBattleDistanceKm(
+          measurementType,
+          distanceKm,
+          alreadyCreditedKm,
+        );
         const currentTotal = (categoryStatsDoc.data()['totalDistanceKm'] as number | undefined) ?? 0;
-        const newTotal = currentTotal + distanceKm;
+        const newTotal = currentTotal + creditedDistanceKm;
         const afterStats = beforeStats.map((item) => item.id === categoryId
           ? { ...item, total: newTotal, average: newTotal / participantCount }
           : item);
@@ -192,8 +207,11 @@ export const aggregateActivity = onDocumentCreated(
         const rankAfter = rankFor(afterStats, categoryId, rankingType);
 
         tx.update(participantRef, {
-          totalDistanceKm: FieldValue.increment(distanceKm),
+          totalDistanceKm: FieldValue.increment(creditedDistanceKm),
           activityCount: FieldValue.increment(1),
+          ...(stepDayKey ? {
+            [`stepCreditKmByDay.${stepDayKey}`]: FieldValue.increment(creditedDistanceKm),
+          } : {}),
         });
         tx.update(categoryStatsDoc.ref, {
           totalDistanceKm: newTotal,
@@ -208,6 +226,8 @@ export const aggregateActivity = onDocumentCreated(
             rankBefore,
             rankAfter,
             totalKm: newTotal,
+            creditedDistanceKm,
+            ...(stepDayKey ? { stepDayKey } : {}),
           },
         });
       });

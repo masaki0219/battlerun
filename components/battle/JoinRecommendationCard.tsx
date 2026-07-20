@@ -21,6 +21,7 @@ export function JoinRecommendationCard({ battle, stats, shortageCategory, onPres
   const top = sorted[0];
   const second = sorted[1];
   const hasVs = !!top && !!second;
+  const totalParticipants = stats.reduce((sum, stat) => sum + stat.participantCount, 0);
 
   return (
     <TouchableOpacity activeOpacity={0.9} onPress={onPress}>
@@ -41,7 +42,9 @@ export function JoinRecommendationCard({ battle, stats, shortageCategory, onPres
 
         {shortageCategory && (
           <Text style={styles.shortageHint} numberOfLines={1}>
-            「{shortageCategory.label}」は人数が少なく、いま入ると効きやすい
+            {totalParticipants <= 2
+              ? `「${shortageCategory.label}」の最初のメンバーになろう`
+              : `「${shortageCategory.label}」は人数が少なく、いま入ると効きやすい`}
           </Text>
         )}
 

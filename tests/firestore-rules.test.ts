@@ -188,8 +188,23 @@ async function run() {
     'succeed',
   );
   await check(
+    'participants: 歩数チャレンジの日次加算値を新規参加時に自己設定できない',
+    setDoc(doc(bobDb, 'battles/battle2/participants/bob'), {
+      userId: 'bob', categoryId: 'teamA', totalDistanceKm: 0, activityCount: 0,
+      stepCreditKmByDay: { '20260720': 5 },
+    }),
+    'fail',
+  );
+  await check(
     'participants: totalDistanceKmの自己更新は拒否',
     updateDoc(doc(aliceDb, 'battles/battle1/participants/alice'), { totalDistanceKm: 100 }),
+    'fail',
+  );
+  await check(
+    'participants: 歩数チャレンジの日次加算値の自己更新は拒否',
+    updateDoc(doc(aliceDb, 'battles/battle1/participants/alice'), {
+      stepCreditKmByDay: { '20260720': 5 },
+    }),
     'fail',
   );
   await check(

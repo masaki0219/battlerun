@@ -8,6 +8,8 @@ const BATCH_SIZE = 500;
 interface AggregationImpact {
   battleId: string;
   categoryId: string;
+  creditedDistanceKm?: number;
+  stepDayKey?: string;
 }
 
 /**
@@ -53,6 +55,10 @@ export const deleteActivity = onCall(
       const battleId = impact.battleId;
       const categoryId = impact.categoryId;
       if (typeof battleId !== 'string' || typeof categoryId !== 'string') continue;
+      const creditedDistanceKm = typeof impact.creditedDistanceKm === 'number'
+        && Number.isFinite(impact.creditedDistanceKm)
+        ? Math.max(0, impact.creditedDistanceKm)
+        : distanceKm;
 
       await db.runTransaction(async (tx) => {
         const battleRef = db.doc(`battles/${battleId}`);
@@ -76,7 +82,7 @@ export const deleteActivity = onCall(
               (statsSnap.data()!['participantCount'] as number | undefined) ?? 0,
               1,
             );
-            const newTotal = Math.max(0, currentTotal - distanceKm);
+            const newTotal = Math.max(0, currentTotal - creditedDistanceKm);
             tx.update(statsRef, {
               totalDistanceKm: newTotal,
               avgDistanceKm: newTotal / participantCount,
@@ -84,9 +90,19 @@ export const deleteActivity = onCall(
           }
           if (participantSnap.exists) {
             const participant = participantSnap.data()!;
+            const stepCredits = (participant['stepCreditKmByDay'] as Record<string, number> | undefined) ?? {};
             tx.update(participantRef, {
-              totalDistanceKm: Math.max(0, ((participant['totalDistanceKm'] as number | undefined) ?? 0) - distanceKm),
+              totalDistanceKm: Math.max(
+                0,
+                ((participant['totalDistanceKm'] as number | undefined) ?? 0) - creditedDistanceKm,
+              ),
               activityCount: Math.max(0, ((participant['activityCount'] as number | undefined) ?? 0) - 1),
+              ...(impact.stepDayKey ? {
+                [`stepCreditKmByDay.${impact.stepDayKey}`]: Math.max(
+                  0,
+                  (stepCredits[impact.stepDayKey] ?? 0) - creditedDistanceKm,
+                ),
+              } : {}),
             });
           }
         }
