@@ -1,6 +1,6 @@
 # HANDOFF
 
-最終更新: 2026-07-20
+最終更新: 2026-07-21
 
 ## プロジェクトの目的
 
@@ -23,6 +23,13 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 ※ 同フォルダの `BattleRunホーム画面作成 (コピー).zip` は旧版。パレット（`theme.css`）は同一だが、ヒーローが2陣営のVSゲージで、チーム内ランキングが無い。**最終版はこちら（コピーでない方）**。
 
 ## 最後に完了したこと
+
+### アプリ内評価・ご要望フォーム（Supabase共通受信箱）（2026-07-21）
+
+- ユーザーが運営する複数アプリ共通のSupabaseプロジェクト（問題集アプリで稼働中）の `public.feedbacks` テーブルへ、アプリ内から星評価（1〜5必須）と本文（任意・1000字上限）を送信するフォームを追加した。`app_id: 'zelio'` で他アプリと区別する。送信は `@supabase/supabase-js` を使わず `lib/feedback.ts` の `fetch`（PostgREST・15秒タイムアウト）のみで、依存追加なし。`source: 'settings'` / `screen_name: 'help'` / `app_version` / `os` を併送する。
+- 画面は `app/feedback.tsx`（星タップ+ラベル、複数行入力、文字数カウント、送信中状態、成功アラート後に戻る）。ヘルプページ「お問い合わせ窓口」の直前に「評価・ご要望を送る」セクションを併設し、`LegalDocument` の `action` にアプリ内遷移（`route`）対応を追加した。GitHub Issues窓口は「返信が必要な報告」用として残した。未ログインでも送信できるよう `_layout.tsx` の公開ルートに `feedback` を追加した。
+- 設定は `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` を `.env` / `.env.example` / `eas.json`（3プロファイル）へ追加。未設定時はヘルプのセクション自体が非表示になる。**anonキーはクライアント埋め込み前提の公開キーだが、eas.json はgit管理下なのでリポジトリを公開する場合は EAS Secrets へ移すこと。**
+- 確認: `npx tsc --noEmit`、`npx expo export --platform ios` 成功。curl による実インサートで HTTP 201（受信箱にテスト行1件あり、削除してよい）、anonキーでのSELECTはRLSにより空配列（他ユーザーの投稿は読めない）を確認済み。Firestoreルール・Functionsは無変更のため `npm run test:rules` は不要。実機/シミュレータでの画面目視は未実施。
 
 ### リリースレビュー Rev.2 の実装対応（2026-07-20）
 
@@ -245,7 +252,8 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 - 2026-07-19 の functions デプロイで `revenuecatWebhook` が「No changes detected」でスキップされた＝それ以前に現行ソースでデプロイ済みだったことを意味する（他13関数は今回更新）。Webhook が us-central1 なのに対し Firestore トリガー系は asia-northeast1 と、リージョンが混在している点は把握しておく。
 - RevenueCat 側 Webhook 設定の URL（us-central1 の revenuecatWebhook）と Authorization ヘッダが `REVENUECAT_WEBHOOK_AUTH` シークレットと一致しているかは、ダッシュボードで要確認（コード側からは確認不可）。
 - zelio-run 移行の残作業（Auth メール/パスワード有効化・Firestore データコピー・Webhook URL 変更）はユーザー報告により完了。移行した Auth ユーザー2件のパスワード再設定は各アカウントの「パスワードを忘れた」から行う（未実施の場合）。
-- サポート窓口は `https://github.com/masaki0219/app-support/issues` を使用し、ZELIO Hostingの `/support.html` から案内する。個人情報を含む問い合わせを公開Issueへ書かせない注意文を表示済み。非公開窓口を用意できたら差し替える。
+- サポート窓口は `https://github.com/masaki0219/app-support/issues` を使用し、ZELIO Hostingの `/support.html` から案内する。個人情報を含む問い合わせを公開Issueへ書かせない注意文を表示済み。非公開窓口として2026-07-21にSupabase評価・ご要望フォームをヘルプへ併設した（返信不可のため、返信が必要な報告はGitHub Issueを継続使用）。
+- Supabase評価・ご要望フォームの実機/Expo Goでの目視（星タップ・送信成功アラート・未設定時の非表示・未ログイン時のヘルプからの送信）は未実施。Hosting `/support.html` からのフォーム案内追記も未実施。
 - Expo依存は `expo ~54.0.35`、`expo-font ~14.0.12`、`expo-router ~6.0.24` へ更新済み。Expo Doctorは18/18合格。
 - `npm audit fix`（`--force`なし）適用後、rootの `npm audit --omit=dev` は critical 0 / high 1 / moderate 34。残るhighの`undici`はFirebase 12系が必要。functionsはhigh 0 / moderate 9で、残りはfirebase-admin配下の`uuid`系。いずれも破壊的な `--force` は未適用。
 - Firestoreルールテストはローカルの Java（openjdk 26）でエミュレータ実行できる。2026-07-20 時点で全72件成功。
