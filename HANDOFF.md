@@ -1,6 +1,6 @@
 # HANDOFF
 
-最終更新: 2026-07-21
+最終更新: 2026-07-29
 
 ## プロジェクトの目的
 
@@ -24,10 +24,69 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 
 ## 最後に完了したこと
 
+### ブランド/仕様判断の反映実装（2026-07-29・ユーザー決裁済み）
+
+v2 レポートで「判断待ち」だった6件をユーザーが決裁し、すべて実装した。確認: `npx tsc --noEmit`・`npm run test:unit`（カレンダー週の境界テスト追加、全件成功）・`cd functions && npm run build`・`npx expo export --platform ios` 成功。**Functions 全17関数を `zelio-run` へデプロイ済み（エラー0件）**。実機/シミュレータでの目視は未実施。
+
+- **語彙「チーム」統一（決裁: チームに統一）**: ユーザー向け表示の「陣営」30箇所を「チーム」へ（オンボーディング見出し・チャレンジ詳細/結果/サマリー・称号名「優勝チームメンバー/優勝チームの一員」・Functions通知文言）。「援軍募集中」→「仲間募集中」、Functions「バトルが無効化されました」→「チャレンジが無効化されました」。**軍事フレーバーはPro「陣取り合戦風」テーマとバッジ名（朝活兵等）へ退避**し、「出撃宣言」は既定方針どおり存続。コメント内の「陣営」は据え置き。
+- **絵文字ロゴ削除（決裁: 削除）**: ログイン/新規登録の「🏃 ZELIO」→「ZELIO」。結果画面の🏃（rankMedal 4位以下/フォールバック）は据え置き。
+- **日英併記ラベル（決裁: 端末言語に追従）**: `lib/locale.ts` を新設（`Intl` で端末ロケール判定、判定不能時は日本語既定）。結果画面7ラベル+サマリー「記録完了/RUN COMPLETE」+記録HUDの状態表示（記録中/一時停止中/自動停止中）を、日本語端末では日本語のみ・他言語端末では英語のみ表示に。オンボーディングのSTEPラベルとテーマ由来ラベル（BATTLE等）は対象外。**英語端末での表示確認は未実施**（Intl のロケール値は実機で要確認）。
+- **カレンダー週化（決裁: 月曜始まり）**: `weeklyBuckets`/`weekOverWeek`/`weekStartLabel` を月曜始まりの暦週へ変更（新ヘルパー `calendarWeekStart`）。週間目標が月曜にリセットされ、「今週/先週比」の表示と実態が一致。stats の記録回数も暦週へ。**過負荷ガードレール（`hasHighTrainingLoad`）は生理的負荷判定のため移動7日窓を維持**し、カード文言を「この1週間はよく走っています」へ変更。境界テスト（日曜→月曜リセット・月曜始まりラベル）を追加。
+- **N-17 チーム変更導線（決裁: チャレンジ詳細に設置）**: チームランキングカード下部に「チームを変更」リンク（参加中・開催中・**距離0の間のみ**表示 = Firestoreルールの許可条件と一致）。既存 CategorySelectModal を再利用し、失敗時は store のエラー文言（「一度記録した後はチームを変更できません。」）を表示。
+- **Courier New 置換（判断不要分）**: オンボーディングの4箇所を `Typography.fontFamily.mono`（Menlo/monospace）へ。
+
+### v2 レビュー Rev.2 の実装対応（2026-07-29）
+
+v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を実装した。**ブランド判断を要するもの（陣営vsチーム語彙・絵文字ロゴ・日英併記・チーム退出導線の露出先・週表示ラベル）は未着手のまま判断待ち。**
+
+- **N-1 停止ダイアログ** (`app/(tabs)/record.tsx`): 「停止して保存」を default で先頭へ、「破棄する」のみ destructive、「キャンセル」は cancel で末尾へ。保存が赤字で破棄より下にある逆転を解消。
+- **N-4 ランタブ Dynamic Type** (`record.tsx`): 「試験的」バッジ行に flexWrap + バッジ倍率上限1.3（スイッチへの重なり解消）、装飾英字 START のみ倍率上限1.2（「STA」切れ解消。意味は accessibilityLabel とヒント文が担保）。
+- **N-16 コントラスト**: 読ませるテキスト（注記・説明・空状態・法務文・フォームラベル等）**50箇所**を `textTertiary` → `textSecondary` へ置換（22ファイル）。単位・非活性・プレースホルダー・装飾ラベルは tertiary のまま。`design_tokens.ts` に使い分け方針をコメント化（tertiary は白地2.7:1でAA不適合、読ませる文字は secondary=5.1:1）。
+- **N-5 通知** (`app/notifications.tsx`): ヘッダー「N件未読」→「新着N件」（開いた時点でDB既読化する実態と表示を一致。行ハイライトは新着表示として維持）。
+- **N-6 文言** (`lib/validation/battleTitle.ts`, `stores/battleStore.ts`): 「バトル名/このチーム名」→「チャレンジ名/このチャレンジ名」。
+- **N-7 記入例** (`PrivateBattleCreateForm.tsx`, `app/admin/battle/new.tsx`): 禁止語収載の「たけのこの里」と重複例を廃し「朝ラン組 vs よる歩き隊」へ（チーム1/2で別例、3つ目以降は例なし）。
+- **N-8 PeriodPicker**: 未入力時の赤エラー枠をグレーの案内表示へ（赤は終了<開始の実エラー時のみ。`summaryGuide` スタイル追加）。
+- **N-9 バッジ進捗** (`app/badges.tsx`): 「あと0.0日/9.0回」→ 日・回は切り上げ整数、kmのみ小数維持。
+- **N-11 チーム選択モーダル** (`CategorySelectModal.tsx`, `battle.tsx`): `stats` prop を追加し各行に「N人が参加中」、最少人数チームに「いま入ると貢献が大きい」を表示。平均kmは意図的に出さない（初心者萎縮の懸念）。accessibilityLabel にも人数を含めた。
+- **N-15 サマリー** (`app/record/summary.tsx`): GPSラン（歩数0）では「歩数 ---」セルを区切り線ごと非表示。
+- **結果画面のラベル不一致修正** (`app/battle/result/[id].tsx`): 「陣営内順位」ラベルに陣営同士の最終順位（myRank）が入っていたため「陣営順位」へ。**あわせて v2 の N-14（優勝時もお疲れさまでした）はシード不備による誤指摘と判明し撤回**（アプリは 🥇優勝！/🥈準優勝/🥉3位入賞 の `rankMedal()` 分岐を実装済み。レビュー用シードの `users.battleIds` に終了チャレンジ未登録 → membership 未解決でフォールバックが出ていただけ）。
+- 確認: `npx tsc --noEmit`、`npm run test:unit`（全件成功）、`npx expo export --platform ios` 成功。Firestoreルール・Functions無変更のため `npm run test:rules` は対象外。**画面目視（通常/特大文字）は未実施** — 次回シミュレータで N-1/N-4/N-8/N-11 の見た目確認を推奨。
+
+### 全体レビュー v2（AI感・万人受け観点、シミュレータ実操作）（2026-07-29）
+
+- v1 と同じ環境（iOSシミュレータ + Expo Go + ローカルFirebaseエミュレータ `demo-zelio`、**本番接続なし**）で、今回は idb により**新規登録 → チーム参加 → GPSラン実走（位置シミュレーション）→ 一時停止 → 停止 → オフライン保存**まで実操作した。61画面を撮影し、レポートを `Desktop/ZELIO/review_report/20260729_v2/` に作成。**コード変更はなし**（起動用に一時変更した `lib/firebase.ts` は復元済み、`git status` は作業前と同一。シミュレータの Expo Go はテストラン再送防止のためアンインストール済み — 次回 `npx expo start` で自動再インストールされる）。
+- v1 修正13件のうち画面確認可能な11件はすべて意図どおり動作（権限フロー・Pro価格フォールバック・色衝突解消・ラップ表示・残り日数統一・タブバーa11y等）。手戻りゼロ。
+- 新規指摘に P0 はなし。主な新規 P1: **停止ダイアログの「停止して保存」が destructive（赤）で破棄が先頭**（`record.tsx`）、ランタブの Dynamic Type 破綻（START が「STA」に切れる・「試験的」バッジ重なり）、textTertiary のコントラスト不足（実測 白地2.73:1）、チームの退出・変更導線なし。**禁止語まわりの精査結果（リストが商標のみで不適切語ゼロ / サーバー側適用はチャレンジ名のみでニックネーム・宣言メモはクライアントのみ / チーム名ラベルは未検証）は既存P0「通報・ブロック」を「UGC対策一式」へ拡張する形で統合**した。
+- レポートは同日中に **Rev.2 へ改訂**（第三者レビュー反映）: 「AI感」（絵文字ロゴ🏃 / 日英併記 / Courier New の3点、P2）・「万人受け」（軍事語彙をProテーマへ退避する案はブランド判断の一材料）・ペルソナ・競合比較を**未検証の仮説として明示**し、優先順位を整理（通知既読はP2へ、コントラスト・チーム退出はP1へ）。
+- ライブプレゼンスカードは鮮度内データを投入しても表示を確認できず（不具合とは断定せず、実機2台での確認項目へ）。
+
+### UI/UXレビュー（シミュレータ実行）と指摘対応（2026-07-29）
+
+- **初めてアプリを起動して画面を確認した**。iOSシミュレータ（iPhone 17 Pro / iOS 26.5）+ Expo Go + **ローカルFirebaseエミュレータ**（Auth/Firestore にダミーデータ投入）で24画面/状態のスクリーンショットを取得し、レポートを `Desktop/ZELIO/review_report/20260729_v1/` に作成した（Rev.2 で第三者レビューの指摘を反映済み）。**本番 `zelio-run` には一切書き込んでいない**。起動用に一時変更した `lib/firebase.ts` 等はすべて元へ戻し済み。
+- **ネイティブ dev build (`npx expo run:ios`) は SwiftUICore のリンクエラーで失敗**（`useFrameworks: static` 環境で「cannot link directly with 'SwiftUICore'」）。今回は Expo Go で代替した。実機/EASビルドでの確認は引き続き必要。
+- 実装した修正（すべて画面で再現を確認したもの、または明確なコード欠陥）:
+  - **記録開始フロー**: 位置情報の権限確認を START直後・カウントダウン前へ移動（`ensureLocationPermission()`）。使用中の許可が取れなければ**記録を開始しない**（従来はカウントダウン後にダイアログが2枚出て、その間もタイマーだけ進んでいた）。「常に許可」は理由説明つきで任意要求し、`useLocation` 側は `getBackgroundPermissionsAsync`（確認のみ）へ変更。
+  - **記録中の自動ロック抑止**: `expo-keep-awake` を `package.json` へ明示依存として追加し、記録中のみ有効化。※バックグラウンド記録（`startLocationUpdatesAsync`）は元から実装済みで、これは「使用中のみ許可」でフォアグラウンド監視に落ちた場合の保険。
+  - **ヒーローの表示崩れ**: `ActiveBattleHero` の負マージンを除去し、`FactionColumns` は値ラベル分（17px）を差し引いた領域でバーを描画。首位の数値と「N位/M」の重なりを解消。
+  - **チーム色の衝突**: `Colors.teamColors[0]` は `Colors.primary` と同値のため、自分が1位でないと1位のバーが自チーム色と同じになっていた。純関数 `utils/teamColors.ts` の `pickOtherTeamColor()` を追加し `design_tokens.ts` の `otherTeamColor()` 経由で `BattleRankRows` / `battle/[id]` を差し替え。
+  - **ラップ表示**: 最速ラップのオレンジ強調を廃止（同じ画面の地図凡例では「ゆっくり=オレンジ」で矛盾していた）。ティールの「最速」バッジに変更し、バー長を**速さ基準**（最遅35%〜最速100%）へ。
+  - **残り時間の丸め統一**: 表示用 `remainingLabel()` を追加し、詳細画面のカウントダウンと同じ切り捨て基準へ（ホーム「残り5日」／詳細「4日23時間」の食い違いを解消）。`daysLeft()`（切り上げ）は逆転ペース計算用に残す。
+  - **Pro購入導線**: 価格が1件も取得できないときは購入ボタンを非活性にし「価格を読み込めませんでした／再読み込み」を表示。
+  - **認証**: `textContentType`/`autoComplete` を追加（iOSのパスワード自動入力が効くように）、パスワード表示切替、Firebaseの英語生メッセージを `lib/authErrors.ts` の日本語文言へ、登録画面の「ログインに戻る」を `router.replace` へ（オンボーディングから来ると `back()` が無反応だった）。
+  - **ニックネーム検証**: `lib/validation/displayName.ts` を追加（禁止語・12文字・制御文字）。公開ランキングに出る唯一のUGCのため。
+  - **Dynamic Type**: ヒーローの固定 `lineHeight` を除去、タブバーは `fontScale >= 1.3` でアイコンのみ表示（`accessibilityLabel` は維持）、補助ラベルのみ `maxFontSizeMultiplier={1.3}`。「さらに大きな文字」で文字が途中で切れる崩れは解消。
+  - **通信失敗の扱い**: ホームの初期取得失敗を握り潰さず「読み込めませんでした／再試行」バナーを表示（従来は空状態と区別できなかった）。
+  - **重複表示**: 「他のチャレンジ」から参加中のチャレンジを除外。
+  - **用語**: ユーザー向け表示の「区分」をすべて「チーム」へ（Day-0の主CTA「チームを選んで参加する」等）。
+  - **その他**: 称号カードの `seasonId` 生表示を削除。オンボーディングのダークカード上の文字を `DarkColors.primary` へ（コントラスト 2.6:1 → 適合）。
+- 新規テスト `tests/reviewFixes.test.ts`（`remainingLabel` の境界、`validateDisplayName`、`pickOtherTeamColor` が自チーム色を返さないこと）を追加し `tests/unit.test.ts` へ登録。
+- 確認: `npx tsc --noEmit`、`npm run test:unit`（全件成功）、`npx expo export --platform ios` 成功。Firestoreルール・Functionsは無変更のため `npm run test:rules` は未実行。**実機での確認は未実施**。
+- **未対応で残した主なもの**（レポート付録A参照）: 通報・ブロック（仕様判断が必要）、一時停止中の視認性、記録中のタブバー、記録中マップの追従・再センター、週の定義（移動7日窓 vs カレンダー週）、体重設定、`textTertiary` のコントラスト、「陣営 vs チーム」の統一先決定、Android公開時の削除Modal + Web削除申請ページ。
+
 ### アプリ内評価・ご要望フォーム（Supabase共通受信箱）（2026-07-21）
 
 - ユーザーが運営する複数アプリ共通のSupabaseプロジェクト（問題集アプリで稼働中）の `public.feedbacks` テーブルへ、アプリ内から星評価（1〜5必須）と本文（任意・1000字上限）を送信するフォームを追加した。`app_id: 'zelio'` で他アプリと区別する。送信は `@supabase/supabase-js` を使わず `lib/feedback.ts` の `fetch`（PostgREST・15秒タイムアウト）のみで、依存追加なし。`source: 'settings'` / `screen_name: 'help'` / `app_version` / `os` を併送する。
-- 画面は `app/feedback.tsx`（星タップ+ラベル、複数行入力、文字数カウント、送信中状態、成功アラート後に戻る）。ヘルプページ「お問い合わせ窓口」の直前に「評価・ご要望を送る」セクションを併設し、`LegalDocument` の `action` にアプリ内遷移（`route`）対応を追加した。GitHub Issues窓口は「返信が必要な報告」用として残した。未ログインでも送信できるよう `_layout.tsx` の公開ルートに `feedback` を追加した。
+- フォームはヘルプページ（プロフィール→「ヘルプ・お問い合わせ」）の**最上部へ直接埋め込み**、その下にFAQを表示する構成（ユーザー指定。当初の別画面 `app/feedback.tsx` + リンク方式は「タップして開くのが面倒でわかりづらい」とのことで廃止・削除済み）。実体は `components/feedback/FeedbackForm.tsx`（星タップ+ラベル、複数行入力、送信中状態、送信後は同カード内でお礼表示に切替＝二重送信防止）。`LegalDocument` に `topContent` propとKeyboardAvoidingViewを追加して埋め込んでいる。GitHub Issues窓口は「返信が必要な報告」用として残した。ヘルプは公開ルートのため未ログインでも送信できる。
 - 設定は `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` を `.env` / `.env.example` / `eas.json`（3プロファイル）へ追加。未設定時はヘルプのセクション自体が非表示になる。**anonキーはクライアント埋め込み前提の公開キーだが、eas.json はgit管理下なのでリポジトリを公開する場合は EAS Secrets へ移すこと。**
 - 確認: `npx tsc --noEmit`、`npx expo export --platform ios` 成功。curl による実インサートで HTTP 201（受信箱にテスト行1件あり、削除してよい）、anonキーでのSELECTはRLSにより空配列（他ユーザーの投稿は読めない）を確認済み。Firestoreルール・Functionsは無変更のため `npm run test:rules` は不要。実機/シミュレータでの画面目視は未実施。
 
@@ -226,7 +285,7 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 
 ## 次にやること
 
-1. iOS先行かAndroid同時公開かを決定し、対象OSのTestFlight/development buildで `RELEASE_TEST_CHECKLIST.md` シナリオ1〜8を完走する。
+1. 2026-07-29 の修正（v1分の**記録開始時の権限フローと keep-awake**、v2実装分の**停止ダイアログ・チーム選択モーダル・特大文字のランタブ・カレンダー週表示・チーム変更リンク・ロゴ/語彙変更**）を実機またはシミュレータで目視確認する。英語設定の端末で日英ラベル切替（`lib/locale.ts` の Intl 判定）も1回見ておく。画面ロック・アプリ切替を含む10〜30分の実走を1本通し、距離・ルート・停止が想定どおりかを見る。そのうえで `RELEASE_TEST_CHECKLIST.md` シナリオ1〜8へ進む。
 
 ## その次の候補
 - 実機でオフライン停止→端末キュー保存→オンライン復帰後30秒以内の再送と、サマリー集計の15秒フォールバックを確認する
@@ -243,6 +302,10 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 
 ## 未解決・要確認
 
+- **UGCの通報・ブロックが未実装（2026-07-29）**: ニックネーム・チャレンジ名・宣言メモ・応援があり、App Store Guideline 1.2 の観点で指摘されうる（確認レベルは推定）。禁止語検証はニックネームまで拡張済みだが、通報導線・ブロック・通報の運用処理は未着手。ブロックの粒度（表示のみ / 応援も遮断）と通報後の運用体制を決めてから実装する。
+- ~~「陣営」と「チーム」の統一先が未決定~~ **解決済み（2026-07-29 ユーザー決裁）**: ユーザー向け表示は「チーム」へ統一済み（Functions 通知文言含む、デプロイ済み）。軍事フレーバーはPro「陣取り合戦風」テーマとバッジ名へ退避。「出撃宣言」は世界観として存続。
+- **ネイティブ dev build がローカルで通らない（2026-07-29）**: `npx expo run:ios` が `cannot link directly with 'SwiftUICore'` で失敗する（`useFrameworks: static` 環境）。EASビルドで再現するかは未確認。ローカルで実機確認する場合はここが先に必要。
+
 - **ランニング基本機能・Sprint 1〜4（T-11まで）の実機確認が未実施（2026-07-20）**: 記録系Functions、自己ベスト・月次統計集計、出撃宣言・ライブ応援Functions、関連ルールは `zelio-run` へデプロイ済み。実機/シミュレータでの目視（一時停止HUD・オートポーズ・音声コーチ・週間目標・自己ベスト祝福/一覧・月間/年間統計・出撃宣言・通知タップ・宣言/ライブ応援プッシュ・ライブプレゼンス3分失効・HUD触覚/音声・宣言達成・過負荷カード・オフライン再送・カウントダウン・目標バー・ラップ表示・削除フロー）は未実施。新規活動の月次加算と削除時の減算も実データでは未確認。バックグラウンドのオートポーズは EAS development build が必要。
 - Functionsのランタイム指定はNode.js 22へ更新してビルド済みだが、`zelio-run` への再デプロイは未実施。歩数チャレンジ上限のFunctionsとSupport/Invite/PrivacyのHostingも同じくローカルのみ。
 - 一時停止まわりの設計メモ: 終了済みバトルの集計は削除時に減算しない（結果確定のため）。バッジは削除しても剥奪しない。セッション復旧時（アプリ再起動）は `segmentPending: true` でギャップ距離を数えない仕様に変えた。
@@ -253,7 +316,7 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 - RevenueCat 側 Webhook 設定の URL（us-central1 の revenuecatWebhook）と Authorization ヘッダが `REVENUECAT_WEBHOOK_AUTH` シークレットと一致しているかは、ダッシュボードで要確認（コード側からは確認不可）。
 - zelio-run 移行の残作業（Auth メール/パスワード有効化・Firestore データコピー・Webhook URL 変更）はユーザー報告により完了。移行した Auth ユーザー2件のパスワード再設定は各アカウントの「パスワードを忘れた」から行う（未実施の場合）。
 - サポート窓口は `https://github.com/masaki0219/app-support/issues` を使用し、ZELIO Hostingの `/support.html` から案内する。個人情報を含む問い合わせを公開Issueへ書かせない注意文を表示済み。非公開窓口として2026-07-21にSupabase評価・ご要望フォームをヘルプへ併設した（返信不可のため、返信が必要な報告はGitHub Issueを継続使用）。
-- Supabase評価・ご要望フォームの実機/Expo Goでの目視（星タップ・送信成功アラート・未設定時の非表示・未ログイン時のヘルプからの送信）は未実施。Hosting `/support.html` からのフォーム案内追記も未実施。
+- Supabase評価・ご要望フォームの実機/Expo Goでの目視（ヘルプ最上部のフォーム表示・星タップ・キーボードと送信ボタンの重なり・送信後のお礼表示・未設定時の非表示）は未実施。Hosting `/support.html` からのフォーム案内追記も未実施。
 - Expo依存は `expo ~54.0.35`、`expo-font ~14.0.12`、`expo-router ~6.0.24` へ更新済み。Expo Doctorは18/18合格。
 - `npm audit fix`（`--force`なし）適用後、rootの `npm audit --omit=dev` は critical 0 / high 1 / moderate 34。残るhighの`undici`はFirebase 12系が必要。functionsはhigh 0 / moderate 9で、残りはfirebase-admin配下の`uuid`系。いずれも破壊的な `--force` は未適用。
 - Firestoreルールテストはローカルの Java（openjdk 26）でエミュレータ実行できる。2026-07-20 時点で全72件成功。

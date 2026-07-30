@@ -40,6 +40,7 @@ import {
 } from '../../utils/voiceCoach';
 import { GPS_START_ACCURACY_M } from '../../utils/gpsQuality';
 import { STEP_BATTLE_DAILY_CAP_KM } from '../../lib/constants';
+import { decorLabel } from '../../lib/locale';
 
 function useElapsedTime(): number {
   const isRecording = useRecordStore((s) => s.isRecording);
@@ -281,6 +282,51 @@ export default function RecordScreen() {
     return () => clearTimeout(timer);
   }, [countdown, selectedMode, selectedGoalIdx, voiceGuide]);
 
+  /**
+   * GPSモードの位置情報権限を、カウントダウンより前に確定させる。
+   * - 使用中の許可が無ければ要求し、拒否ならランを開始しない（時間だけ進む状態を作らない）
+   * - 常に許可は「画面を消しても記録が続く」理由を説明してから任意で要求する。
+   *   拒否されてもフォアグラウンド監視で記録は続くため、開始自体は妨げない。
+   */
+  async function ensureLocationPermission(): Promise<boolean> {
+    let foreground = await Location.getForegroundPermissionsAsync().catch(() => null);
+    if (!foreground?.granted) {
+      if (foreground && !foreground.canAskAgain) {
+        Alert.alert(
+          '位置情報の許可が必要です',
+          'GPSモードで距離を計測するには、端末の設定から ZELIO の位置情報を「使用中のみ許可」以上にしてください。歩数モードなら位置情報なしで記録できます。',
+        );
+        return false;
+      }
+      foreground = await Location.requestForegroundPermissionsAsync().catch(() => null);
+    }
+    if (!foreground?.granted) {
+      Alert.alert(
+        '位置情報を許可すると記録できます',
+        'GPSモードは走行ルートから距離を計算します。許可せずに記録すると距離が0のままになるため、開始しませんでした。歩数モードなら位置情報なしで記録できます。',
+      );
+      return false;
+    }
+
+    const background = await Location.getBackgroundPermissionsAsync().catch(() => null);
+    if (background && !background.granted && background.canAskAgain) {
+      const proceed = await new Promise<boolean>((resolve) => {
+        Alert.alert(
+          '画面を消しても記録を続けますか？',
+          '「常に許可」にすると、画面をロックしたり他のアプリを開いたりしても計測が続きます。許可しない場合はこの画面を開いたままにしてください。',
+          [
+            { text: 'あとで', style: 'cancel', onPress: () => resolve(false) },
+            { text: '設定する', onPress: () => resolve(true) },
+          ],
+        );
+      });
+      if (proceed) {
+        await Location.requestBackgroundPermissionsAsync().catch(() => null);
+      }
+    }
+    return true;
+  }
+
   async function handleStart() {
     if (selectedMode === 'steps') {
       const permission = await Pedometer.requestPermissionsAsync().catch(() => ({ status: 'denied' as const }));
@@ -288,6 +334,8 @@ export default function RecordScreen() {
         Alert.alert('モーション権限が必要です', '歩数モードを使うには、端末設定でモーションとフィットネスを許可してください。');
         return;
       }
+    } else if (!(await ensureLocationPermission())) {
+      return;
     }
     setCountdown(3);
   }
@@ -295,36 +343,11 @@ export default function RecordScreen() {
   async function handleStop() {
     if (stopGuardRef.current || !isRecording) return;
     stopGuardRef.current = true;
+    // 保存が主目的の操作なので default(無指定)、破壊的なのは破棄のみ。
+    // 並びも「停止して保存 → 破棄する → キャンセル」とし、保存を最上段に置く。
     Alert.alert('記録を停止しますか？', '', [
       {
-        text: 'キャンセル',
-        style: 'cancel',
-        onPress: () => { stopGuardRef.current = false; },
-      },
-      {
-        text: '破棄する',
-        style: 'destructive',
-        onPress: () => {
-          Alert.alert(
-            'この記録を破棄しますか？',
-            '距離・ルート・歩数は保存されず、元に戻せません。',
-            [
-              { text: '戻る', style: 'cancel', onPress: () => { stopGuardRef.current = false; } },
-              {
-                text: '破棄する',
-                style: 'destructive',
-                onPress: () => {
-                  Speech.stop();
-                  reset();
-                  stopGuardRef.current = false;
-                },
-              },
-            ],
-          );
-        },
-      },
-      {
-        text: '停止して保存', style: 'destructive',
+        text: '停止して保存',
         onPress: async () => {
           if (!user) {
             stopGuardRef.current = false;
@@ -411,6 +434,33 @@ export default function RecordScreen() {
             stopGuardRef.current = false;
           }
         },
+      },
+      {
+        text: '破棄する',
+        style: 'destructive',
+        onPress: () => {
+          Alert.alert(
+            'この記録を破棄しますか？',
+            '距離・ルート・歩数は保存されず、元に戻せません。',
+            [
+              { text: '戻る', style: 'cancel', onPress: () => { stopGuardRef.current = false; } },
+              {
+                text: '破棄する',
+                style: 'destructive',
+                onPress: () => {
+                  Speech.stop();
+                  reset();
+                  stopGuardRef.current = false;
+                },
+              },
+            ],
+          );
+        },
+      },
+      {
+        text: 'キャンセル',
+        style: 'cancel',
+        onPress: () => { stopGuardRef.current = false; },
       },
     ]);
   }
@@ -501,7 +551,7 @@ export default function RecordScreen() {
               <View style={s.voiceLabelWrap}>
                 <View style={s.autoPauseTitleRow}>
                   <Text style={[s.voiceLabel, autoPauseEnabled && { color: Colors.primaryDark }]}>オートポーズ</Text>
-                  <Text style={s.experimentalBadge}>試験的</Text>
+                  <Text style={s.experimentalBadge} maxFontSizeMultiplier={1.3}>試験的</Text>
                 </View>
                 <Text style={s.voiceSummary}>停止を誤検知する場合があります（初期設定OFF）</Text>
               </View>
@@ -548,7 +598,9 @@ export default function RecordScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="ランの記録を開始"
               >
-                <Text style={s.startLabel}>START</Text>
+                {/* 英字STARTは装飾扱い（意味は accessibilityLabel とヒント文が担う）。
+                    固定120pt円からはみ出て「STA」に切れるため、このテキストだけ倍率上限を設ける */}
+                <Text style={s.startLabel} maxFontSizeMultiplier={1.2}>START</Text>
               </TouchableOpacity>
             </View>
             <Text style={s.startHint}>タップしてラン開始</Text>
@@ -592,7 +644,7 @@ export default function RecordScreen() {
                 onPress={() => router.push('/(tabs)/battle' as any)}
                 activeOpacity={0.7}
               >
-                <Text style={[s.contribBadgeText, { color: Colors.textTertiary }]}>
+                <Text style={[s.contribBadgeText, { color: Colors.textSecondary }]}>
                   チャレンジに参加するとこのランが加算されます
                 </Text>
               </TouchableOpacity>
@@ -676,7 +728,7 @@ export default function RecordScreen() {
             ]}
           />
           <MonoLabel color={DarkColors.textTertiary} size={9}>
-            {pauseKind === 'auto' ? 'AUTO PAUSED' : isPaused ? 'PAUSED' : 'RUN IN PROGRESS'}
+            {pauseKind === 'auto' ? decorLabel('自動停止中', 'AUTO PAUSED') : isPaused ? decorLabel('一時停止中', 'PAUSED') : decorLabel('記録中', 'RUN IN PROGRESS')}
           </MonoLabel>
         </View>
       </SafeAreaView>
@@ -994,10 +1046,11 @@ const s = StyleSheet.create({
   voiceLabel: {
     fontSize: 13,
     fontWeight: '600' as const,
-    color: Colors.textTertiary,
+    color: Colors.textSecondary,
   },
-  voiceSummary: { fontSize: 10, color: Colors.textTertiary, marginTop: 1 },
-  autoPauseTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  voiceSummary: { fontSize: 10, color: Colors.textSecondary, marginTop: 1 },
+  // 特大文字サイズでバッジがスイッチ側へはみ出さないよう折り返しを許可する
+  autoPauseTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   experimentalBadge: {
     fontSize: 9, fontWeight: '800', color: Colors.accentDark,
     backgroundColor: Colors.accentLight, borderRadius: BorderRadius.full,
@@ -1020,7 +1073,7 @@ const s = StyleSheet.create({
   modeBtnTextActive: { color: Colors.textPrimary },
   stepsFairnessNote: {
     marginHorizontal: 40, marginTop: 8,
-    fontSize: 10, lineHeight: 15, color: Colors.textTertiary, textAlign: 'center',
+    fontSize: 10, lineHeight: 15, color: Colors.textSecondary, textAlign: 'center',
   },
 
   startArea: { alignItems: 'center', justifyContent: 'center', gap: 16, paddingVertical: 36 },
@@ -1049,7 +1102,7 @@ const s = StyleSheet.create({
     paddingLeft: 40,
     marginTop: 12,
   },
-  goalRowLabel: { fontSize: 13, fontWeight: '600' as const, color: Colors.textTertiary },
+  goalRowLabel: { fontSize: 13, fontWeight: '600' as const, color: Colors.textSecondary },
   goalChips: { flexDirection: 'row' as const, gap: 6, paddingRight: 20 },
   goalChip: {
     paddingHorizontal: 12, paddingVertical: 7,

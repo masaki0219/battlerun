@@ -152,7 +152,7 @@ export default function AdminIndexScreen() {
 
               {battle.categories.length > 0 && (
                 <Text style={styles.catList}>
-                  区分: {battle.categories.map((c) => c.label).join(' / ')}
+                  チーム: {battle.categories.map((c) => c.label).join(' / ')}
                 </Text>
               )}
 
@@ -203,7 +203,7 @@ const styles = StyleSheet.create({
   typeBadgeText: { fontSize: Typography.fontSize.xs, fontWeight: Typography.fontWeight.semibold },
   statusText: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.semibold },
   catList: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary, marginBottom: Spacing.xs },
-  dateText: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, marginBottom: Spacing.sm },
+  dateText: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary, marginBottom: Spacing.sm },
   toggleBtn: {
     borderWidth: 1, borderRadius: BorderRadius.sm, paddingVertical: Spacing.sm,
     alignItems: 'center', marginTop: Spacing.xs,

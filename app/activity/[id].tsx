@@ -233,7 +233,7 @@ export default function ActivityDetailScreen() {
   if (!activity) {
     return (
       <SafeAreaView style={s.root}>
-        <View style={s.center}><Text style={{ color: Colors.textTertiary }}>記録が見つかりませんでした</Text></View>
+        <View style={s.center}><Text style={{ color: Colors.textSecondary }}>記録が見つかりませんでした</Text></View>
       </SafeAreaView>
     );
   }

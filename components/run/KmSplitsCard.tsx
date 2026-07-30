@@ -10,16 +10,27 @@ function formatSplitPace(secondsPerKm: number): string {
   return `${m}'${String(s).padStart(2, '0')}"`;
 }
 
+/** バーの最低の高さ（比率）。ラップ差が小さくても速い・遅いが読めるようにする */
+const FLOOR = 0.35;
+
 /**
- * 1kmごとのラップ一覧。バーは最も遅い区間ペースを100%とした相対表示。
+ * 1kmごとのラップ一覧。**バーが長いほど速い**（最遅ラップを FLOOR、最速ラップを 100% とした相対表示）。
  * 端数区間（最後の1km未満）は距離を明示し、ペースに換算して表示する。
+ *
+ * ★配色の約束: 同じ画面に出る活動詳細マップの凡例（速い=primary / ゆっくり=accent）と揃える。
+ * 最速ラップをアクセント（オレンジ）で塗ると、マップ上では「ゆっくり」を意味する色と衝突するため、
+ * 色による強調はせず「最速」バッジで示す。
  */
 export function KmSplitsCard({ splits }: { splits: KmSplit[] }) {
   if (splits.length === 0) return null;
 
   const paces = splits.map((s) => s.seconds / s.distanceKm);
-  const slowest = Math.max(...paces, 1);
   const fastest = Math.min(...paces);
+  const slowest = Math.max(...paces);
+  // ペースは「小さいほど速い」ため、速さ（1/ペース）に直してから正規化する
+  const fastestSpeed = 1 / Math.max(fastest, 0.001);
+  const slowestSpeed = 1 / Math.max(slowest, 0.001);
+  const speedSpan = fastestSpeed - slowestSpeed;
 
   return (
     <View style={s.card}>
@@ -27,6 +38,8 @@ export function KmSplitsCard({ splits }: { splits: KmSplit[] }) {
         const pace = paces[i];
         const isPartial = split.distanceKm < 1;
         const isFastest = splits.length > 1 && pace === fastest;
+        const speed = 1 / Math.max(pace, 0.001);
+        const ratio = speedSpan > 0 ? FLOOR + (1 - FLOOR) * ((speed - slowestSpeed) / speedSpan) : 1;
         return (
           <View key={i} style={[s.row, i > 0 && s.rowBorder]}>
             <Text style={s.kmLabel}>
@@ -34,15 +47,14 @@ export function KmSplitsCard({ splits }: { splits: KmSplit[] }) {
               <Text style={s.kmUnit}> km</Text>
             </Text>
             <View style={s.barTrack}>
-              <View
-                style={[
-                  s.barFill,
-                  { width: `${Math.max(8, Math.round((pace / slowest) * 100))}%` },
-                  isFastest && { backgroundColor: Colors.accent },
-                ]}
-              />
+              <View style={[s.barFill, { width: `${Math.round(ratio * 100)}%` }]} />
             </View>
-            <Text style={[s.paceLabel, isFastest && { color: Colors.accentDark }]}>
+            {isFastest && (
+              <View style={s.fastestBadge}>
+                <Text style={s.fastestBadgeText}>最速</Text>
+              </View>
+            )}
+            <Text style={[s.paceLabel, isFastest && s.paceLabelFastest]}>
               {formatSplitPace(pace)}
               <Text style={s.paceUnit}>/km</Text>
             </Text>
@@ -100,5 +112,18 @@ const s = StyleSheet.create({
     color: Colors.textSecondary,
     fontVariant: ['tabular-nums'],
   },
+  paceLabelFastest: { color: Colors.primaryDark, fontWeight: '800' },
   paceUnit: { fontSize: 9, color: Colors.textTertiary },
+  fastestBadge: {
+    backgroundColor: Colors.primaryLight,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  fastestBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: Colors.primaryDark,
+    letterSpacing: 0.5,
+  },
 });

@@ -5,6 +5,7 @@
  * ハードコードされた色・サイズは禁止。
  */
 import { Platform, TextStyle } from 'react-native';
+import { pickOtherTeamColor } from './utils/teamColors';
 
 // ============================================================
 // カラーパレット
@@ -35,8 +36,10 @@ export const Colors = {
 
   // テキスト（パイン寄りのインク。ニュートラルグレーより背景と馴染む）
   textPrimary: '#112523',    // メイン文字
-  textSecondary: '#60716F',  // サブ文字
-  textTertiary: '#8FA09D',   // プレースホルダー・補足
+  textSecondary: '#60716F',  // サブ文字（白地 5.1:1、WCAG AA適合。読ませる補足・注記はこちらを使う）
+  // 白地 2.7:1 / 背景上 2.5:1 で AA 不適合。プレースホルダー・非活性状態・単位・装飾ラベルなど
+  // 「読めなくても操作に支障がない要素」専用。文章として読ませるテキストには使わない。
+  textTertiary: '#8FA09D',
   textOnPrimary: '#FFFFFF',  // primaryカラー上の文字
   textOnAccent: '#FFFFFF',   // accentカラー上の文字（CTA）
 
@@ -70,6 +73,10 @@ export const Colors = {
     '#E5A13A',
     '#5E7C77',
   ],
+
+  // 他チームの識別カラー（teamColors[0] は自チーム専用のため除外して循環させる）
+  // ※ これを使わず teamColors[順位-1] のように引くと、自分が1位でないときに
+  //   1位のバーが自チーム色（primary）と同じ色になり、見分けが付かなくなる。
 
   // 陣営識別カラー（バトル詳細・一覧で最大6陣営を色分け）
   teamPalette: [
@@ -120,6 +127,14 @@ export const DarkColors = {
   markStrongText: '#0C514A',                // 自陣営マークの文字
   stop: '#FF5A5F',                          // STOP ボタン
 } as const;
+
+/**
+ * 自チーム以外のバーに割り当てる色。`Colors.teamColors[0]` は自チーム（primary）専用なので
+ * 常に index 1 以降を循環させる。`order` は 0 始まりの表示順（順位-1 など）。
+ */
+export function otherTeamColor(order: number): string {
+  return pickOtherTeamColor(Colors.teamColors, order);
+}
 
 /** 活動詳細マップの相対ラップペース（速い・通常・ゆっくり）。 */
 export const RoutePaceColors = {

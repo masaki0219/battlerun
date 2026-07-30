@@ -64,7 +64,8 @@ export default function NotificationsScreen() {
       }));
       setNotifications(items);
 
-      // 未読を一括既読にする
+      // 開いた時点で一括既読にする。画面上の items は取得時点のスナップショットのまま残し、
+      // 「今回新しく届いていた分」のハイライト表示に使う（ヘッダーの文言も「新着」で揃える）。
       const unread = snap.docs.filter((d) => !d.data()['isRead']);
       if (unread.length > 0) {
         const batch = writeBatch(db);
@@ -108,9 +109,10 @@ export default function NotificationsScreen() {
         <View style={{ flex: 1 }}>
           <Text style={s.headerTitle}>通知センター</Text>
         </View>
+        {/* DB上は開いた時点で既読化済みのため、「未読」ではなく「新着」と表示して実態と揃える */}
         {unreadCount > 0 && (
           <View style={s.unreadBadge}>
-            <Text style={s.unreadBadgeText}>{unreadCount}件未読</Text>
+            <Text style={s.unreadBadgeText}>新着{unreadCount}件</Text>
           </View>
         )}
       </View>
@@ -221,6 +223,6 @@ const s = StyleSheet.create({
     backgroundColor: Colors.accent,
     flexShrink: 0,
   },
-  itemText: { fontSize: 12, color: Colors.textTertiary, lineHeight: 17 },
+  itemText: { fontSize: 12, color: Colors.textSecondary, lineHeight: 17 },
   itemTime: { fontSize: 10, color: Colors.textTertiary, marginTop: 2, fontWeight: '600' },
 });

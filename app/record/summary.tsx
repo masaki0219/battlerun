@@ -18,6 +18,7 @@ import { KmSplitsCard } from '../../components/run/KmSplitsCard';
 import { estimatedCalories, type KmSplit } from '../../utils/displayStats';
 import { buildRouteVisualization, type RoutePaceBand } from '../../utils/routeSplits';
 import type { PersonalRecordKey, RoutePoint } from '../../types';
+import { decorLabel } from '../../lib/locale';
 
 const ROUTE_PACE_COLOR: Record<RoutePaceBand, string> = {
   fast: RoutePaceColors.fast,
@@ -192,7 +193,7 @@ export default function RecordingSummaryScreen() {
 
   async function handleShareRun() {
     const message = primaryImpact
-      ? `今日のラン: ${distanceKm.toFixed(1)}km\n「${primaryImpact.battleTitle}」陣営が${primaryImpact.rankBefore}位→${primaryImpact.rankAfter}位\n#ZELIO`
+      ? `今日のラン: ${distanceKm.toFixed(1)}km\n「${primaryImpact.battleTitle}」チームが${primaryImpact.rankBefore}位→${primaryImpact.rankAfter}位\n#ZELIO`
       : `今日のラン: ${distanceKm.toFixed(1)}km\n#ZELIO`;
 
     try {
@@ -217,7 +218,7 @@ export default function RecordingSummaryScreen() {
         {/* ── Hero dark card ─────────────────────────────── */}
         <View style={s.heroCard}>
           <View style={s.heroTop}>
-            <MonoLabel color={DarkColors.primary} size={9}>記録完了 / RUN COMPLETE</MonoLabel>
+            <MonoLabel color={DarkColors.primary} size={9}>{decorLabel('記録完了', 'RUN COMPLETE')}</MonoLabel>
             <TouchableOpacity onPress={() => router.replace('/(tabs)' as any)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel="閉じる">
               <Ionicons name="close" size={18} color={DarkColors.textTertiary} />
             </TouchableOpacity>
@@ -238,11 +239,16 @@ export default function RecordingSummaryScreen() {
               <MonoLabel color={DarkColors.textTertiary} size={8.5}>ペース</MonoLabel>
               <Text style={s.heroStatVal}>{pace}<Text style={s.heroStatUnit}>/km</Text></Text>
             </View>
-            <View style={s.heroStatDivider} />
-            <View style={s.heroStat}>
-              <MonoLabel color={DarkColors.textTertiary} size={8.5}>歩数</MonoLabel>
-              <Text style={s.heroStatVal}>{steps > 0 ? steps.toLocaleString() : '---'}</Text>
-            </View>
+            {/* GPSラン（歩数なし）では空欄「---」を出さず、セルごと非表示にする */}
+            {steps > 0 && (
+              <>
+                <View style={s.heroStatDivider} />
+                <View style={s.heroStat}>
+                  <MonoLabel color={DarkColors.textTertiary} size={8.5}>歩数</MonoLabel>
+                  <Text style={s.heroStatVal}>{steps.toLocaleString()}</Text>
+                </View>
+              </>
+            )}
           </View>
 
           {(calories != null || elevationGain != null) && (
@@ -304,7 +310,7 @@ export default function RecordingSummaryScreen() {
             <View style={[s.impactCard, { alignItems: 'center', paddingVertical: 20 }]}>
               <Ionicons name="time-outline" size={30} color={Colors.textTertiary} />
               <Text style={{ color: Colors.textSecondary, marginTop: 8, fontSize: 13, fontWeight: '700' }}>集計中です</Text>
-              <Text style={{ color: Colors.textTertiary, fontSize: 11, marginTop: 3 }}>あとで活動詳細から確認できます</Text>
+              <Text style={{ color: Colors.textSecondary, fontSize: 11, marginTop: 3 }}>あとで活動詳細から確認できます</Text>
             </View>
           ) : primaryImpact ? (
             <View style={s.impactCard}>
@@ -340,7 +346,7 @@ export default function RecordingSummaryScreen() {
                 <View>
                   <Text style={s.impactBattleLabel}>{primaryImpact.battleTitle}</Text>
                   <Text style={s.impactTeamText}>
-                    あなたのランで陣営が{' '}
+                    あなたのランでチームが{' '}
                     <Text style={{ color: rankChanged ? Colors.primaryDark : Colors.textPrimary, fontWeight: '900' }}>
                       {primaryImpact.rankBefore}位→{primaryImpact.rankAfter}位
                     </Text>
@@ -350,7 +356,7 @@ export default function RecordingSummaryScreen() {
                   )}
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={s.impactAddLabel}>陣営加算</Text>
+                  <Text style={s.impactAddLabel}>チーム加算</Text>
                   <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 2 }}>
                     <Text style={s.impactAddVal}>+{primaryCreditedDistanceKm.toFixed(1)}</Text>
                     <Text style={s.impactAddUnit}>KM</Text>
@@ -364,8 +370,8 @@ export default function RecordingSummaryScreen() {
           ) : (
             <View style={[s.impactCard, { alignItems: 'center', paddingVertical: 20 }]}>
               <Ionicons name="walk-outline" size={32} color={Colors.textTertiary} />
-              <Text style={{ color: Colors.textTertiary, marginTop: 8, fontSize: 13 }}>チャレンジ未参加</Text>
-              <Text style={{ color: Colors.textTertiary, fontSize: 11, marginTop: 2 }}>チャレンジに参加して記録を競おう</Text>
+              <Text style={{ color: Colors.textSecondary, marginTop: 8, fontSize: 13 }}>チャレンジ未参加</Text>
+              <Text style={{ color: Colors.textSecondary, fontSize: 11, marginTop: 2 }}>チャレンジに参加して記録を競おう</Text>
             </View>
           )}
         </View>
@@ -409,7 +415,7 @@ export default function RecordingSummaryScreen() {
               <Text style={s.shareCardKm}>{distanceKm.toFixed(1)}<Text style={s.shareCardKmUnit}> km</Text></Text>
               {primaryImpact ? (
                 <Text style={s.shareCardImpact}>
-                  「{primaryImpact.battleTitle}」陣営 {primaryImpact.rankBefore}位→{primaryImpact.rankAfter}位
+                  「{primaryImpact.battleTitle}」チーム {primaryImpact.rankBefore}位→{primaryImpact.rankAfter}位
                 </Text>
               ) : null}
               <Text style={s.shareCardTag}>#ZELIO</Text>
@@ -534,13 +540,13 @@ const s = StyleSheet.create({
     marginTop: 14, paddingTop: 14,
     borderTopWidth: 1, borderTopColor: Colors.border, borderStyle: 'dashed' as const,
   },
-  impactBattleLabel: { fontSize: 11, color: Colors.textTertiary, fontWeight: '700', letterSpacing: 1 },
+  impactBattleLabel: { fontSize: 11, color: Colors.textSecondary, fontWeight: '700', letterSpacing: 1 },
   impactTeamText: { fontSize: 14, fontWeight: '800', color: Colors.textPrimary, marginTop: 2 },
-  impactMoreText: { fontSize: 10, color: Colors.textTertiary, fontWeight: '600', marginTop: 4 },
+  impactMoreText: { fontSize: 10, color: Colors.textSecondary, fontWeight: '600', marginTop: 4 },
   impactAddLabel: { fontSize: 10, color: Colors.textTertiary, fontWeight: '700', letterSpacing: 1 },
   impactAddVal: { fontSize: 24, color: Colors.accent, fontWeight: '800', lineHeight: 28, fontVariant: ['tabular-nums'] },
   impactAddUnit: { fontSize: 11, color: Colors.textTertiary },
-  impactLimitText: { marginTop: 2, fontSize: 8, color: Colors.textTertiary },
+  impactLimitText: { marginTop: 2, fontSize: 8, color: Colors.textSecondary },
 
   badgeCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
@@ -557,7 +563,7 @@ const s = StyleSheet.create({
   },
   badgeKicker: { fontSize: 12, fontWeight: '700', color: Colors.accentYellow },
   badgeTitle: { fontSize: 15, fontWeight: '900', color: Colors.textPrimary, marginTop: 1 },
-  badgeSub: { fontSize: 11, color: Colors.textTertiary, marginTop: 1 },
+  badgeSub: { fontSize: 11, color: Colors.textSecondary, marginTop: 1 },
   badgeNew: { fontSize: 11, color: Colors.accentYellow, fontWeight: '800' },
 
   // Share
@@ -597,6 +603,6 @@ const s = StyleSheet.create({
     shadowOpacity: 0.18, shadowRadius: 20, elevation: 6,
   },
   ctaBtnText: { fontSize: 14, fontWeight: '800', color: Colors.textOnPrimary, letterSpacing: 0.5 },
-  ctaHint: { textAlign: 'center', fontSize: 11, color: Colors.textTertiary, fontWeight: '600' },
+  ctaHint: { textAlign: 'center', fontSize: 11, color: Colors.textSecondary, fontWeight: '600' },
 
 });

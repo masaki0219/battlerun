@@ -6,7 +6,7 @@ import { Colors, Typography, Spacing, BorderRadius } from '../../design_tokens';
 import type { Battle } from '../../types';
 
 interface Props {
-  /** join_code=コード入力 / join_select=区分選択 */
+  /** join_code=コード入力 / join_select=チーム選択 */
   view: 'join_code' | 'join_select';
   inviteCode: string;
   onChangeInviteCode: (v: string) => void;
@@ -17,11 +17,11 @@ interface Props {
   foundBattle: Battle | null;
   joining: boolean;
   onJoinCategory: (categoryId: string) => void;
-  /** 区分選択からコード入力へ戻る */
+  /** チーム選択からコード入力へ戻る */
   onBackToCode: () => void;
 }
 
-/** 招待コードの検索・区分選択で参加するビュー。表示専用。 */
+/** 招待コードの検索・チーム選択で参加するビュー。表示専用。 */
 export function InviteCodeJoinView({
   view, inviteCode, onChangeInviteCode, searching, onSearch, onCancelCode,
   foundBattle, joining, onJoinCategory, onBackToCode,
@@ -58,7 +58,7 @@ export function InviteCodeJoinView({
         <Text style={styles.battleMeta}>{foundBattle.description}</Text>
       ) : null}
 
-      <Text style={[styles.inputLabel, { marginBottom: Spacing.sm }]}>区分を選んで参加</Text>
+      <Text style={[styles.inputLabel, { marginBottom: Spacing.sm }]}>チームを選んで参加</Text>
       <View style={styles.catSelectList}>
         {foundBattle.categories.map((cat) => (
           <Button

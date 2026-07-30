@@ -27,18 +27,27 @@ export interface WeeklyBucket {
   isToday: boolean;
 }
 
+/** 「今週」の起点（ローカル月曜 0:00）。週間カード・週間目標・先週比の共通基準 */
+export function calendarWeekStart(now: Date = new Date()): Date {
+  const monday = startOfDay(now);
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  return monday;
+}
+
 /**
- * 直近7日（今日含む）の日別合計km。戻り値は古い→新しい順の7要素固定。
+ * 今週（月曜始まりのカレンダー週）の日別合計km。戻り値は月〜日の7要素固定。
+ * - 「今週」表示・週間目標と一致させるためカレンダー週で切る（月曜にリセットされる）。
  * - startedAt はローカルタイムで日付境界を切る。
- * - label は曜日（日〜土）。isToday は今日のバケットのみ true。
+ * - label は曜日。isToday は今日のバケットのみ true（未来の曜日は km=0 のまま）。
  * - 空配列なら全 km=0 の7要素を返す（呼び出し側でプレースホルダー表示）。
  */
 export function weeklyBuckets(activities: Activity[], now: Date = new Date()): WeeklyBucket[] {
-  const today0 = startOfDay(now);
+  const monday = calendarWeekStart(now);
+  const today0 = startOfDay(now).getTime();
   const buckets = Array.from({ length: 7 }, (_, i) => {
-    const day = new Date(today0);
-    day.setDate(today0.getDate() - (6 - i)); // i=0 が6日前、i=6 が今日
-    return { time: day.getTime(), label: WEEKDAY[day.getDay()], km: 0, isToday: 6 - i === 0 };
+    const day = new Date(monday);
+    day.setDate(monday.getDate() + i); // i=0 が月曜、i=6 が日曜
+    return { time: day.getTime(), label: WEEKDAY[day.getDay()], km: 0, isToday: day.getTime() === today0 };
   });
   const index = new Map(buckets.map((b, i) => [b.time, i]));
   for (const a of activities) {
@@ -51,10 +60,9 @@ export function weeklyBuckets(activities: Activity[], now: Date = new Date()): W
   return buckets.map(({ label, km, isToday }) => ({ label, km, isToday }));
 }
 
-/** 直近7日の起点（6日前）を「4月15日〜」形式で返す。週間カードの見出し用 */
+/** 今週の起点（月曜）を「4月15日〜」形式で返す。週間カードの見出し用 */
 export function weekStartLabel(now: Date = new Date()): string {
-  const from = startOfDay(now);
-  from.setDate(from.getDate() - 6);
+  const from = calendarWeekStart(now);
   return `${from.getMonth() + 1}月${from.getDate()}日〜`;
 }
 
@@ -67,17 +75,18 @@ export function calendarWeekKey(now: Date = new Date()): string {
 }
 
 /**
- * 直近7日 と その前の7日 の合計km、および増減率。
- * - 前週が 0km のときは比較できないので changeRatio は null（呼び出し側でチップを出さない）。
- * - 入力は取得済みの直近アクティビティのみ。14日分に満たなければその範囲での比較になる。
+ * 今週（月曜始まり）と先週（先週月曜〜日曜）の合計km、および増減率。
+ * - 「今週/先週比」の表示ラベルと一致するカレンダー週で比較する。
+ *   週の前半は今週分が少なく比率が大きく振れるが、それが実態どおりの表示。
+ * - 先週が 0km のときは比較できないので changeRatio は null（呼び出し側でチップを出さない）。
+ * - 入力は取得済みの直近アクティビティのみ。2週分に満たなければその範囲での比較になる。
  */
 export function weekOverWeek(
   activities: Activity[],
   now: Date = new Date(),
 ): { thisWeekKm: number; lastWeekKm: number; changeRatio: number | null } {
-  const today0 = startOfDay(now).getTime();
-  const thisWeekFrom = today0 - 6 * DAY_MS; // 今日を含む7日
-  const lastWeekFrom = today0 - 13 * DAY_MS;
+  const thisWeekFrom = calendarWeekStart(now).getTime();
+  const lastWeekFrom = thisWeekFrom - 7 * DAY_MS;
 
   let thisWeekKm = 0;
   let lastWeekKm = 0;
@@ -85,8 +94,8 @@ export function weekOverWeek(
     const d = parseDate(a.startedAt);
     if (!d) continue;
     const day = startOfDay(d).getTime();
-    if (day >= thisWeekFrom && day <= today0) thisWeekKm += a.distanceKm || 0;
-    else if (day >= lastWeekFrom && day < thisWeekFrom) lastWeekKm += a.distanceKm || 0;
+    if (day >= thisWeekFrom) thisWeekKm += a.distanceKm || 0;
+    else if (day >= lastWeekFrom) lastWeekKm += a.distanceKm || 0;
   }
   return {
     thisWeekKm,
@@ -95,10 +104,25 @@ export function weekOverWeek(
   };
 }
 
-/** 先週比50%超かつ直近7日15km超なら、休息を勧める情報カードの対象。 */
+/**
+ * 休息を勧める情報カードの対象か（直近7日が前の7日より50%超増え、かつ15km超）。
+ * 生理的な負荷の判定なのでカレンダー週ではなく移動7日窓のまま。
+ * （カレンダー週だと週明けに必ず判定不能になり、ガードレールとして機能しない）
+ */
 export function hasHighTrainingLoad(activities: Activity[], now: Date = new Date()): boolean {
-  const week = weekOverWeek(activities, now);
-  return week.thisWeekKm > 15 && week.changeRatio != null && week.changeRatio > 0.5;
+  const today0 = startOfDay(now).getTime();
+  const thisFrom = today0 - 6 * DAY_MS;
+  const prevFrom = today0 - 13 * DAY_MS;
+  let thisKm = 0;
+  let prevKm = 0;
+  for (const a of activities) {
+    const d = parseDate(a.startedAt);
+    if (!d) continue;
+    const day = startOfDay(d).getTime();
+    if (day >= thisFrom && day <= today0) thisKm += a.distanceKm || 0;
+    else if (day >= prevFrom && day < thisFrom) prevKm += a.distanceKm || 0;
+  }
+  return thisKm > 15 && prevKm > 0 && (thisKm - prevKm) / prevKm > 0.5;
 }
 
 /**
@@ -188,6 +212,24 @@ export function daysLeft(endAt: string, now: Date = new Date()): number | null {
   const end = parseDate(endAt);
   if (!end) return null;
   return Math.max(0, Math.ceil((end.getTime() - now.getTime()) / DAY_MS));
+}
+
+/**
+ * 残り時間の表示ラベル。チャレンジ詳細のカウントダウン（日 / 時 / 分＝切り捨て）と
+ * 同じ基準で丸める。`daysLeft()`（切り上げ）は逆転ペースの計算用で、表示には使わない
+ * （切り上げと切り捨てが混ざると、ホーム「残り5日」／詳細「4日23時間」のように食い違う）。
+ */
+export function remainingLabel(endAt: string, now: Date = new Date()): string | null {
+  const end = parseDate(endAt);
+  if (!end) return null;
+  const ms = end.getTime() - now.getTime();
+  if (ms <= 0) return '終了';
+  const totalMinutes = Math.floor(ms / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  if (days >= 1) return `${days}日`;
+  const hours = Math.floor(totalMinutes / 60);
+  if (hours >= 1) return `${hours}時間`;
+  return `${Math.max(1, totalMinutes)}分`;
 }
 
 /**

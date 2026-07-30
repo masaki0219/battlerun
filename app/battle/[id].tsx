@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Share,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Share, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import { useBattleStore } from '../../stores/battleStore';
-import { Colors, DarkColors, Spacing, Shadow, BorderRadius, TextStyles } from '../../design_tokens';
+import { Colors, DarkColors, Spacing, Shadow, BorderRadius, TextStyles, Typography, otherTeamColor } from '../../design_tokens';
 import { MonoLabel } from '../../components/ui/MonoLabel';
 import { StatBlock } from '../../components/ui/StatBlock';
 import { ProgressBar } from '../../components/ui/ProgressBar';
@@ -21,6 +21,7 @@ import { useBattleParticipants } from '../../hooks/useBattleParticipants';
 import { useTeamRanking } from '../../hooks/useTeamRanking';
 import { useBattleProcessContributions } from '../../hooks/useBattleProcessContributions';
 import { TeamRankingCard } from '../../components/battle/TeamRankingCard';
+import { CategorySelectModal } from '../../components/battle/CategorySelectModal';
 import type { CategoryStats, Battle, Category } from '../../types';
 import { inviteWebUrl } from '../../lib/invite';
 
@@ -49,12 +50,14 @@ interface RecentActivity {
 export default function BattleDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuthStore();
-  const { publicBattles, privateBattles, myMemberships } = useBattleStore();
+  const { publicBattles, privateBattles, myMemberships, joinBattle } = useBattleStore();
 
   const [stats, setStats] = useState<CategoryStats[]>([]);
   const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchedBattle, setFetchedBattle] = useState<Battle | null>(null);
+  const [showTeamChange, setShowTeamChange] = useState(false);
+  const [changingTeam, setChangingTeam] = useState(false);
 
   const battleFromStore = [...publicBattles, ...privateBattles].find((b) => b.id === id);
   const battle = battleFromStore ?? fetchedBattle;
@@ -331,16 +334,16 @@ export default function BattleDetailScreen() {
         ) : (
           /* 陣営戦: category_stats を陣営バーで表示 */
           <View style={s.sectionCard}>
-            <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.md }]}>陣営ランキング</Text>
+            <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.md }]}>チームランキング</Text>
             {loading && sorted.length === 0 ? (
               <ActivityIndicator color={Colors.primary} style={{ marginVertical: 20 }} />
             ) : sorted.length === 0 ? (
-              <EmptyState icon="flag-outline" title="まだ記録がありません" hint="最初のランで陣営に貢献しよう" />
+              <EmptyState icon="flag-outline" title="まだ記録がありません" hint="最初のランでチームに貢献しよう" />
             ) : (
               sorted.map((cat, i) => {
                 const isMine = cat.categoryId === myCatId;
                 const displayRank = allZero ? null : 1 + sorted.filter((item) => val(item) > val(cat)).length;
-                const barColor = isMine ? Colors.primary : Colors.teamColors[Math.min(i, Colors.teamColors.length - 1)];
+                const barColor = isMine ? Colors.primary : otherTeamColor(i);
                 return (
                   <View key={cat.categoryId} style={s.rankRow}>
                     <Text style={[s.rankNum, isMine && s.rankNumMine]}>{displayRank ?? '—'}</Text>
@@ -357,12 +360,26 @@ export default function BattleDetailScreen() {
                 );
               })
             )}
+            {/* チーム変更（ルール上、距離0・記録0の間だけ許可される）。
+                teamSize>0 でデータ取得済みを確認してから出す */}
+            {!!membership && battle.status === 'active'
+              && teamRanking.teamSize > 0 && teamRanking.myKm === 0 && (
+              <TouchableOpacity
+                style={s.teamChangeLink}
+                onPress={() => setShowTeamChange(true)}
+                accessibilityRole="button"
+                accessibilityLabel="チームを変更"
+              >
+                <Ionicons name="swap-horizontal-outline" size={14} color={Colors.primaryDark} />
+                <Text style={s.teamChangeText}>チームを変更</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
         {!isIndividual && teamRanking.top.length > 0 && (
           <View>
-            <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.md }]}>陣営内ランキング</Text>
+            <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.md }]}>チーム内ランキング</Text>
             <TeamRankingCard
               ranking={teamRanking}
               contributions={processContributions}
@@ -390,11 +407,53 @@ export default function BattleDetailScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* チーム変更モーダル（参加時と同じ選択UI。距離0の間だけ開ける） */}
+      <CategorySelectModal
+        visible={showTeamChange}
+        battle={battle}
+        stats={stats}
+        loading={changingTeam}
+        onClose={() => setShowTeamChange(false)}
+        onJoin={async (categoryId) => {
+          if (!user || changingTeam || categoryId === myCatId) {
+            setShowTeamChange(false);
+            return;
+          }
+          setChangingTeam(true);
+          try {
+            await joinBattle(battle.id, categoryId, user.id);
+            setShowTeamChange(false);
+          } catch (e) {
+            Alert.alert(
+              'チームを変更できませんでした',
+              e instanceof Error ? e.message : '通信状態を確認して、もう一度お試しください。',
+            );
+          } finally {
+            setChangingTeam(false);
+          }
+        }}
+      />
     </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
+  teamChangeLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    marginTop: Spacing.md,
+    paddingTop: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderLight,
+  },
+  teamChangeText: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.primaryDark,
+  },
   root: { flex: 1, backgroundColor: Colors.background },
 
   navBar: {

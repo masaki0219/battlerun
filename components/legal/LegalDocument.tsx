@@ -1,5 +1,5 @@
 import React from 'react';
-import { Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { KeyboardAvoidingView, Linking, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,13 +8,14 @@ import { Colors, Spacing, Typography } from '../../design_tokens';
 export interface LegalSection {
   heading: string;
   body: string;
-  action?: { label: string; url: string } | { label: string; route: string };
+  action?: { label: string; url: string };
 }
 
-export function LegalDocument({ title, updatedAt, sections }: {
+export function LegalDocument({ title, updatedAt, sections, topContent }: {
   title: string;
   updatedAt: string;
   sections: LegalSection[];
+  topContent?: React.ReactNode;
 }) {
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
@@ -25,7 +26,9 @@ export function LegalDocument({ title, updatedAt, sections }: {
         <Text style={styles.headerTitle}>{title}</Text>
         <View style={{ width: 22 }} />
       </View>
-      <ScrollView contentContainerStyle={styles.content}>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        {topContent}
         <Text style={styles.updated}>最終更新: {updatedAt}</Text>
         {sections.map((section) => (
           <View key={section.heading} style={styles.section}>
@@ -34,34 +37,25 @@ export function LegalDocument({ title, updatedAt, sections }: {
             {section.action && (
               <TouchableOpacity
                 style={styles.action}
-                onPress={() => {
-                  const action = section.action!;
-                  if ('url' in action) {
-                    void Linking.openURL(action.url);
-                  } else {
-                    router.push(action.route as never);
-                  }
-                }}
+                onPress={() => void Linking.openURL(section.action!.url)}
                 accessibilityRole="link"
                 accessibilityLabel={section.action.label}
               >
                 <Text style={styles.actionText}>{section.action.label}</Text>
-                <Ionicons
-                  name={'url' in section.action ? 'open-outline' : 'chevron-forward'}
-                  size={14}
-                  color={Colors.primaryDark}
-                />
+                <Ionicons name="open-outline" size={14} color={Colors.primaryDark} />
               </TouchableOpacity>
             )}
           </View>
         ))}
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
+  flex: { flex: 1 },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md,
@@ -69,7 +63,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
   content: { padding: Spacing.xl, paddingBottom: Spacing['4xl'], gap: Spacing.xl },
-  updated: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary },
+  updated: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary },
   section: { gap: Spacing.sm },
   heading: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
   body: { fontSize: Typography.fontSize.sm, lineHeight: 22, color: Colors.textSecondary },

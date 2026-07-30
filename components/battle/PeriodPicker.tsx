@@ -233,8 +233,10 @@ export function PeriodPicker({ startAt, endAt, onChangeStartAt, onChangeEndAt }:
           )}
         </View>
       ) : (
-        <View style={[styles.summary, styles.summaryInvalid]}>
-          <Text style={styles.summaryError}>開始日と終了日を選んでください</Text>
+        // 未入力はエラーではなく案内。赤いエラー表示は実際に不正なとき（終了<開始）と
+        // 送信時バリデーション（親フォーム側）に任せる。
+        <View style={styles.summary}>
+          <Text style={styles.summaryGuide}>開始日と終了日を選んでください</Text>
         </View>
       )}
     </View>
@@ -244,7 +246,7 @@ export function PeriodPicker({ startAt, endAt, onChangeStartAt, onChangeEndAt }:
 const styles = StyleSheet.create({
   rowLabel: {
     fontSize: Typography.fontSize.xs,
-    color: Colors.textTertiary,
+    color: Colors.textSecondary,
     marginTop: Spacing.sm,
     marginBottom: Spacing.xs,
   },
@@ -285,9 +287,10 @@ const styles = StyleSheet.create({
   },
   summaryMainInvalid: { color: Colors.error },
   summarySub: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary, marginTop: 2 },
+  summaryGuide: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary, fontWeight: Typography.fontWeight.medium },
   summaryError: { fontSize: Typography.fontSize.sm, color: Colors.error, fontWeight: Typography.fontWeight.medium },
   fallbackWrap: { padding: Spacing.md, gap: Spacing.xs },
-  fallbackLabel: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary },
+  fallbackLabel: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary },
   fallbackInput: {
     backgroundColor: Colors.surfaceGray,
     borderRadius: BorderRadius.sm,

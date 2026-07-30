@@ -29,7 +29,7 @@ import { registerPushToken } from '../../lib/notifications';
 import Constants from 'expo-constants';
 
 function TitleBadge({ title, selected }: { title: UserTitle; selected: boolean }) {
-  const rankLabel = title.rank === 1 ? '優勝陣営メンバー' : title.rank === 2 ? '準優勝陣営メンバー' : `${title.rank}位陣営メンバー`;
+  const rankLabel = title.rank === 1 ? '優勝チームメンバー' : title.rank === 2 ? '準優勝チームメンバー' : `${title.rank}位チームメンバー`;
   const awardedDate = new Date(title.awardedAt).toLocaleDateString('ja-JP', {
     year: 'numeric', month: 'short',
   });
@@ -45,7 +45,8 @@ function TitleBadge({ title, selected }: { title: UserTitle; selected: boolean }
         </View>
         <Text style={styles.titleBattle} numberOfLines={1}>{title.battleTitle}</Text>
         <Text style={styles.titleSeason} numberOfLines={1}>
-          {[title.teamName, title.seasonId, `${awardedDate}獲得`].filter(Boolean).join(' ・ ')}
+          {/* seasonId は Firestore の内部IDなので表示しない（本番は自動生成の英数字になる） */}
+          {[title.teamName, `${awardedDate}獲得`].filter(Boolean).join(' ・ ')}
         </Text>
       </View>
     </View>
@@ -90,6 +91,8 @@ export default function ProfileScreen() {
   const [presenceSaving, setPresenceSaving] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [proPlans, setProPlans] = useState<Partial<Record<ProPlanPeriod, ProPackageInfo>>>({});
+  const [proPlansLoading, setProPlansLoading] = useState(false);
+  const [proPlansReloadKey, setProPlansReloadKey] = useState(0);
   const [selectedPeriod, setSelectedPeriod] = useState<ProPlanPeriod>('monthly');
   const [serverStats, setServerStats] = useState<{ totalDistanceKm: number; activityCount: number } | null>(null);
 
@@ -100,14 +103,20 @@ export default function ProfileScreen() {
   const streak = streakDays(activities);
 
   useEffect(() => {
-    if (!isPro(user?.plan, proEntitlement)) {
-      getProPlanPrices().then((plans) => {
+    if (isPro(user?.plan, proEntitlement)) return;
+    let cancelled = false;
+    setProPlansLoading(true);
+    getProPlanPrices()
+      .then((plans) => {
+        if (cancelled) return;
         setProPlans(plans);
         // 月額がOfferingに無い構成でも購入ボタンが機能するよう選択を補正する
         if (!plans.monthly && plans.annual) setSelectedPeriod('annual');
-      });
-    }
-  }, [user?.plan, proEntitlement]);
+      })
+      .catch(() => { if (!cancelled) setProPlans({}); })
+      .finally(() => { if (!cancelled) setProPlansLoading(false); });
+    return () => { cancelled = true; };
+  }, [user?.plan, proEntitlement, proPlansReloadKey]);
 
   useEffect(() => {
     if (!user) return;
@@ -352,9 +361,12 @@ export default function ProfileScreen() {
     (a, b) => new Date(b.awardedAt).getTime() - new Date(a.awardedAt).getTime()
   );
   const profileTitle = titles[0]
-    ? `称号：${titles[0].rank === 1 ? '優勝陣営メンバー' : titles[0].rank === 2 ? '準優勝陣営メンバー' : `${titles[0].rank}位陣営メンバー`}`
+    ? `称号：${titles[0].rank === 1 ? '優勝チームメンバー' : titles[0].rank === 2 ? '準優勝チームメンバー' : `${titles[0].rank}位チームメンバー`}`
     : 'チャレンジで称号を獲得しよう';
   const userIsPro = isPro(user.plan, proEntitlement);
+  // 価格（期間つき）を提示できるときだけ購入導線を有効にする
+  const hasProPrice = Boolean(proPlans.monthly || proPlans.annual);
+  const canPurchasePro = hasProPrice && !purchasing && !proPlansLoading;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -473,8 +485,27 @@ export default function ProfileScreen() {
                     })}
                   </View>
                 )}
-                <TouchableOpacity style={styles.proStartButton} onPress={handlePurchasePro} disabled={purchasing} activeOpacity={0.85}>
-                  {purchasing ? <ActivityIndicator color={Colors.textOnAccent} /> : <><Text style={styles.proStartText}>Proをはじめる</Text><Ionicons name="chevron-forward" size={16} color={Colors.textOnAccent} /></>}
+                {/* 価格・期間を提示できないまま購入導線を出さない（サブスクの表示要件）。
+                    取得できていないときは非活性にして再試行を出す。 */}
+                {!hasProPrice && !proPlansLoading && (
+                  <View style={styles.priceErrorBox}>
+                    <Text style={styles.priceErrorText}>価格を読み込めませんでした。通信状態を確認してください。</Text>
+                    <TouchableOpacity onPress={() => setProPlansReloadKey((key) => key + 1)} accessibilityRole="button">
+                      <Text style={styles.priceRetryText}>再読み込み</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                <TouchableOpacity
+                  style={[styles.proStartButton, !canPurchasePro && styles.proStartButtonDisabled]}
+                  onPress={handlePurchasePro}
+                  disabled={!canPurchasePro}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: !canPurchasePro }}
+                >
+                  {purchasing || proPlansLoading
+                    ? <ActivityIndicator color={Colors.textOnAccent} />
+                    : <><Text style={styles.proStartText}>Proをはじめる</Text><Ionicons name="chevron-forward" size={16} color={Colors.textOnAccent} /></>}
                 </TouchableOpacity>
                 <TouchableOpacity onPress={handleRestore} style={styles.restoreButton}><Text style={styles.restoreText}>購入を復元する</Text></TouchableOpacity>
                 <Text style={styles.subscriptionDisclaimer}>{SUBSCRIPTION_DISCLAIMER}</Text>
@@ -670,10 +701,14 @@ const styles = StyleSheet.create({
   planPrice: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.extrabold, color: Colors.textPrimary },
   planPriceSelected: { color: Colors.accentDark },
   proStartButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.xs, backgroundColor: Colors.accent, borderRadius: BorderRadius.md, paddingVertical: Spacing.md, marginTop: Spacing.md },
+  proStartButtonDisabled: { backgroundColor: Colors.textTertiary, opacity: 0.6 },
   proStartText: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.extrabold, color: Colors.textOnAccent },
+  priceErrorBox: { marginTop: Spacing.md, gap: Spacing.xs, alignItems: 'center' },
+  priceErrorText: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary, textAlign: 'center' },
+  priceRetryText: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.primaryDark },
   restoreButton: { alignSelf: 'center', marginTop: Spacing.sm },
   restoreText: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary },
-  subscriptionDisclaimer: { fontSize: 10, color: Colors.textTertiary, lineHeight: 15, marginTop: Spacing.sm, textAlign: 'center' },
+  subscriptionDisclaimer: { fontSize: 10, color: Colors.textSecondary, lineHeight: 15, marginTop: Spacing.sm, textAlign: 'center' },
   freeDescDark: { fontSize: Typography.fontSize.sm, color: DarkColors.textSecondary, lineHeight: 20, marginTop: Spacing.sm },
   priceTextDark: { fontSize: Typography.fontSize.sm, color: DarkColors.textPrimary, fontWeight: Typography.fontWeight.semibold, marginTop: Spacing.sm },
   subscriptionDisclaimerDark: { fontSize: 10, color: DarkColors.textTertiary, lineHeight: 15, marginTop: Spacing.sm },
@@ -681,7 +716,7 @@ const styles = StyleSheet.create({
   legalButton: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   legalLink: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary },
   legalSeparator: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, marginHorizontal: Spacing.xs },
-  emptyText: { fontSize: Typography.fontSize.sm, color: Colors.textTertiary, textAlign: 'center', paddingVertical: Spacing.md },
+  emptyText: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary, textAlign: 'center', paddingVertical: Spacing.md },
   titleBadge: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg },
   titleDivider: { height: 1, backgroundColor: Colors.borderLight, marginLeft: 68 },
   titleRankWrap: { width: 40, height: 40, backgroundColor: Colors.primaryLight, borderRadius: BorderRadius.sm, alignItems: 'center', justifyContent: 'center' },
@@ -693,7 +728,7 @@ const styles = StyleSheet.create({
   titleName: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
   titleSelectedLabel: { fontSize: 9, fontWeight: Typography.fontWeight.bold, color: Colors.primaryDark, backgroundColor: Colors.primaryLight, paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4 },
   titleBattle: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary, marginTop: 2 },
-  titleSeason: { fontSize: 10, color: Colors.textTertiary, marginTop: 2 },
+  titleSeason: { fontSize: 10, color: Colors.textSecondary, marginTop: 2 },
   listCard: { marginTop: 0 },
   profileRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg },
   profileRowIcon: { width: 36, height: 36, borderRadius: BorderRadius.sm, backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
@@ -813,7 +848,7 @@ const styles = StyleSheet.create({
   },
   badgeLinkSub: {
     fontSize: Typography.fontSize.sm,
-    color: Colors.textTertiary,
+    color: Colors.textSecondary,
     marginTop: 1,
   },
 });

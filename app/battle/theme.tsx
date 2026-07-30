@@ -213,7 +213,7 @@ const s = StyleSheet.create({
   proBannerLink: { fontSize: 12, color: Colors.pro, fontWeight: '800' },
 
   scroll: { padding: 16, gap: 10 },
-  subtitle: { fontSize: 12, color: Colors.textTertiary, marginBottom: 4, lineHeight: 17 },
+  subtitle: { fontSize: 12, color: Colors.textSecondary, marginBottom: 4, lineHeight: 17 },
 
   themeCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
@@ -225,7 +225,7 @@ const s = StyleSheet.create({
   themeEmoji: { fontSize: 32, width: 44, textAlign: 'center' },
   themeNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
   themeName: { fontSize: 15, fontWeight: '800', color: Colors.textPrimary },
-  themeDesc: { fontSize: 12, color: Colors.textTertiary, marginBottom: 6 },
+  themeDesc: { fontSize: 12, color: Colors.textSecondary, marginBottom: 6 },
   themePreviewBar: { height: 4, borderRadius: 2, width: 60 },
   proTag: {
     backgroundColor: `${Colors.pro}20`, borderRadius: 4,

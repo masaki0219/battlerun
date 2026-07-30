@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ProgressBar } from '../ui/ProgressBar';
-import { Colors, Typography, Spacing } from '../../design_tokens';
+import { Colors, Typography, Spacing, otherTeamColor } from '../../design_tokens';
 import { statValue, statLabel, maxStat } from '../../utils/displayStats';
 import type { Battle, CategoryStats } from '../../types';
 
@@ -32,9 +32,7 @@ export function BattleRankRows({ battle, sorted, myCatId, expanded, onToggleExpa
   const row = (s: CategoryStats) => {
     const isMine = s.categoryId === myCatId;
     const rank = allZero ? null : 1 + sorted.filter((item) => statValue(item, rt) > statValue(s, rt)).length;
-    const barColor = isMine
-      ? Colors.primary
-      : Colors.teamColors[Math.min((rank ?? 1) - 1, Colors.teamColors.length - 1)];
+    const barColor = isMine ? Colors.primary : otherTeamColor((rank ?? 1) - 1);
     return (
       <View key={s.categoryId} style={styles.rankRow}>
         <Text style={[styles.rankNum, isMine && styles.rankNumMine]}>{rank ?? '—'}</Text>
@@ -64,7 +62,7 @@ export function BattleRankRows({ battle, sorted, myCatId, expanded, onToggleExpa
           style={styles.collapseBtn}
           hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
         >
-          <Text style={styles.collapseText}>{expanded ? '閉じる' : `他 ${hiddenCount} 陣営`}</Text>
+          <Text style={styles.collapseText}>{expanded ? '閉じる' : `他 ${hiddenCount} チーム`}</Text>
           <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color={Colors.textTertiary} />
         </TouchableOpacity>
       )}
@@ -84,5 +82,5 @@ const styles = StyleSheet.create({
   rankValueMine: { fontWeight: '800', color: Colors.textPrimary },
   ellipsis: { fontSize: Typography.fontSize.sm, color: Colors.textTertiary, textAlign: 'center', marginTop: -4 },
   collapseBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingTop: Spacing.xs },
-  collapseText: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, fontWeight: '600' },
+  collapseText: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary, fontWeight: '600' },
 });

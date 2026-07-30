@@ -7,5 +7,6 @@ import './routeSplits.test';
 import './gpsQuality.test';
 import './battleCredit.test';
 import './invite.test';
+import './reviewFixes.test';
 
 console.log('all unit tests passed');

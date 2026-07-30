@@ -47,7 +47,7 @@ export const validateBattleTitleOnCreate = onDocumentCreated(
       .collection(`users/${createdBy}/notifications`)
       .add({
         type: 'battle_title_rejected',
-        title: 'バトルが無効化されました',
+        title: 'チャレンジが無効化されました',
         body: `「${title}」はバトル名に使用できない単語が含まれているため終了しました`,
         isRead: false,
         relatedBattleId: battleId,

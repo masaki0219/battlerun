@@ -37,16 +37,16 @@ const STEP_LABELS: Record<number, string> = {
 };
 
 const STEP_HEADINGS: Record<number, string> = {
-  1: '歩くと、\n陣営が強くなる。',
+  1: '歩くと、\nチームが強くなる。',
   2: '走るだけで、\nあとは自動。',
   3: 'あと少しで\n逆転できる。',
   4: 'ZELIOを\n始めよう。',
 };
 
 const STEP_BODIES: Record<number, string> = {
-  1: 'あなたの走った距離が、そのまま陣営の得点になる。友達と競い合いながら、もっと走れる。',
+  1: 'あなたの走った距離が、そのままチームの得点になる。友達と競い合いながら、もっと走れる。',
   2: 'アプリを開いてボタンを押すだけ。GPSでルート記録か、歩数モードか選べる。',
-  3: '順位はリアルタイムで動く。あなたの一走りが、陣営の順位を変える。',
+  3: '順位はリアルタイムで動く。あなたの一走りが、チームの順位を変える。',
   4: 'アカウントを作成して、最初のランや仲間とのチャレンジを始めよう。',
 };
 
@@ -163,7 +163,7 @@ function OB1() {
         </View>
       ))}
       <View style={ob1.hint}>
-        <Ionicons name="arrow-up" size={11} color={Colors.primary} />
+        <Ionicons name="arrow-up" size={11} color={DarkColors.primary} />
         <Text style={ob1.hintText}> あと 1.8km で 2位逆転</Text>
       </View>
     </View>
@@ -187,17 +187,17 @@ const ob1 = StyleSheet.create({
     marginBottom: 14,
   },
   headerLabel: {
-    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+    fontFamily: Typography.fontFamily.mono,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 2.5,
-    color: Colors.primary,
+    color: DarkColors.primary,
     textTransform: 'uppercase',
   },
   live: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  liveDot: { width: 5, height: 5, borderRadius: 99, backgroundColor: Colors.primary },
+  liveDot: { width: 5, height: 5, borderRadius: 99, backgroundColor: DarkColors.primary },
   liveText: {
-    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+    fontFamily: Typography.fontFamily.mono,
     fontSize: 8,
     color: DarkColors.textTertiary,
     letterSpacing: 2,
@@ -225,13 +225,13 @@ const ob1 = StyleSheet.create({
   hint: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: `${Colors.primary}1c`,
+    backgroundColor: `${DarkColors.primary}1c`,
     borderRadius: 6,
     paddingHorizontal: 10,
     paddingVertical: 7,
     marginTop: 10,
   },
-  hintText: { fontSize: 10, color: Colors.primary, fontWeight: '700' },
+  hintText: { fontSize: 10, color: DarkColors.primary, fontWeight: '700' },
 });
 
 // ── Step 2: START button ───────────────────────────────────────
@@ -257,7 +257,7 @@ function OB2() {
         <Text style={ob2.contribKm}>3.2 KM</Text>
         <Ionicons name="chevron-forward" size={13} color={Colors.textTertiary} />
         <View style={ob2.badge}>
-          <Text style={ob2.badgeText}>陣営へ加算</Text>
+          <Text style={ob2.badgeText}>チームへ加算</Text>
         </View>
       </View>
     </View>
@@ -361,7 +361,7 @@ const ob3 = StyleSheet.create({
     ...Shadow.lg,
   },
   label: {
-    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+    fontFamily: Typography.fontFamily.mono,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 2.5,
@@ -390,9 +390,9 @@ const ob3 = StyleSheet.create({
 // ── Step 4: Battle search list ─────────────────────────────────
 function OB4() {
   const battles = [
-    { t: '5月ウォーキング杯', s: '4陣営 / 残 1日 6時間', c: TEAM_RED },
-    { t: '部活ラン 2026 春',  s: '3陣営 / 残 5日',      c: TEAM_BLUE },
-    { t: '家族チャレンジ',    s: '2陣営 / 残 3日',      c: TEAM_YELLOW },
+    { t: '5月ウォーキング杯', s: '4チーム / 残 1日 6時間', c: TEAM_RED },
+    { t: '部活ラン 2026 春',  s: '3チーム / 残 5日',      c: TEAM_BLUE },
+    { t: '家族チャレンジ',    s: '2チーム / 残 3日',      c: TEAM_YELLOW },
   ];
   return (
     <View style={ob4.card}>
@@ -481,7 +481,7 @@ const styles = StyleSheet.create({
   dot: { height: 6, borderRadius: 99 },
   dotActive: { width: 28 },
   dotInactive: { width: 6, backgroundColor: Colors.border },
-  skip: { fontSize: 13, fontWeight: '600', color: Colors.textTertiary },
+  skip: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
 
   // Illustration
   illustBox: {
@@ -497,7 +497,7 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.lg,
   },
   stepLabel: {
-    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+    fontFamily: Typography.fontFamily.mono,
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 2,

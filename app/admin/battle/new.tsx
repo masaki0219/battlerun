@@ -120,7 +120,7 @@ export default function NewPublicBattleScreen() {
     }
     const validCats = categories.filter((c) => c.label.trim());
     if (validCats.length < 2) {
-      Alert.alert('入力エラー', '区分を2つ以上入力してください');
+      Alert.alert('入力エラー', 'チームを2つ以上入力してください');
       return;
     }
     if (!startAt || !endAt) {
@@ -316,15 +316,15 @@ export default function NewPublicBattleScreen() {
               </>
             )}
 
-            {/* 区分リスト */}
-            <Text style={styles.label}>区分リスト *（最低2つ）</Text>
+            {/* チームリスト */}
+            <Text style={styles.label}>チーム *（最低2つ）</Text>
             {categories.map((cat, i) => (
               <View key={i} style={styles.catRow}>
                 <TextInput
                   style={[styles.input, { flex: 1 }]}
                   value={cat.label}
                   onChangeText={(v) => updateLabel(i, v)}
-                  placeholder={`区分 ${i + 1}（例: きのこの山）`}
+                  placeholder={i === 0 ? 'チーム 1（例: 朝ラン組）' : i === 1 ? 'チーム 2（例: よる歩き隊）' : `チーム ${i + 1}`}
                   placeholderTextColor={Colors.textTertiary}
                   maxLength={20}
                 />
@@ -336,7 +336,7 @@ export default function NewPublicBattleScreen() {
               </View>
             ))}
             <TouchableOpacity style={styles.addBtn} onPress={addCategory}>
-              <Text style={styles.addText}>＋ 区分を追加</Text>
+              <Text style={styles.addText}>＋ チームを追加</Text>
             </TouchableOpacity>
 
             {/* ランキング方式 */}
@@ -396,7 +396,7 @@ const styles = StyleSheet.create({
   },
   inputMulti: { height: 80, textAlignVertical: 'top' },
   loadingRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.sm },
-  helpText: { fontSize: Typography.fontSize.sm, color: Colors.textTertiary },
+  helpText: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary },
   toggleRow: { flexDirection: 'row', gap: Spacing.sm },
   toggleBtn: {
     flex: 1, paddingVertical: Spacing.sm, borderRadius: BorderRadius.sm,
@@ -414,7 +414,7 @@ const styles = StyleSheet.create({
   dateGrid: { flexDirection: 'row', gap: Spacing.sm },
   subLabel: {
     fontSize: Typography.fontSize.xs,
-    color: Colors.textTertiary,
+    color: Colors.textSecondary,
     marginBottom: Spacing.xs,
   },
   linkBtn: { alignSelf: 'flex-start', paddingVertical: Spacing.xs },
@@ -433,7 +433,7 @@ const styles = StyleSheet.create({
   seasonOptionActive: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight },
   seasonTitle: { fontSize: Typography.fontSize.sm, color: Colors.textPrimary, fontWeight: Typography.fontWeight.semibold },
   seasonTitleActive: { color: Colors.primary },
-  seasonMeta: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, marginTop: 2 },
+  seasonMeta: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary, marginTop: 2 },
   seasonStatus: {
     fontSize: Typography.fontSize.xs,
     fontWeight: Typography.fontWeight.semibold,

@@ -99,7 +99,7 @@ const styles = StyleSheet.create({
   cheerButton: { minWidth: 72, minHeight: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 10, borderRadius: BorderRadius.full, backgroundColor: Colors.accentLight },
   cheeredButton: { backgroundColor: Colors.surfaceGray },
   cheerText: { fontSize: 10, fontWeight: Typography.fontWeight.bold, color: Colors.accentDark },
-  cheeredText: { color: Colors.textTertiary },
+  cheeredText: { color: Colors.textSecondary },
   privacyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderTopWidth: 1, borderTopColor: Colors.borderLight, paddingVertical: Spacing.sm },
-  privacyText: { fontSize: 9, color: Colors.textTertiary },
+  privacyText: { fontSize: 9, color: Colors.textSecondary },
 });

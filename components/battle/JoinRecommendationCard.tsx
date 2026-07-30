@@ -10,7 +10,7 @@ import type { Battle, CategoryStats, Category } from '../../types';
 interface Props {
   battle: Battle;
   stats: CategoryStats[];
-  /** 人数が最も少ない区分（援軍募集の訴求に使う。なければ非表示） */
+  /** 人数が最も少ないチーム（援軍募集の訴求に使う。なければ非表示） */
   shortageCategory: Category | null;
   onPress: () => void;
 }
@@ -35,7 +35,7 @@ export function JoinRecommendationCard({ battle, stats, shortageCategory, onPres
           <Text style={styles.title} numberOfLines={2}>{battle.title}</Text>
           {shortageCategory && (
             <View style={styles.shortageBadge}>
-              <Text style={styles.shortageText}>援軍募集中</Text>
+              <Text style={styles.shortageText}>仲間募集中</Text>
             </View>
           )}
         </View>
@@ -60,7 +60,7 @@ export function JoinRecommendationCard({ battle, stats, shortageCategory, onPres
         )}
 
         <View style={styles.cta}>
-          <Text style={styles.ctaText}>区分を選んで参加する</Text>
+          <Text style={styles.ctaText}>チームを選んで参加する</Text>
           <Ionicons name="chevron-forward" size={16} color={Colors.textOnPrimary} />
         </View>
       </Card>

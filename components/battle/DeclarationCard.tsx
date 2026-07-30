@@ -214,7 +214,7 @@ const styles = StyleSheet.create({
   formBattle: { fontSize: 10, color: Colors.textSecondary, marginTop: 2 },
   currentTitle: { fontSize: 16, fontWeight: Typography.fontWeight.extrabold, color: Colors.textPrimary, marginTop: 2 },
   currentNote: { fontSize: 11, color: Colors.textSecondary, marginTop: 3 },
-  currentHint: { fontSize: 10, color: Colors.textTertiary, marginTop: 3 },
+  currentHint: { fontSize: 10, color: Colors.textSecondary, marginTop: 3 },
   timeOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginTop: Spacing.lg },
   timeChip: { paddingHorizontal: 11, paddingVertical: 8, borderRadius: BorderRadius.full, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border },
   timeChipActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },

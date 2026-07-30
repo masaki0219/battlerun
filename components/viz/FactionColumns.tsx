@@ -23,6 +23,9 @@ interface Props {
 /** バーの最低の高さ（比率）。全陣営が僅差でも順位差が読めるようにする */
 const FLOOR = 0.32;
 
+/** バー上の実数値ラベルが占める高さ（fontSize 9 + marginBottom 4 + 余白） */
+const VALUE_LABEL_HEIGHT = 17;
+
 /**
  * 全陣営の距離を縦棒で並べるダーク面のチャート（ホームのヒーロー用）。
  *
@@ -34,6 +37,11 @@ export function FactionColumns({ factions, height = 120, valueSuffix = 'km' }: P
   const max = Math.max(...factions.map((f) => f.km), 0);
   const min = factions.length > 0 ? Math.min(...factions.map((f) => f.km)) : 0;
   const span = max - min;
+
+  // 各バーの上に実数値ラベルを置くため、その分だけバーの最大高さを詰める。
+  // 詰めないと首位のバーが行の高さいっぱいまで伸び、ラベルが行外へはみ出して
+  // 上の順位表示（「2位 / 3」）と重なる。
+  const barArea = Math.max(24, height - VALUE_LABEL_HEIGHT);
 
   const grow = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -56,13 +64,14 @@ export function FactionColumns({ factions, height = 120, valueSuffix = 'km' }: P
             : 1;
           const barHeight = grow.interpolate({
             inputRange: [0, 1],
-            outputRange: [0, Math.max(2, ratio * height)],
+            outputRange: [0, Math.max(2, ratio * barArea)],
           });
           return (
             <View key={f.id} style={styles.col}>
               <Text
                 style={[styles.km, f.isMine && styles.kmMine]}
                 numberOfLines={1}
+                maxFontSizeMultiplier={1.3}
               >
                 {f.km.toFixed(1)} {valueSuffix}
               </Text>

@@ -141,7 +141,7 @@ const styles = StyleSheet.create({
   optionUnit: { fontSize: 10, fontWeight: '700', color: Colors.textSecondary },
   recommended: { fontSize: 8, fontWeight: '700', color: Colors.primaryDark, marginTop: 2 },
   recommendedActive: { color: Colors.textOnPrimary },
-  restHint: { fontSize: 10, color: Colors.textTertiary, marginTop: Spacing.md },
+  restHint: { fontSize: 10, color: Colors.textSecondary, marginTop: Spacing.md },
   saveButton: { backgroundColor: Colors.primary, borderRadius: BorderRadius.md, alignItems: 'center', paddingVertical: 14, marginTop: Spacing.xl },
   saveText: { color: Colors.textOnPrimary, fontSize: 15, fontWeight: '800' },
   clearButton: { alignItems: 'center', paddingVertical: 12, marginBottom: Spacing.xs },

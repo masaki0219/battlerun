@@ -101,10 +101,10 @@ export function TeamRankingCard({ ranking, contributions = {}, currentUserId, on
           onPress={onPressMore}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityRole="button"
-          accessibilityLabel={`陣営${teamSize}人のランキングを見る`}
+          accessibilityLabel={`チーム${teamSize}人のランキングを見る`}
         >
           <Text style={styles.moreText}>
-            陣営 {teamSize}人 のランキングを見る
+            チーム {teamSize}人 のランキングを見る
           </Text>
           <Ionicons name="chevron-forward" size={14} color={Colors.primary} />
         </TouchableOpacity>
@@ -191,7 +191,7 @@ const styles = StyleSheet.create({
     marginTop: Spacing.xs,
     paddingHorizontal: Spacing.sm,
     fontSize: Typography.fontSize.xs,
-    color: Colors.textTertiary,
+    color: Colors.textSecondary,
     lineHeight: 16,
   },
   divider: {

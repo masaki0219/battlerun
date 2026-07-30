@@ -244,7 +244,10 @@ export default function BadgesScreen() {
               <Text style={TextStyles.sectionTitle}>次に取れそうなバッジ</Text>
               {upcoming.map(({ badge, prog }) => {
                 const pct = Math.min(prog.current / prog.target, 1);
-                const left = (prog.target - prog.current).toFixed(1);
+                // 日・回は小数にならないよう切り上げ整数で表示（「あと0.0日」「あと9.0回」を防ぐ）。
+                // kmのみ0.1km単位の小数を維持する。
+                const leftRaw = prog.target - prog.current;
+                const left = prog.unit === 'km' ? leftRaw.toFixed(1) : String(Math.ceil(leftRaw));
                 return (
                   <View key={badge.id} style={s.upcomingCard}>
                     <View style={[s.upcomingIcon, { backgroundColor: `${badge.color}18` }]}>
@@ -297,7 +300,7 @@ export default function BadgesScreen() {
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={s.titleBattleName} numberOfLines={1}>
-                        {t.rank === 1 ? '👑 優勝陣営メンバー' : t.rank === 2 ? '準優勝陣営メンバー' : `${t.rank}位陣営メンバー`}
+                        {t.rank === 1 ? '👑 優勝チームメンバー' : t.rank === 2 ? '準優勝チームメンバー' : `${t.rank}位チームメンバー`}
                         　{t.battleTitle}
                       </Text>
                       <Text style={s.titleMeta}>
@@ -331,7 +334,7 @@ const s = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   scroll: { paddingBottom: 48 },
   section: { paddingHorizontal: 16, marginTop: 20, gap: 10 },
-  emptyText: { fontSize: 13, color: Colors.textTertiary, paddingVertical: 12, textAlign: 'center' },
+  emptyText: { fontSize: 13, color: Colors.textSecondary, paddingVertical: 12, textAlign: 'center' },
 
   badgeGrid: {
     flexDirection: 'row',
@@ -369,7 +372,7 @@ const s = StyleSheet.create({
   upcomingTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   upcomingName: { fontSize: 13, fontWeight: '800', color: Colors.textPrimary },
   upcomingLeft: { fontSize: 12, fontWeight: '700' },
-  upcomingDesc: { fontSize: 11, color: Colors.textTertiary },
+  upcomingDesc: { fontSize: 11, color: Colors.textSecondary },
 
   titleCard: {
     flexDirection: 'row',
@@ -387,6 +390,6 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   titleBattleName: { fontSize: 13, fontWeight: '800', color: Colors.textPrimary },
-  titleMeta: { fontSize: 11, color: Colors.textTertiary, marginTop: 2 },
+  titleMeta: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
 
 });

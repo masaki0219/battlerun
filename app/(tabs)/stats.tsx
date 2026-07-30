@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRecentActivities } from '../../hooks/useRecentActivities';
 import { useAuthStore } from '../../stores/authStore';
-import { calendarWeekKey, hasHighTrainingLoad, weeklyBuckets, streakDays, relativeDay } from '../../utils/displayStats';
+import { calendarWeekKey, calendarWeekStart, hasHighTrainingLoad, weeklyBuckets, streakDays, relativeDay } from '../../utils/displayStats';
 import { Colors, Spacing, BorderRadius, Shadow, TextStyles, Typography } from '../../design_tokens';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { WeeklyBarChart } from '../../components/viz/WeeklyBarChart';
@@ -66,9 +66,12 @@ export default function StatsScreen() {
     .reduce((sum, activity) => sum + activity.distanceKm, 0);
   const weekBuckets = weeklyBuckets(activities, now);
   const weekTotal = weekBuckets.reduce((sum, day) => sum + day.km, 0);
-  const weekCount = activities.filter(
-    (activity) => now.getTime() - new Date(activity.startedAt).getTime() < 7 * DAY_MS,
-  ).length;
+  // 「今週」表示・週間バーと同じカレンダー週（月曜始まり）で数える
+  const weekStartMs = calendarWeekStart(now).getTime();
+  const weekCount = activities.filter((activity) => {
+    const started = new Date(activity.startedAt).getTime();
+    return !Number.isNaN(started) && started >= weekStartMs;
+  }).length;
   const streak = streakDays(activities, now);
   const highTrainingLoad = hasHighTrainingLoad(activities, now);
   const currentWeekKey = calendarWeekKey(now);
@@ -150,7 +153,7 @@ export default function StatsScreen() {
                   <Ionicons name="leaf-outline" size={19} color={Colors.primaryDark} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.trainingLoadTitle}>今週はよく走っています</Text>
+                  <Text style={styles.trainingLoadTitle}>この1週間はよく走っています</Text>
                   <Text style={styles.trainingLoadText}>休息も練習のうち。体の調子に合わせて過ごしましょう。</Text>
                 </View>
                 <TouchableOpacity
@@ -413,7 +416,7 @@ const styles = StyleSheet.create({
   summaryNumber: { fontSize: 24, fontWeight: Typography.fontWeight.semibold, color: Colors.textPrimary, marginTop: Spacing.sm, fontVariant: ['tabular-nums'] },
   summaryNumberAccent: { color: Colors.accent },
   summaryNumberPrimary: { color: Colors.primaryDark },
-  summaryNote: { fontSize: 10, color: Colors.textTertiary, marginTop: 3 },
+  summaryNote: { fontSize: 10, color: Colors.textSecondary, marginTop: 3 },
   summaryNoteAccent: { color: Colors.accentDark },
 
   personalRecordsCard: { backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, borderWidth: 1, borderColor: Colors.border, padding: Spacing.lg, ...Shadow.sm },
@@ -434,7 +437,7 @@ const styles = StyleSheet.create({
   monthDetailCell: { width: '50%', paddingVertical: Spacing.sm },
   monthDetailLabel: { fontSize: 9, color: Colors.textTertiary, fontWeight: Typography.fontWeight.bold },
   monthDetailValue: { fontSize: 15, color: Colors.textPrimary, fontWeight: Typography.fontWeight.extrabold, marginTop: 3, fontVariant: ['tabular-nums'] },
-  monthlyNote: { fontSize: 9, lineHeight: 14, color: Colors.textTertiary, marginTop: Spacing.md },
+  monthlyNote: { fontSize: 9, lineHeight: 14, color: Colors.textSecondary, marginTop: Spacing.md },
 
   filterBar: { flexDirection: 'row', gap: 2, backgroundColor: Colors.surfaceGray, borderRadius: BorderRadius.md, padding: 3 },
   filterButton: { paddingHorizontal: Spacing.sm, paddingVertical: 6, borderRadius: BorderRadius.sm },
@@ -454,5 +457,5 @@ const styles = StyleSheet.create({
   rowDetail: { fontSize: 11, fontWeight: Typography.fontWeight.medium, color: Colors.textSecondary, marginTop: 3 },
   rowEnd: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   rowDate: { fontSize: 11, fontWeight: Typography.fontWeight.medium, color: Colors.textSecondary },
-  historyNote: { fontSize: 10, color: Colors.textTertiary, textAlign: 'center', marginTop: Spacing.md },
+  historyNote: { fontSize: 10, color: Colors.textSecondary, textAlign: 'center', marginTop: Spacing.md },
 });

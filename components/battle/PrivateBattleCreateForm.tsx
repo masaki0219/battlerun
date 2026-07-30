@@ -46,14 +46,15 @@ export function PrivateBattleCreateForm({
           placeholder="チャレンジの説明..." placeholderTextColor={Colors.textTertiary} multiline maxLength={200} />
 
         <Text style={styles.inputLabel}>チーム分け *（最低2つ）</Text>
-        <Text style={styles.helpText}>参加者はどれか1つのチームに入って距離を競います（例: きのこの山 vs たけのこの里）</Text>
+        {/* 記入例に実在ブランド名（禁止語リスト収載語）を使わない */}
+        <Text style={styles.helpText}>参加者はどれか1つのチームに入って距離を競います（例: 朝ラン組 vs よる歩き隊）</Text>
         {categories.map((cat, i) => (
           <View key={i} style={styles.catInputRow}>
             <TextInput
               style={[styles.input, { flex: 1 }]}
               value={cat.label}
               onChangeText={(v) => onChangeCategoryLabel(i, v)}
-              placeholder={`区分 ${i + 1}（例: きのこの山）`}
+              placeholder={i === 0 ? 'チーム 1（例: 朝ラン組）' : i === 1 ? 'チーム 2（例: よる歩き隊）' : `チーム ${i + 1}`}
               placeholderTextColor={Colors.textTertiary}
               maxLength={20}
             />
@@ -65,7 +66,7 @@ export function PrivateBattleCreateForm({
           </View>
         ))}
         <TouchableOpacity style={styles.addCatBtn} onPress={onAddCategory}>
-          <Text style={styles.addCatText}>＋ 区分を追加</Text>
+          <Text style={styles.addCatText}>＋ チームを追加</Text>
         </TouchableOpacity>
 
         <Text style={styles.inputLabel}>ランキング方式</Text>
@@ -109,7 +110,7 @@ const styles = StyleSheet.create({
   card: { marginBottom: 0, marginHorizontal: 0 },
   formTitle: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.lg },
   inputLabel: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary, marginBottom: Spacing.xs, marginTop: Spacing.md },
-  helpText: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, marginBottom: Spacing.xs },
+  helpText: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary, marginBottom: Spacing.xs },
   input: {
     backgroundColor: Colors.surfaceGray, borderRadius: BorderRadius.sm,
     paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,

@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Alert, AppState, View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { Alert, AppState, View, Text, TouchableOpacity, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,12 +11,15 @@ import {
   subscribePendingActivityDiscards,
   useRecordStore,
 } from '../../stores/recordStore';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useLocation } from '../../hooks/useLocation';
 import '../../lib/locationTask';
 import { useStepCounter } from '../../hooks/useStepCounter';
 import { useRunPresence } from '../../hooks/useRunPresence';
 import { useBattleStore } from '../../stores/battleStore';
 import { Colors, Shadow } from '../../design_tokens';
+
+const KEEP_AWAKE_TAG = 'zelio-recording';
 
 const PRIMARY = Colors.primary;
 const ACCENT  = Colors.accent;
@@ -40,6 +43,11 @@ const TAB_ITEMS: {
 
 function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
+  // 文字を大きくしている端末ではラベルがタブ幅を超えて折り返し、バーからはみ出す。
+  // iOS の標準タブバーと同じくアイコンだけの表示へ切り替える
+  // （accessibilityLabel は残すので VoiceOver では従来どおり読み上げられる）。
+  const { fontScale } = useWindowDimensions();
+  const hideLabels = fontScale >= 1.3;
 
   return (
     <View style={[tb.bar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
@@ -72,9 +80,15 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
               >
                 <Ionicons name="walk" size={24} color={focused ? Colors.textOnAccent : Colors.textSecondary} />
               </TouchableOpacity>
-              <Text style={[tb.label, { color: focused ? Colors.accentDark : INK3, fontWeight: focused ? '700' : '500' }]}>
-                {item.label}
-              </Text>
+              {!hideLabels && (
+                <Text
+                  numberOfLines={1}
+                  maxFontSizeMultiplier={1.3}
+                  style={[tb.label, { color: focused ? Colors.accentDark : INK3, fontWeight: focused ? '700' : '500' }]}
+                >
+                  {item.label}
+                </Text>
+              )}
             </View>
           );
         }
@@ -93,9 +107,15 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
             accessibilityState={{ selected: focused }}
           >
             <Ionicons name={iconName} size={22} color={color} />
-            <Text style={[tb.label, { color, fontWeight: focused ? '700' : '500' }]}>
-              {item.label}
-            </Text>
+            {!hideLabels && (
+              <Text
+                numberOfLines={1}
+                maxFontSizeMultiplier={1.3}
+                style={[tb.label, { color, fontWeight: focused ? '700' : '500' }]}
+              >
+                {item.label}
+              </Text>
+            )}
           </TouchableOpacity>
         );
       })}
@@ -220,6 +240,16 @@ export default function TabLayout() {
       subscription.remove();
     };
   }, [user?.id]);
+
+  // 記録中は自動ロックを抑止する。
+  // ※ これはバックグラウンド計測の代わりではない。「常に許可」があれば画面が消えても
+  //    startLocationUpdatesAsync が継続する。ここで守るのは「使用中のみ許可」等で
+  //    フォアグラウンド監視にフォールバックしている場合に、自動ロックで計測が途切れることだけ。
+  useEffect(() => {
+    if (!isRecording) return;
+    void activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {});
+    return () => { void deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {}); };
+  }, [isRecording]);
 
   // 手動停止中だけ追跡を止める。自動停止中は再開速度を検知するためGPS更新を継続する。
   useLocation({ enabled: isRecording && (!isPaused || pauseKind === 'auto') });

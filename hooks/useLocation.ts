@@ -141,10 +141,12 @@ export function useLocation({ enabled }: { enabled: boolean }) {
         return;
       }
 
-      // バックグラウンド権限を要求
-      // ※ Expo Go では取得できても startLocationUpdatesAsync は失敗する
+      // バックグラウンド権限は「確認」のみ行う。
+      // 要求はラン開始前（record.tsx の ensureLocationPermission）で説明つきに済ませており、
+      // ここで要求するとカウントダウン後にダイアログが出て、計測だけが先に進んでしまう。
+      // ※ Expo Go では許可済みでも startLocationUpdatesAsync は失敗する
       // ※ EASビルド + UIBackgroundModes: ["location"] が必要
-      const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync().catch(() => ({ status: 'denied' as const }));
+      const { status: bgStatus } = await Location.getBackgroundPermissionsAsync().catch(() => ({ status: 'denied' as const }));
       if (cancelled) return;
 
       if (bgStatus === 'granted') {

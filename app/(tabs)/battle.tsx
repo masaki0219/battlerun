@@ -62,13 +62,15 @@ export default function BattleScreen() {
   const [activeTab, setActiveTab] = useState<Tab>('public');
   const [joiningBattleId, setJoiningBattleId] = useState<string | null>(null);
   const [localLoading, setLocalLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   // 各バトルの陣営統計をリアルタイム購読（public / private を同一フックで共通化）
   const publicStatsMap = useBattleCategoryStats(publicBattles);
   const privateStatsMap = useBattleCategoryStats(privateBattles);
   const categoryStatsMap: Record<string, CategoryStats[]> = { ...publicStatsMap, ...privateStatsMap };
 
-  // 区分選択モーダル
+  // チーム選択モーダル
   const [categoryModalBattle, setCategoryModalBattle] = useState<Battle | null>(null);
 
   // 友達チャレンジビュー
@@ -131,12 +133,20 @@ export default function BattleScreen() {
   useEffect(() => {
     if (!user) return;
     setLocalLoading(true);
+    setLoadFailed(false);
     Promise.all([
       fetchPublicBattles(),
       fetchMyMemberships(user.id),
       fetchMyPrivateBattles(user.id),
-    ]).finally(() => setLocalLoading(false));
-  }, [user]);
+    ])
+      // 失敗を握り潰すと「開催中のチャレンジがありません」が出て、
+      // データが無いのか取得できなかったのか区別できなくなる。
+      .catch((error) => {
+        console.warn('[BattleScreen] initial load failed:', error);
+        setLoadFailed(true);
+      })
+      .finally(() => setLocalLoading(false));
+  }, [user, reloadKey]);
 
   useEffect(() => {
     const ids = [...new Set(
@@ -158,6 +168,10 @@ export default function BattleScreen() {
   );
   const isParticipating = activeBattles.length > 0;
   const primaryBattle = activeBattles[0] ?? null;
+  // 「他のチャレンジ」セクションには、上のヒーローで表示中の参加チャレンジを再掲しない
+  const activeBattleIdSet = new Set(activeBattles.map((b) => b.id));
+  const otherPublicBattles = publicBattles.filter((b) => !activeBattleIdSet.has(b.id));
+  const otherPrivateBattles = privateBattles.filter((b) => !activeBattleIdSet.has(b.id));
   const primaryMembership = primaryBattle
     ? myMemberships.find((m) => m.battleId === primaryBattle.id)
     : null;
@@ -251,7 +265,7 @@ export default function BattleScreen() {
       setCategoryModalBattle(null);
       Alert.alert(
         '参加完了',
-        `「${battle.categories.find((c) => c.id === categoryId)?.label}」として参加しました。最初のランで陣営に貢献しよう`,
+        `「${battle.categories.find((c) => c.id === categoryId)?.label}」として参加しました。最初のランでチームに貢献しよう`,
         [
           { text: 'あとで', style: 'cancel' },
           { text: 'ランを始める', onPress: () => router.push('/(tabs)/record' as any) },
@@ -286,7 +300,7 @@ export default function BattleScreen() {
     }
     const validCats = createCategories.filter((c) => c.label.trim());
     if (validCats.length < 2) {
-      Alert.alert('入力エラー', '区分を2つ以上入力してください');
+      Alert.alert('入力エラー', 'チームを2つ以上入力してください');
       return;
     }
     if (!createStartAt || !createEndAt) {
@@ -592,25 +606,25 @@ export default function BattleScreen() {
         </View>
 
         {activeTab === 'public' ? (
-          publicBattles.length === 0
+          otherPublicBattles.length === 0
             ? <EmptyState
                 icon="trophy-outline"
-                title="開催中の公開チャレンジがありません"
+                title="ほかに参加できる公開チャレンジはありません"
                 hint="友達チャレンジで仲間と競うこともできます"
               />
-            : publicBattles.map(publicCard)
+            : otherPublicBattles.map(publicCard)
         ) : (
           <>
             {privateView === 'list' && (
               <>
-                {privateBattles.length === 0 && (
+                {otherPrivateBattles.length === 0 && (
                   <EmptyState
                     icon="people-outline"
-                    title="参加中の友達チャレンジがありません"
+                    title="ほかの友達チャレンジはありません"
                     hint="招待コードで友達チャレンジに参加できます"
                   />
                 )}
-                {privateBattles.map(privateCard)}
+                {otherPrivateBattles.map(privateCard)}
                 <Button
                   label={userIsPro ? '＋ 新しいチャレンジを作る' : '＋ 新しいチャレンジを作る（Pro）'}
                   onPress={() => {
@@ -731,6 +745,16 @@ export default function BattleScreen() {
         </TouchableOpacity>
       </View>
 
+      {loadFailed && (
+        <View style={styles.loadErrorBanner}>
+          <Ionicons name="cloud-offline-outline" size={16} color={Colors.error} />
+          <Text style={styles.loadErrorText}>チャレンジを読み込めませんでした</Text>
+          <TouchableOpacity onPress={() => setReloadKey((key) => key + 1)} accessibilityRole="button">
+            <Text style={styles.loadErrorRetry}>再試行</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {localLoading || isLoading ? (
         <ActivityIndicator color={Colors.primary} style={{ flex: 1 }} />
       ) : isParticipating ? (
@@ -739,10 +763,11 @@ export default function BattleScreen() {
         renderNotParticipatingView()
       )}
 
-      {/* 区分選択モーダル（パブリックラン用） */}
+      {/* チーム選択モーダル（パブリックラン用） */}
       <CategorySelectModal
         visible={categoryModalBattle !== null}
         battle={categoryModalBattle}
+        stats={categoryModalBattle ? categoryStatsMap[categoryModalBattle.id] ?? [] : []}
         onJoin={(catId) => categoryModalBattle && handleJoin(categoryModalBattle, catId)}
         onClose={() => setCategoryModalBattle(null)}
         loading={joiningBattleId === categoryModalBattle?.id}
@@ -756,6 +781,21 @@ export default function BattleScreen() {
 // ────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
+  loadErrorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  loadErrorText: { flex: 1, fontSize: Typography.fontSize.sm, color: Colors.textSecondary },
+  loadErrorRetry: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.primaryDark },
   // ヘッダーは背景と地続き（境界線なし）。小さなブランド行＋大見出しの2段組
   header: {
     flexDirection: 'row',
@@ -847,7 +887,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.borderLight,
   },
-  weekFootNote: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, fontVariant: ['tabular-nums'] },
+  weekFootNote: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary, fontVariant: ['tabular-nums'] },
 
   // Run Now
   runNowSection: { gap: Spacing.sm },
@@ -894,7 +934,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   emptyStateTitle: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.semibold, color: Colors.textSecondary },
-  emptyStateHint: { fontSize: Typography.fontSize.sm, color: Colors.textTertiary, textAlign: 'center' },
+  emptyStateHint: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary, textAlign: 'center' },
 
   // State B のインライン招待コード入力カード
   formTitle: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.lg },

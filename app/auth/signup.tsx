@@ -6,6 +6,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useAuthStore } from '../../stores/authStore';
+import { authErrorMessage } from '../../lib/authErrors';
+import { validateDisplayName, DISPLAY_NAME_MAX_LENGTH } from '../../lib/validation/displayName';
 import { Button } from '../../components/ui/Button';
 import { Colors, Typography, Spacing, BorderRadius } from '../../design_tokens';
 
@@ -20,6 +22,12 @@ export default function SignupScreen() {
       Alert.alert('エラー', 'すべての項目を入力してください');
       return;
     }
+    // ニックネームは他の参加者に常時表示されるため、チャレンジ名と同じ基準で検証する
+    const nameCheck = validateDisplayName(name);
+    if (!nameCheck.ok) {
+      Alert.alert('ニックネームを確認してください', nameCheck.reason);
+      return;
+    }
     if (password.length < 6) {
       Alert.alert('エラー', 'パスワードは6文字以上で設定してください');
       return;
@@ -27,8 +35,8 @@ export default function SignupScreen() {
     try {
       await signUp(email, password, name);
       // 画面遷移は onAuthStateChanged → user セット → TabLayout に任せる
-    } catch (e: any) {
-      Alert.alert('登録失敗', e.message ?? '登録に失敗しました');
+    } catch (e: unknown) {
+      Alert.alert('登録できませんでした', authErrorMessage(e));
     }
   }
 
@@ -36,17 +44,20 @@ export default function SignupScreen() {
     <SafeAreaView style={styles.safe}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.logo}>🏃 ZELIO</Text>
+          <Text style={styles.logo}>ZELIO</Text>
           <Text style={styles.tagline}>新規アカウント作成</Text>
         </View>
 
         <View style={styles.form}>
           <TextInput
             style={styles.input}
-            placeholder="ニックネーム"
+            placeholder={`ニックネーム（${DISPLAY_NAME_MAX_LENGTH}文字以内）`}
             placeholderTextColor={Colors.textTertiary}
             value={name}
             onChangeText={setName}
+            maxLength={DISPLAY_NAME_MAX_LENGTH}
+            textContentType="nickname"
+            returnKeyType="next"
           />
           <TextInput
             style={styles.input}
@@ -57,6 +68,9 @@ export default function SignupScreen() {
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
+            textContentType="username"
+            autoComplete="email"
+            returnKeyType="next"
           />
           <TextInput
             style={styles.input}
@@ -65,10 +79,17 @@ export default function SignupScreen() {
             value={password}
             onChangeText={setPassword}
             secureTextEntry
+            textContentType="newPassword"
+            autoComplete="new-password"
+            autoCapitalize="none"
+            returnKeyType="go"
+            onSubmitEditing={handleSignup}
           />
+          <Text style={styles.nameNote}>ニックネームは他の参加者のランキングに表示されます。</Text>
 
           <Button label="アカウントを作成" onPress={handleSignup} loading={isLoading} style={styles.btn} />
-          <Button label="ログインに戻る" onPress={() => router.back()} variant="ghost" />
+          {/* オンボーディングから replace で来た場合は戻り先が無いため back() は使わない */}
+          <Button label="ログインに戻る" onPress={() => router.replace('/auth/login')} variant="ghost" />
           <Text style={styles.consent}>登録すると、以下の内容に同意したものとみなされます。</Text>
           <View style={styles.legalRow}>
             <TouchableOpacity onPress={() => router.push('/legal/terms')} accessibilityRole="link"><Text style={styles.legalText}>利用規約</Text></TouchableOpacity>
@@ -98,8 +119,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
+  nameNote: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary, marginTop: -Spacing.xs },
   btn: { marginTop: Spacing.sm },
-  consent: { textAlign: 'center', fontSize: Typography.fontSize.xs, color: Colors.textTertiary, marginTop: Spacing.sm },
+  consent: { textAlign: 'center', fontSize: Typography.fontSize.xs, color: Colors.textSecondary, marginTop: Spacing.sm },
   legalRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
   legalText: { fontSize: Typography.fontSize.xs, color: Colors.primary },
   legalDivider: { marginHorizontal: Spacing.sm, color: Colors.textTertiary },

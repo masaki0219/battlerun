@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { StatBlock } from '../ui/StatBlock';
 import { FactionColumns } from '../viz/FactionColumns';
 import { Colors, DarkColors, Typography, Spacing, BorderRadius, Shadow } from '../../design_tokens';
-import { sortedStats, statValue, daysLeft } from '../../utils/displayStats';
+import { sortedStats, statValue, daysLeft, remainingLabel } from '../../utils/displayStats';
 import type { Battle, CategoryStats } from '../../types';
 
 /** 自分の陣営内での立ち位置（useTeamRanking の結果を表示用に絞ったもの） */
@@ -40,6 +40,8 @@ export function ActiveBattleHero({
   const allZero = sorted.every((item) => statValue(item, rt) <= 0);
   const totalTeams = sorted.length;
   const days = daysLeft(battle.endAt);
+  // 表示は詳細画面のカウントダウンと同じ切り捨て基準に揃える（days は逆転ペースの計算用）
+  const remaining = remainingLabel(battle.endAt);
 
   const myStat = myIndex >= 0 ? sorted[myIndex] : undefined;
   const myKm = myStat ? statValue(myStat, rt) : 0;
@@ -82,14 +84,14 @@ export function ActiveBattleHero({
                   <View style={styles.iconChip}>
                     <Ionicons name="flash" size={13} color={Colors.textOnAccent} />
                   </View>
-                  <Text style={styles.eyebrow}>参加中のチャレンジ</Text>
+                  <Text style={styles.eyebrow} maxFontSizeMultiplier={1.3}>参加中のチャレンジ</Text>
                 </View>
                 <Text style={styles.title} numberOfLines={2}>{battle.title}</Text>
               </View>
-              {days !== null && (
+              {remaining !== null && (
                 <View style={styles.daysPill}>
                   <Text style={styles.daysPillLabel}>残り</Text>
-                  <Text style={styles.daysPillValue}>{days}日</Text>
+                  <Text style={styles.daysPillValue}>{remaining}</Text>
                 </View>
               )}
             </View>
@@ -121,7 +123,7 @@ export function ActiveBattleHero({
                 {targetKmPerDay != null && !bothZero && (
                   <View style={styles.insight}>
                     <Ionicons name="speedometer-outline" size={15} color={DarkColors.accent} />
-                    <Text style={styles.insightText}>
+                    <Text style={styles.insightText} maxFontSizeMultiplier={1.3}>
                       相手の距離が増えなければ <Text style={styles.insightStrong}>1日 {targetKmPerDay.toFixed(1)}km</Text> で逆転
                     </Text>
                   </View>
@@ -137,7 +139,7 @@ export function ActiveBattleHero({
             {activeBattleCount > 1 && (
               <View style={styles.multiChip}>
                 <Ionicons name="layers-outline" size={11} color={DarkColors.textSecondary} />
-                <Text style={styles.multiText}>他 {activeBattleCount - 1} 件のチャレンジにも参加中</Text>
+                <Text style={styles.multiText} maxFontSizeMultiplier={1.3}>他 {activeBattleCount - 1} 件のチャレンジにも参加中</Text>
               </View>
             )}
           </View>
@@ -170,7 +172,7 @@ export function ActiveBattleHero({
             </View>
 
             <View style={styles.footerLink}>
-              <Text style={styles.footerLinkText}>詳細を見る</Text>
+              <Text style={styles.footerLinkText} maxFontSizeMultiplier={1.3}>詳細を見る</Text>
               <Ionicons name="chevron-forward" size={14} color={DarkColors.primary} />
             </View>
           </View>
@@ -218,7 +220,6 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.xl,
     fontWeight: Typography.fontWeight.bold,
     color: DarkColors.textPrimary,
-    lineHeight: 27,
   },
   daysPill: {
     alignItems: 'center',
@@ -242,7 +243,6 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     justifyContent: 'space-between',
     gap: Spacing.md,
-    marginBottom: -Spacing.sm,
   },
   standingLeft: { flex: 1 },
   standingRight: { alignItems: 'flex-end' },

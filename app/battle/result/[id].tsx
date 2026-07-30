@@ -21,6 +21,7 @@ import { VersusGauge } from '../../../components/viz/VersusGauge';
 import { ProgressRing } from '../../../components/viz/ProgressRing';
 import { contributionShare } from '../../../utils/displayStats';
 import { useBattleParticipants } from '../../../hooks/useBattleParticipants';
+import { decorLabel } from '../../../lib/locale';
 
 function mapFirestoreToBattle(id: string, data: Record<string, unknown>): Battle {
   return {
@@ -191,7 +192,7 @@ export default function BattleResultScreen() {
   // 称号（優勝/準優勝陣営の一員）はサーバー（battleStatusScheduler）が付与したuser.titlesを正とする。
   // 結果画面を開いたクライアントでは計算しない。
   const myTitle = user?.titles?.find((t) => t.battleId === localBattle.id) ?? null;
-  const titleName = myTitle ? (myTitle.rank === 1 ? '優勝陣営の一員' : '準優勝陣営の一員') : null;
+  const titleName = myTitle ? (myTitle.rank === 1 ? '優勝チームの一員' : '準優勝チームの一員') : null;
 
   return (
     <SafeAreaView style={s.root} edges={['top']}>
@@ -208,7 +209,7 @@ export default function BattleResultScreen() {
         {/* ── 最終 VS ゲージ（ダーク演出） ── */}
         {!loading && gaugeLeft && gaugeRight && (
           <View style={s.finalVs}>
-            <MonoLabel color={DarkColors.textTertiary} size={9}>最終結果 / FINAL</MonoLabel>
+            <MonoLabel color={DarkColors.textTertiary} size={9}>{decorLabel('最終結果', 'FINAL')}</MonoLabel>
             <View style={{ marginTop: 12 }}>
               <VersusGauge
                 left={{ label: gaugeLeft.label, km: valOf(gaugeLeft), isMine: !!myTeam }}
@@ -223,7 +224,7 @@ export default function BattleResultScreen() {
 
         {/* ── Hero ── */}
         <View style={s.heroCard}>
-          <MonoLabel color={Colors.textTertiary} size={9}>RESULT / チャレンジ終了</MonoLabel>
+          <MonoLabel color={Colors.textTertiary} size={9}>{decorLabel('チャレンジ終了', 'RESULT')}</MonoLabel>
           <Text style={s.heroTitle}>{localBattle.title}</Text>
           <Text style={s.heroDates}>{startDate} 〜 {endDate}</Text>
 
@@ -248,7 +249,7 @@ export default function BattleResultScreen() {
         {/* ── 称号発表 ── */}
         {titleName && (
           <View style={s.section}>
-            <MonoLabel color={Colors.textTertiary} size={9}>称号獲得 / TITLE EARNED</MonoLabel>
+            <MonoLabel color={Colors.textTertiary} size={9}>{decorLabel('称号獲得', 'TITLE EARNED')}</MonoLabel>
             <View style={s.titleCard}>
               <View style={s.titleIconWrap}>
                 <Ionicons name="ribbon" size={28} color={Colors.accentYellow} />
@@ -256,7 +257,7 @@ export default function BattleResultScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={s.titleName}>{titleName}</Text>
                 <Text style={s.titleDesc}>
-                  {myTitle?.teamName ? `「${myTitle.teamName}」として走った仲間に贈られる称号` : '陣営として勝ち取った称号'}
+                  {myTitle?.teamName ? `「${myTitle.teamName}」として走った仲間に贈られる称号` : 'チームとして勝ち取った称号'}
                 </Text>
               </View>
               <View style={s.titleNewChip}><Text style={s.titleNew}>NEW</Text></View>
@@ -266,7 +267,7 @@ export default function BattleResultScreen() {
 
         {/* ── 個人成績 ── */}
         <View style={s.section}>
-          <MonoLabel color={Colors.textTertiary} size={9}>個人成績 / MY STATS</MonoLabel>
+          <MonoLabel color={Colors.textTertiary} size={9}>{decorLabel('個人成績', 'MY STATS')}</MonoLabel>
           <View style={s.statsCard}>
             {myTeam && (
               <View style={s.contribRow}>
@@ -274,7 +275,7 @@ export default function BattleResultScreen() {
                   <Text style={s.contribPct}>{Math.round(myShare * 100)}%</Text>
                 </ProgressRing>
                 <Text style={s.contribText}>
-                  あなたは陣営の{'\n'}<Text style={s.contribBold}>{Math.round(myShare * 100)}%</Text> を走った
+                  あなたはチームの{'\n'}<Text style={s.contribBold}>{Math.round(myShare * 100)}%</Text> を走った
                 </Text>
               </View>
             )}
@@ -290,7 +291,8 @@ export default function BattleResultScreen() {
               </View>
               <View style={s.statDivider} />
               <View style={s.statItem}>
-                <MonoLabel color={Colors.textTertiary} size={8}>陣営内順位</MonoLabel>
+                {/* myRank は陣営同士の最終順位（チーム内の個人順位ではない）なのでラベルを値に合わせる */}
+                <MonoLabel color={Colors.textTertiary} size={8}>チーム順位</MonoLabel>
                 <Text style={s.statVal}>{myRank ?? '—'}<Text style={s.statUnit}> 位</Text></Text>
               </View>
             </View>
@@ -300,7 +302,7 @@ export default function BattleResultScreen() {
         {/* ── 陣営ランキング ── */}
         {sorted.length > 0 && (
           <View style={s.section}>
-            <MonoLabel color={Colors.textTertiary} size={9}>最終ランキング / FINAL RANKING</MonoLabel>
+            <MonoLabel color={Colors.textTertiary} size={9}>{decorLabel('最終ランキング', 'FINAL RANKING')}</MonoLabel>
             <View style={s.rankCard}>
               {sorted.map((cat, i) => {
                 const isMe = cat.categoryId === myCatId;
@@ -325,7 +327,7 @@ export default function BattleResultScreen() {
         {/* ── 個人貢献ランキング (上位5名) ── */}
         {participants.length > 0 && (
           <View style={s.section}>
-            <MonoLabel color={Colors.textTertiary} size={9}>個人貢献ランキング / TOP RUNNERS</MonoLabel>
+            <MonoLabel color={Colors.textTertiary} size={9}>{decorLabel('個人貢献ランキング', 'TOP RUNNERS')}</MonoLabel>
             <View style={s.rankCard}>
               {participants.slice(0, 5).map((p, i) => {
                 const isMe = p.userId === user?.id;
@@ -350,7 +352,7 @@ export default function BattleResultScreen() {
 
         {/* ── 共有 ── */}
         <View style={s.section}>
-          <MonoLabel color={Colors.textTertiary} size={9}>結果をシェア / SHARE RESULT</MonoLabel>
+          <MonoLabel color={Colors.textTertiary} size={9}>{decorLabel('結果をシェア', 'SHARE RESULT')}</MonoLabel>
           <View ref={shareCardRef} collapsable={false} style={s.sharePreview}>
             <View style={s.sharePreviewContent}>
               <Text style={s.sharePreviewTitle}>{localBattle.title}</Text>
@@ -436,7 +438,7 @@ const s = StyleSheet.create({
     borderBottomColor: Colors.border,
   },
   heroTitle: { fontSize: 20, fontWeight: '900', color: Colors.textPrimary, textAlign: 'center', marginTop: 4 },
-  heroDates: { fontSize: 12, color: Colors.textTertiary, fontWeight: '600' },
+  heroDates: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600' },
   medalBlock: {
     marginTop: 20,
     alignItems: 'center',
@@ -447,7 +449,7 @@ const s = StyleSheet.create({
   },
   medalEmoji: { fontSize: 64, lineHeight: 72 },
   medalLabel: { fontSize: 20, fontWeight: '900', letterSpacing: 0.5, marginTop: 4 },
-  medalTeamName: { fontSize: 13, color: Colors.textTertiary, fontWeight: '600', marginTop: 2 },
+  medalTeamName: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600', marginTop: 2 },
 
   // Section
   section: { paddingHorizontal: 16, marginTop: 16 },
@@ -470,7 +472,7 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   titleName: { fontSize: 16, fontWeight: '900', color: Colors.textPrimary },
-  titleDesc: { fontSize: 11, color: Colors.textTertiary, marginTop: 2 },
+  titleDesc: { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
   titleNewChip: {
     backgroundColor: Colors.accentYellow,
     borderRadius: BorderRadius.sm,

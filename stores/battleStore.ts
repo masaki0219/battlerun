@@ -210,7 +210,7 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
         const currentDistance = (participantSnap.data()['totalDistanceKm'] as number | undefined) ?? 0;
         const currentActivities = (participantSnap.data()['activityCount'] as number | undefined) ?? 0;
         if (currentDistance > 0 || currentActivities > 0) {
-          throw new Error('一度記録した後は陣営を変更できません。');
+          throw new Error('一度記録した後はチームを変更できません。');
         }
         transaction.update(participantRef, { categoryId: categoryId ?? null });
       }
@@ -240,7 +240,7 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
   createBattle: async ({ title, description, categories, rankingType, startAt, endAt, userId, isPublic, seasonId }) => {
     const titleValidation = validateBattleTitle(title);
     if (!titleValidation.ok) {
-      throw new Error(titleValidation.reason ?? 'このチーム名は利用できません');
+      throw new Error(titleValidation.reason ?? 'このチャレンジ名は利用できません');
     }
 
     const plan = useAuthStore.getState().user?.plan ?? 'free';

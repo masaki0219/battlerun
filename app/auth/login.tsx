@@ -4,10 +4,12 @@ import {
   KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
+import { authErrorMessage } from '../../lib/authErrors';
 import { Button } from '../../components/ui/Button';
 import { Colors, Typography, Spacing, BorderRadius } from '../../design_tokens';
 
@@ -15,6 +17,7 @@ export default function LoginScreen() {
   const { signIn, isLoading } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   async function handleForgotPassword() {
     if (!email) {
@@ -36,8 +39,8 @@ export default function LoginScreen() {
     }
     try {
       await signIn(email, password);
-    } catch (e: any) {
-      Alert.alert('ログイン失敗', e.message ?? '認証に失敗しました');
+    } catch (e: unknown) {
+      Alert.alert('ログインできませんでした', authErrorMessage(e));
     }
   }
 
@@ -45,7 +48,7 @@ export default function LoginScreen() {
     <SafeAreaView style={styles.safe}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.logo}>🏃 ZELIO</Text>
+          <Text style={styles.logo}>ZELIO</Text>
           <Text style={styles.tagline}>走る距離が、絆になる。</Text>
         </View>
 
@@ -59,15 +62,34 @@ export default function LoginScreen() {
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
+            textContentType="username"
+            autoComplete="email"
+            returnKeyType="next"
           />
-          <TextInput
-            style={styles.input}
-            placeholder="パスワード"
-            placeholderTextColor={Colors.textTertiary}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
+          <View>
+            <TextInput
+              style={[styles.input, styles.passwordInput]}
+              placeholder="パスワード"
+              placeholderTextColor={Colors.textTertiary}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              textContentType="password"
+              autoComplete="current-password"
+              autoCapitalize="none"
+              returnKeyType="go"
+              onSubmitEditing={handleLogin}
+            />
+            <TouchableOpacity
+              style={styles.passwordToggle}
+              onPress={() => setShowPassword((v) => !v)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel={showPassword ? 'パスワードを隠す' : 'パスワードを表示'}
+            >
+              <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={Colors.textTertiary} />
+            </TouchableOpacity>
+          </View>
 
           <Button label="ログイン" onPress={handleLogin} loading={isLoading} style={styles.btn} />
 
@@ -104,6 +126,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg, fontSize: Typography.fontSize.md,
     color: Colors.textPrimary, borderWidth: 1, borderColor: Colors.border,
   },
+  passwordInput: { paddingRight: 44 },
+  passwordToggle: { position: 'absolute', right: 0, top: 0, bottom: 0, width: 44, alignItems: 'center', justifyContent: 'center' },
   btn: { marginTop: Spacing.sm },
   forgotBtn: { alignSelf: 'center' },
   forgotText: { fontSize: Typography.fontSize.sm, color: Colors.primary },

@@ -158,7 +158,7 @@ export const onUserTitlesUpdated = onDocumentUpdated('users/{userId}', async (ev
 
   await Promise.all(
     newTitles.map(async (title) => {
-      const titleLabel = title.rank === 1 ? '優勝陣営の一員' : '準優勝陣営の一員';
+      const titleLabel = title.rank === 1 ? '優勝チームの一員' : '準優勝チームの一員';
       const teamText = title.teamName ? `「${title.teamName}」として` : '';
       const notifTitle = `称号「${titleLabel}」を獲得しました！`;
       const notifBody = `「${title.battleTitle}」で${teamText}走った成果が認められました`;

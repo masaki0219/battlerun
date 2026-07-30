@@ -159,6 +159,6 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 12,
-    color: Colors.textTertiary,
+    color: Colors.textSecondary,
   },
 });

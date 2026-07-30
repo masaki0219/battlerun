@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { calendarWeekKey, daysLeft, hasHighTrainingLoad, streakDays, weekOverWeek, weeklyBuckets } from '../utils/displayStats';
+import { calendarWeekKey, daysLeft, hasHighTrainingLoad, streakDays, weekOverWeek, weekStartLabel, weeklyBuckets } from '../utils/displayStats';
 import { emptyAutoPauseDetector, evaluateAutoPause } from '../utils/autoPause';
 import { buildVoiceCoachAnnouncement, DEFAULT_VOICE_COACH_SETTINGS, spokenPace } from '../utils/voiceCoach';
 import { isQuietHours } from '../utils/notificationTiming';
@@ -29,6 +29,18 @@ const items = [
 assert.equal(weeklyBuckets(items, now).reduce((sum, day) => sum + day.km, 0), 5);
 assert.equal(streakDays(items, now), 2);
 assert.deepEqual(weekOverWeek(items, now), { thisWeekKm: 5, lastWeekKm: 4, changeRatio: 0.25 });
+
+// カレンダー週（月曜始まり）の境界: now=火曜のとき、前日の日曜は「先週」に入り月曜リセットされる
+const tuesday = new Date('2026-07-07T12:00:00+09:00');
+const boundaryItems = [
+  activity('2026-07-05T07:00:00+09:00', 4), // 日曜 → 先週
+  activity('2026-07-06T07:00:00+09:00', 2), // 月曜 → 今週
+];
+assert.deepEqual(weekOverWeek(boundaryItems, tuesday), { thisWeekKm: 2, lastWeekKm: 4, changeRatio: -0.5 });
+assert.equal(weeklyBuckets(boundaryItems, tuesday).reduce((sum, day) => sum + day.km, 0), 2);
+assert.equal(weeklyBuckets(boundaryItems, tuesday)[0].label, '月'); // 月曜始まり固定
+assert.equal(weeklyBuckets(boundaryItems, tuesday)[1].isToday, true); // 火曜=今日
+assert.equal(weekStartLabel(now), '7月6日〜'); // 日曜時点でも週の起点は月曜
 assert.equal(daysLeft('invalid', now), null);
 assert.equal(daysLeft('2026-07-14T12:00:00+09:00', now), 2);
 assert.equal(calendarWeekKey(new Date(2026, 6, 12, 12)), '2026-07-06');

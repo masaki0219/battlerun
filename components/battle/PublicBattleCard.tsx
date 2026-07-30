@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Card } from '../ui/Card';
 import { BattleRankRows } from './BattleRankRows';
 import { Colors, Typography, Spacing, BorderRadius } from '../../design_tokens';
-import { sortedStats, daysLeft, statValue } from '../../utils/displayStats';
+import { sortedStats, remainingLabel, statValue } from '../../utils/displayStats';
 import type { Battle, CategoryStats } from '../../types';
 
 interface Props {
@@ -23,7 +23,7 @@ interface Props {
 export function PublicBattleCard({
   battle, stats, myCategoryId, joined, seasonTitle, expanded, onToggleExpand, onPress, onPressJoin,
 }: Props) {
-  const days = daysLeft(battle.endAt);
+  const remaining = remainingLabel(battle.endAt);
   const sorted = sortedStats(stats, battle.rankingType);
   const mine = sorted.find((s) => s.categoryId === myCategoryId);
   const allZero = sorted.every((item) => statValue(item, battle.rankingType) <= 0);
@@ -32,8 +32,8 @@ export function PublicBattleCard({
     : 0;
 
   const meta = [
-    days !== null ? `残り ${days} 日` : null,
-    joined && myRank > 0 ? `${myRank}位 / ${sorted.length}陣営` : null,
+    remaining !== null ? `残り ${remaining}` : null,
+    joined && myRank > 0 ? `${myRank}位 / ${sorted.length}チーム` : null,
     seasonTitle ?? null,
   ].filter(Boolean).join('　・　');
 
