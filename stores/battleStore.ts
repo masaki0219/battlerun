@@ -7,7 +7,11 @@ import { db, functions } from '../lib/firebase';
 import { httpsCallable } from 'firebase/functions';
 import * as Crypto from 'expo-crypto';
 import { useAuthStore } from './authStore';
-import { validateBattleTitle } from '../lib/validation/battleTitle';
+import {
+  validateBattleCategory,
+  validateBattleDescription,
+  validateBattleTitle,
+} from '../lib/validation/battleTitle';
 import {
   cheerDeclaration as createDeclarationCheer,
   createDeclaration as createRunDeclaration,
@@ -241,6 +245,16 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
     const titleValidation = validateBattleTitle(title);
     if (!titleValidation.ok) {
       throw new Error(titleValidation.reason ?? 'このチャレンジ名は利用できません');
+    }
+    const descriptionValidation = validateBattleDescription(description);
+    if (!descriptionValidation.ok) {
+      throw new Error(descriptionValidation.reason ?? 'この説明は利用できません');
+    }
+    for (const category of categories) {
+      const categoryValidation = validateBattleCategory(category.label);
+      if (!categoryValidation.ok) {
+        throw new Error(categoryValidation.reason ?? 'このチーム名は利用できません');
+      }
     }
 
     const plan = useAuthStore.getState().user?.plan ?? 'free';

@@ -1,16 +1,17 @@
 # App Store 提出情報（下書き）
 
-最終更新: 2026-07-20
+最終更新: 2026-07-31
 
 App Store Connectへ転記するための下書き。提出直前に、実際のビルド・有効なデモアカウント・連絡担当者情報と照合すること。
 
 ## 公開URL
 
-- Support URL: https://zelio-run.web.app/support.html
-- Privacy Policy URL: https://zelio-run.web.app/legal/privacy.html
-- Terms of Service URL: https://zelio-run.web.app/legal/terms.html
+- Support URL: https://masaki0219.github.io/app-support/zelio/
+- Marketing URL: https://masaki0219.github.io/
+- Privacy Policy URL: https://masaki0219.github.io/app-support/zelio/privacy.html
+- Terms of Service URL: https://masaki0219.github.io/app-support/zelio/terms.html
 
-Firebase Hostingをデプロイした後、ログアウト状態のSafariで3URLが表示できることを確認する。
+GitHub Pagesのデプロイ後、ログアウト状態のSafariで4URLが表示できることを確認する。
 
 ## App Privacy 回答案
 
@@ -23,7 +24,7 @@ Firebase Hostingをデプロイした後、ログアウト状態のSafariで3URL
 | Health & Fitness / Fitness | 走行・歩行距離、歩数、時間、ペース、活動統計 |
 | Location / Precise Location | GPSルート、水平・垂直精度、高度 |
 | User Content / Photos or Videos | 任意のプロフィール画像 |
-| User Content / Other User Content | 宣言メモ、リアクション、応援、チャレンジ名・説明 |
+| User Content / Other User Content | 宣言メモ、リアクション、応援、チャレンジ名・説明、通報理由・補足・対象内容の控え |
 | Identifiers / User ID | Firebase UID、アプリ内アカウントID |
 | Identifiers / Device ID | Expo Push Token（通知先端末の識別子） |
 | Purchases / Purchase History | RevenueCat entitlement、商品・購入状態 |
@@ -68,10 +69,14 @@ To test background GPS recording: open the Run tab, select GPS mode, tap START, 
 
 The demo account is already participating in an active official challenge. A second test account has been placed in another faction so the team ranking is visible.
 
+Guideline 1.2 safety features: objectionable text is filtered before profile names, challenge content, and declarations are posted. To report or block a user, open the Challenge tab and tap the ellipsis next to another member's declaration or live-running row. The same safety menu is available from another user's public activity and from challenge details. Choose a report reason and submit; reports are delivered privately to the admin moderation queue. Blocking immediately hides that user's declarations, live presence, ranking entries, and public activities, and prevents reactions, cheers, and related notifications in both directions. Blocked users can be reviewed or unblocked from Profile > Blocked Users. Published support contact: https://masaki0219.github.io/app-support/zelio/
+
 ZELIO Pro is an auto-renewable subscription. Products: monthly and yearly. Purchase restoration is available from Profile > Restore Purchases.
 
-Support URL: https://zelio-run.web.app/support.html
-Privacy Policy: https://zelio-run.web.app/legal/privacy.html
+Support URL: https://masaki0219.github.io/app-support/zelio/
+Marketing URL: https://masaki0219.github.io/
+Privacy Policy: https://masaki0219.github.io/app-support/zelio/privacy.html
+Terms of Service: https://masaki0219.github.io/app-support/zelio/terms.html
 ```
 
 審査ノートへは、必要に応じてバックグラウンド記録の短い画面収録を添付する。デモアカウント情報はNotesへ重複記載せず、App Review Informationの専用欄へ入力する。
@@ -83,4 +88,5 @@ Privacy Policy: https://zelio-run.web.app/legal/privacy.html
 - [ ] デモアカウントでログインでき、公式チャレンジと相手区分が表示される
 - [ ] monthly / yearlyの商品が審査対象ビルドから表示・購入・復元できる
 - [ ] App Privacy回答が本ファイルと実際のSDK構成に一致する
+- [ ] Guideline 1.2の通報・ブロック・投稿前フィルタ・管理者キューを2アカウントで確認する
 - [ ] 連絡担当者、電話、メール、デモ認証情報のプレースホルダーを置換

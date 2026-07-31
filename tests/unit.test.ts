@@ -8,5 +8,6 @@ import './gpsQuality.test';
 import './battleCredit.test';
 import './invite.test';
 import './reviewFixes.test';
+import './moderation.test';
 
 console.log('all unit tests passed');

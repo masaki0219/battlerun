@@ -267,6 +267,27 @@ async function run() {
     'succeed',
   );
   await check(
+    'users/{uid}: 明白な嫌がらせ表現を含むニックネームは拒否',
+    updateDoc(doc(aliceDb, 'users/alice'), { name: '消えろ' }),
+    'fail',
+  );
+  await check(
+    'publicProfiles: 明白な嫌がらせ表現を含む公開名は拒否',
+    updateDoc(doc(aliceDb, 'publicProfiles/alice'), { name: '殺すぞ' }),
+    'fail',
+  );
+  await check(
+    'battles: 不適切な説明の作成はサーバールールで拒否',
+    setDoc(doc(adminDb, 'battles/unsafeBattle'), {
+      type: 'public', seasonId: null, title: '安全なタイトル', description: '消えろ',
+      categories: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }],
+      categoryIds: ['a', 'b'], rankingType: 'total', startAt: Timestamp.now(),
+      endAt: Timestamp.fromMillis(Date.now() + 86400000), status: 'active',
+      createdBy: 'adminUser', inviteCode: null, createdAt: Timestamp.now(),
+    }),
+    'fail',
+  );
+  await check(
     'private battle: 作成者でもtypeをpublicへ変更できない',
     updateDoc(doc(aliceDb, 'battles/battle1'), { type: 'public' }),
     'fail',
@@ -318,6 +339,14 @@ async function run() {
     setDoc(doc(carolDb, 'battles/battle1/declarations/alice_20990102'), {
       uid: 'alice', dateKey: '20990102', plannedAt: Timestamp.fromMillis(Date.now() + 3_600_000),
       status: 'planned', createdAt: Timestamp.now(),
+    }),
+    'fail',
+  );
+  await check(
+    'declarations: 不適切なひとことはサーバールールで拒否',
+    setDoc(doc(aliceDb, 'battles/battle1/declarations/alice_20990104'), {
+      uid: 'alice', dateKey: '20990104', plannedAt: Timestamp.fromMillis(Date.now() + 3_600_000),
+      note: '死ね', status: 'planned', createdAt: Timestamp.now(),
     }),
     'fail',
   );
@@ -481,6 +510,110 @@ async function run() {
     'presence setting: boolean以外の公開設定は拒否',
     updateDoc(doc(aliceDb, 'users/alice'), { runningPresenceVisible: 'yes' }),
     'fail',
+  );
+
+  // ── user blocks / blocked interactions ─────────────────────────
+  await check(
+    'blocks: 本人は他ユーザーをブロックできる',
+    setDoc(doc(aliceDb, 'users/alice/blocks/carol'), {
+      blockerUid: 'alice', blockedUid: 'carol', displayName: 'Carol', createdAt: serverTimestamp(),
+    }),
+    'succeed',
+  );
+  await check(
+    'blocks: 本人は自分のブロック一覧を読める',
+    getDoc(doc(aliceDb, 'users/alice/blocks/carol')),
+    'succeed',
+  );
+  await check(
+    'blocks: 他人はブロック関係を読めない',
+    getDoc(doc(bobDb, 'users/alice/blocks/carol')),
+    'fail',
+  );
+  await check(
+    'blocks: 他人のブロック文書は作成できない',
+    setDoc(doc(bobDb, 'users/alice/blocks/bob'), {
+      blockerUid: 'alice', blockedUid: 'bob', displayName: 'Bob', createdAt: serverTimestamp(),
+    }),
+    'fail',
+  );
+  const blockedDeclarationPath = 'battles/battle1/declarations/alice_20990105';
+  await check(
+    'blocks: ブロック確認用の宣言を本人は作成できる',
+    setDoc(doc(aliceDb, blockedDeclarationPath), {
+      uid: 'alice', dateKey: '20990105', plannedAt: Timestamp.fromMillis(Date.now() + 3_600_000),
+      note: '走ります', status: 'planned', createdAt: Timestamp.now(),
+    }),
+    'succeed',
+  );
+  await check(
+    'blocks: ブロック関係にある相手は宣言へ応援できない',
+    setDoc(doc(carolDb, `${blockedDeclarationPath}/cheers/carol`), {
+      fromUid: 'carol', createdAt: Timestamp.now(),
+    }),
+    'fail',
+  );
+  await check(
+    'blocks: ブロック関係にある相手は公開記録へリアクションできない',
+    setDoc(doc(carolDb, 'activities/publicAct/reactions/carol'), {
+      userId: 'carol', type: '🔥', createdAt: serverTimestamp(),
+    }),
+    'fail',
+  );
+  await check(
+    'blocks: 本人はブロックを解除できる',
+    deleteDoc(doc(aliceDb, 'users/alice/blocks/carol')),
+    'succeed',
+  );
+  await check(
+    'blocks: 解除後は公開記録へリアクションできる',
+    setDoc(doc(carolDb, 'activities/publicAct/reactions/carol'), {
+      userId: 'carol', type: '🔥', createdAt: serverTimestamp(),
+    }),
+    'succeed',
+  );
+
+  // ── content reports ─────────────────────────────────────────────
+  const reportPath = 'contentReports/report1';
+  await check(
+    'contentReports: 認証ユーザーは検証済み形式で通報できる',
+    setDoc(doc(carolDb, reportPath), {
+      reporterUid: 'carol', targetType: 'declaration', targetId: 'alice_20990101',
+      targetUid: 'alice', battleId: 'battle1', contentSnapshot: '通報対象',
+      reason: 'harassment', details: '確認してください', status: 'pending',
+      createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    }),
+    'succeed',
+  );
+  await check(
+    'contentReports: 通報者本人にも内部レポートは公開しない',
+    getDoc(doc(carolDb, reportPath)),
+    'fail',
+  );
+  await check(
+    'contentReports: reporterUidのなりすましは拒否',
+    setDoc(doc(bobDb, 'contentReports/spoof'), {
+      reporterUid: 'alice', targetType: 'user', targetId: 'alice', reason: 'spam',
+      status: 'pending', createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    }),
+    'fail',
+  );
+  await check(
+    'contentReports: 管理者は通報を読める',
+    getDoc(doc(adminDb, reportPath)),
+    'succeed',
+  );
+  await check(
+    'contentReports: 一般ユーザーは処理状態を変更できない',
+    updateDoc(doc(carolDb, reportPath), { status: 'resolved' }),
+    'fail',
+  );
+  await check(
+    'contentReports: 管理者は監査情報付きで処理状態を更新できる',
+    updateDoc(doc(adminDb, reportPath), {
+      status: 'reviewing', reviewedBy: 'adminUser', reviewedAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    }),
+    'succeed',
   );
 
   // ── users/{uid} ──────────────────────────────────────────────────

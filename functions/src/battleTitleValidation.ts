@@ -1,18 +1,28 @@
 import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 import { logger } from 'firebase-functions/v2';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-import { BANNED_WORDS } from './bannedWords';
+import { containsBannedWord } from './bannedWords';
 
 const MAX_TITLE_LENGTH = 30;
 
-function normalize(text: string): string {
-  return text.normalize('NFKC').toLowerCase();
-}
-
 function isTitleInvalid(title: string): boolean {
   if (title.length === 0 || title.length > MAX_TITLE_LENGTH) return true;
-  const normalized = normalize(title);
-  return BANNED_WORDS.some((word) => normalized.includes(normalize(word)));
+  return containsBannedWord(title);
+}
+
+function isBattleContentInvalid(data: FirebaseFirestore.DocumentData): boolean {
+  const title = (data['title'] as string | undefined) ?? '';
+  const description = (data['description'] as string | undefined) ?? '';
+  const categories = (data['categories'] as { label?: unknown }[] | undefined) ?? [];
+  return isTitleInvalid(title)
+    || description.length > 200
+    || containsBannedWord(description)
+    || categories.some((category) => (
+      typeof category.label !== 'string'
+      || category.label.length === 0
+      || category.label.length > 20
+      || containsBannedWord(category.label)
+    ));
 }
 
 /**
@@ -30,7 +40,7 @@ export const validateBattleTitleOnCreate = onDocumentCreated(
     if (battle['type'] !== 'private') return;
 
     const title = (battle['title'] as string | undefined) ?? '';
-    if (!isTitleInvalid(title)) return;
+    if (!isBattleContentInvalid(battle)) return;
 
     const { battleId } = event.params;
     logger.warn('validateBattleTitleOnCreate: invalid title, finishing battle', {
@@ -48,7 +58,7 @@ export const validateBattleTitleOnCreate = onDocumentCreated(
       .add({
         type: 'battle_title_rejected',
         title: 'チャレンジが無効化されました',
-        body: `「${title}」はバトル名に使用できない単語が含まれているため終了しました`,
+        body: `「${title}」の名前・説明・チーム名に利用できない内容が含まれているため終了しました`,
         isRead: false,
         relatedBattleId: battleId,
         relatedActivityId: null,

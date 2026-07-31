@@ -12,14 +12,16 @@ interface Props {
   currentUserId?: string;
   /** 「Top10を見る」の遷移先（バトル詳細） */
   onPressMore?: () => void;
+  blockedUserIds?: ReadonlySet<string>;
 }
 
 /**
  * 自分の陣営内でのメンバーランキング（上位3名＋自分の行）。表示専用。
  * 自分が上位に入っている場合は、その行をハイライトして重複表示しない。
  */
-export function TeamRankingCard({ ranking, contributions = {}, currentUserId, onPressMore }: Props) {
-  const { top, myRank, teamSize, myKm } = ranking;
+export function TeamRankingCard({ ranking, contributions = {}, currentUserId, onPressMore, blockedUserIds }: Props) {
+  const { myRank, teamSize, myKm } = ranking;
+  const top = ranking.top.filter((member) => member.isMe || !blockedUserIds?.has(member.userId));
   if (top.length === 0) return null;
 
   const meInTop = top.some((m) => m.isMe);

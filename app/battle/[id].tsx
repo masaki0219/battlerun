@@ -21,9 +21,11 @@ import { useBattleParticipants } from '../../hooks/useBattleParticipants';
 import { useTeamRanking } from '../../hooks/useTeamRanking';
 import { useBattleProcessContributions } from '../../hooks/useBattleProcessContributions';
 import { TeamRankingCard } from '../../components/battle/TeamRankingCard';
+import { SafetyActionsModal } from '../../components/moderation/SafetyActionsModal';
 import { CategorySelectModal } from '../../components/battle/CategorySelectModal';
 import type { CategoryStats, Battle, Category } from '../../types';
 import { inviteWebUrl } from '../../lib/invite';
+import { useBlockedUsers } from '../../hooks/useBlockedUsers';
 
 // ─── countdown helpers ─────────────────────────────────────────
 function timeLeft(endAt: string): { d: number; h: number; m: number } {
@@ -58,9 +60,12 @@ export default function BattleDetailScreen() {
   const [fetchedBattle, setFetchedBattle] = useState<Battle | null>(null);
   const [showTeamChange, setShowTeamChange] = useState(false);
   const [changingTeam, setChangingTeam] = useState(false);
+  const [showSafety, setShowSafety] = useState(false);
+  const { blockedUserIds } = useBlockedUsers(user?.id);
 
   const battleFromStore = [...publicBattles, ...privateBattles].find((b) => b.id === id);
   const battle = battleFromStore ?? fetchedBattle;
+  const visibleRecentActivities = recentActivities.filter((item) => item.isMe || !blockedUserIds.has(item.userId));
   const membership = myMemberships.find((m) => m.battleId === id);
   const myCatId = membership?.categoryId ?? null;
 
@@ -70,6 +75,7 @@ export default function BattleDetailScreen() {
     enabled: isIndividual,
     limit: 20,
   });
+  const visibleParticipants = participants.filter((item) => item.userId === user?.id || !blockedUserIds.has(item.userId));
   const teamRanking = useTeamRanking(id, myCatId, user?.id, { topCount: 10 });
   const processContributions = useBattleProcessContributions(
     battle && !isIndividual && myCatId ? id : undefined,
@@ -243,6 +249,15 @@ export default function BattleDetailScreen() {
           >
             <Ionicons name="color-palette-outline" size={20} color={Colors.textSecondary} />
           </TouchableOpacity>
+          <TouchableOpacity
+            style={s.navIconBtn}
+            onPress={() => setShowSafety(true)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="チャレンジの安全メニュー"
+          >
+            <Ionicons name="ellipsis-horizontal" size={20} color={Colors.textSecondary} />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -309,10 +324,10 @@ export default function BattleDetailScreen() {
             <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.md }]}>ランキング</Text>
             {participantsLoading && participants.length === 0 ? (
               <ActivityIndicator color={Colors.primary} style={{ marginVertical: 20 }} />
-            ) : participants.length === 0 ? (
+            ) : visibleParticipants.length === 0 ? (
               <EmptyState icon="flag-outline" title="まだ誰も走っていない" hint="一番乗りしよう" />
             ) : (
-              participants.map((p, i) => {
+              visibleParticipants.map((p, i) => {
                 const isMine = p.userId === user?.id;
                 const participantRank = p.totalDistanceKm > 0
                   ? 1 + participants.filter((item) => item.totalDistanceKm > p.totalDistanceKm).length
@@ -384,15 +399,16 @@ export default function BattleDetailScreen() {
               ranking={teamRanking}
               contributions={processContributions}
               currentUserId={user?.id}
+              blockedUserIds={blockedUserIds}
             />
           </View>
         )}
 
         {/* ── 最近の活動 ──────────────────────────────────── */}
-        {recentActivities.length > 0 && (
+        {visibleRecentActivities.length > 0 && (
           <View style={s.sectionCard}>
             <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.sm }]}>最近の活動</Text>
-            {recentActivities.map((a) => (
+            {visibleRecentActivities.map((a) => (
               <ListRow
                 key={a.id}
                 icon="walk"
@@ -434,6 +450,20 @@ export default function BattleDetailScreen() {
           }
         }}
       />
+      {user && (
+        <SafetyActionsModal
+          visible={showSafety}
+          currentUserId={user.id}
+          target={{
+            type: 'battle', id: battle.id,
+            ...(battle.type === 'private' && battle.createdBy ? { targetUid: battle.createdBy } : {}),
+            battleId: battle.id,
+            contentSnapshot: [battle.title, battle.description, ...battle.categories.map((item) => item.label)].filter(Boolean).join(' / '),
+          }}
+          targetDisplayName="チャレンジ作成者"
+          onClose={() => setShowSafety(false)}
+        />
+      )}
     </SafeAreaView>
   );
 }

@@ -33,12 +33,15 @@ import { JoinRecommendationCard } from '../../components/battle/JoinRecommendati
 import { TeamRankingCard } from '../../components/battle/TeamRankingCard';
 import { DeclarationCard, DeclarationList } from '../../components/battle/DeclarationCard';
 import { RunningPresenceCard } from '../../components/battle/RunningPresenceCard';
+import { SafetyActionsModal } from '../../components/moderation/SafetyActionsModal';
 import { useTeamRanking } from '../../hooks/useTeamRanking';
 import { useBattleProcessContributions } from '../../hooks/useBattleProcessContributions';
 import { useBattlePresence } from '../../hooks/useBattlePresence';
+import { useBlockedUsers } from '../../hooks/useBlockedUsers';
 import { weeklyBuckets, streakDays, weekOverWeek, weekStartLabel } from '../../utils/displayStats';
 import { Colors, Typography, Spacing, BorderRadius, Shadow } from '../../design_tokens';
 import type { Battle, Category, CategoryStats, RunningPresence } from '../../types';
+import type { ReportTarget } from '../../lib/moderation';
 import { inviteWebUrl, normalizeInviteCode, PENDING_INVITE_CODE_KEY } from '../../lib/invite';
 
 type Tab = 'public' | 'private';
@@ -72,6 +75,9 @@ export default function BattleScreen() {
 
   // チーム選択モーダル
   const [categoryModalBattle, setCategoryModalBattle] = useState<Battle | null>(null);
+  const [safetyTarget, setSafetyTarget] = useState<ReportTarget | null>(null);
+  const [safetyDisplayName, setSafetyDisplayName] = useState('このユーザー');
+  const { blockedUserIds } = useBlockedUsers(user?.id);
 
   // 友達チャレンジビュー
   const [privateView, setPrivateView] = useState<PrivateView>('list');
@@ -157,7 +163,12 @@ export default function BattleScreen() {
 
   // ── アクティブバトルの計算 ─────────────────────────────────
   const now = Date.now();
-  const allBattles = [...publicBattles, ...privateBattles];
+  const allBattles = [...publicBattles, ...privateBattles].filter(
+    (battle) => battle.type === 'public'
+      || battle.createdBy === user?.id
+      || !battle.createdBy
+      || !blockedUserIds.has(battle.createdBy),
+  );
   const myBattleIdSet = new Set(myMemberships.map((m) => m.battleId));
   const activeBattles = allBattles.filter(
     (b) =>
@@ -171,14 +182,24 @@ export default function BattleScreen() {
   // 「他のチャレンジ」セクションには、上のヒーローで表示中の参加チャレンジを再掲しない
   const activeBattleIdSet = new Set(activeBattles.map((b) => b.id));
   const otherPublicBattles = publicBattles.filter((b) => !activeBattleIdSet.has(b.id));
-  const otherPrivateBattles = privateBattles.filter((b) => !activeBattleIdSet.has(b.id));
+  const otherPrivateBattles = privateBattles.filter((b) => (
+    !activeBattleIdSet.has(b.id)
+    && (b.createdBy === user?.id || !b.createdBy || !blockedUserIds.has(b.createdBy))
+  ));
   const primaryMembership = primaryBattle
     ? myMemberships.find((m) => m.battleId === primaryBattle.id)
     : null;
   const primaryCategoryId = primaryMembership?.categoryId ?? null;
-  const declarations = primaryBattle ? (declarationsByBattle[primaryBattle.id] ?? []) : [];
-  const ownDeclaration = declarations.find((item) => item.uid === user?.id);
+  const allDeclarations = primaryBattle ? (declarationsByBattle[primaryBattle.id] ?? []) : [];
+  const ownDeclaration = allDeclarations.find((item) => item.uid === user?.id);
+  const declarations = allDeclarations.filter((item) => item.uid === user?.id || !blockedUserIds.has(item.uid));
   const { presences, cheer: cheerPresence } = useBattlePresence(primaryBattle?.id, user?.id);
+  const visiblePresences = presences.filter((item) => item.uid === user?.id || !blockedUserIds.has(item.uid));
+
+  function openSafety(target: ReportTarget, displayName: string) {
+    setSafetyTarget(target);
+    setSafetyDisplayName(displayName);
+  }
 
   useEffect(() => {
     if (!primaryBattle || !user) return;
@@ -549,9 +570,11 @@ export default function BattleScreen() {
         )}
         {primaryBattle && user && (
           <RunningPresenceCard
-            presences={presences}
+            presences={visiblePresences}
             currentUserId={user.id}
+            battleId={primaryBattle.id}
             onCheer={handleCheerPresence}
+            onOpenSafety={openSafety}
           />
         )}
         {renderWeeklyCard()}
@@ -564,6 +587,7 @@ export default function BattleScreen() {
               ranking={teamRanking}
               contributions={processContributions}
               currentUserId={user?.id}
+              blockedUserIds={blockedUserIds}
               onPressMore={() => router.push(`/battle/${primaryBattle.id}` as any)}
             />
           </View>
@@ -574,6 +598,7 @@ export default function BattleScreen() {
             declarations={declarations}
             currentUserId={user.id}
             onCheer={handleCheerDeclaration}
+            onOpenSafety={openSafety}
           />
         )}
 
@@ -772,6 +797,15 @@ export default function BattleScreen() {
         onClose={() => setCategoryModalBattle(null)}
         loading={joiningBattleId === categoryModalBattle?.id}
       />
+      {user && (
+        <SafetyActionsModal
+          visible={safetyTarget !== null}
+          currentUserId={user.id}
+          target={safetyTarget}
+          targetDisplayName={safetyDisplayName}
+          onClose={() => setSafetyTarget(null)}
+        />
+      )}
     </SafeAreaView>
   );
 }

@@ -111,6 +111,7 @@ export default function RootLayout() {
         <Stack.Screen name="record/summary" />
         <Stack.Screen name="notifications" />
         <Stack.Screen name="badges" />
+        <Stack.Screen name="blocked-users" />
         <Stack.Screen name="activity/[id]" />
         <Stack.Screen name="admin" />
         <Stack.Screen name="legal/terms" />

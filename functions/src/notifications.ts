@@ -12,6 +12,15 @@ interface UserTitle {
   awardedAt: string;
 }
 
+async function hasBlockBetween(firstUid: string, secondUid: string): Promise<boolean> {
+  const db = getFirestore();
+  const [firstBlocksSecond, secondBlocksFirst] = await Promise.all([
+    db.doc(`users/${firstUid}/blocks/${secondUid}`).get(),
+    db.doc(`users/${secondUid}/blocks/${firstUid}`).get(),
+  ]);
+  return firstBlocksSecond.exists || secondBlocksFirst.exists;
+}
+
 /**
  * activities/{activityId}/reactions/{userId} の作成をトリガーに、
  * 記録の持ち主（自分以外からのリアクション時のみ）へ通知を作成する。
@@ -37,6 +46,10 @@ export const onReactionCreated = onDocumentCreated(
 
     // 自分の記録への自分のリアクションは通知しない
     if (activityOwnerId === reactorId) return;
+    if (await hasBlockBetween(activityOwnerId, reactorId)) {
+      logger.info('onReactionCreated: blocked pair, skipping notification', { activityOwnerId, reactorId });
+      return;
+    }
 
     const reactorSnap = await db.doc(`users/${reactorId}`).get();
     const reactorName = (reactorSnap.data()?.['name'] as string) ?? 'メンバー';
@@ -69,6 +82,10 @@ export const onDeclarationCheerCreated = onDocumentCreated(
     if (!declarationSnap.exists) return;
     const ownerId = declarationSnap.data()?.['uid'] as string | undefined;
     if (!ownerId || ownerId === fromUid) return;
+    if (await hasBlockBetween(ownerId, fromUid)) {
+      logger.info('onDeclarationCheerCreated: blocked pair, skipping notification', { ownerId, fromUid });
+      return;
+    }
 
     const profileSnap = await db.doc(`publicProfiles/${fromUid}`).get();
     const senderName = (profileSnap.data()?.['name'] as string | undefined) ?? 'メンバー';
@@ -109,6 +126,10 @@ export const onPresenceCheerWritten = onDocumentWritten(
 
     const { battleId, runnerId, fromUid } = event.params;
     if (runnerId === fromUid) return;
+    if (await hasBlockBetween(runnerId, fromUid)) {
+      logger.info('onPresenceCheerWritten: blocked pair, skipping notification', { runnerId, fromUid });
+      return;
+    }
     const db = getFirestore();
     const presenceSnap = await db.doc(`battles/${battleId}/presence/${runnerId}`).get();
     if (!presenceSnap.exists

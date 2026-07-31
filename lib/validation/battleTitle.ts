@@ -1,24 +1,23 @@
-import { BANNED_WORDS } from './bannedWords';
+import { validateUserContent } from './bannedWords';
 
 export const BATTLE_TITLE_MAX_LENGTH = 30;
-
-function normalize(text: string): string {
-  return text.normalize('NFKC').toLowerCase();
-}
+export const BATTLE_DESCRIPTION_MAX_LENGTH = 200;
+export const BATTLE_CATEGORY_MAX_LENGTH = 20;
 
 export function validateBattleTitle(title: string): { ok: boolean; reason?: string } {
-  if (title.length === 0) {
-    return { ok: false, reason: 'チャレンジ名を入力してください' };
-  }
-  if (title.length > BATTLE_TITLE_MAX_LENGTH) {
-    return { ok: false, reason: `チャレンジ名は${BATTLE_TITLE_MAX_LENGTH}文字以内で入力してください` };
-  }
+  return validateUserContent(title, {
+    label: 'チャレンジ名', maxLength: BATTLE_TITLE_MAX_LENGTH, required: true,
+  });
+}
 
-  const normalized = normalize(title);
-  const hasBannedWord = BANNED_WORDS.some((word) => normalized.includes(normalize(word)));
-  if (hasBannedWord) {
-    return { ok: false, reason: 'このチャレンジ名は利用できません' };
-  }
+export function validateBattleDescription(description: string): { ok: boolean; reason?: string } {
+  return validateUserContent(description, {
+    label: '説明', maxLength: BATTLE_DESCRIPTION_MAX_LENGTH,
+  });
+}
 
-  return { ok: true };
+export function validateBattleCategory(label: string): { ok: boolean; reason?: string } {
+  return validateUserContent(label, {
+    label: 'チーム名', maxLength: BATTLE_CATEGORY_MAX_LENGTH, required: true,
+  });
 }

@@ -540,6 +540,8 @@ export default function ProfileScreen() {
             <ProfileRow icon="medal-outline" title="表示中の称号" detail={profileTitle.replace('称号：', '')} onPress={() => router.push('/badges' as any)} />
             <View style={styles.rowDivider} />
             <ProfileRow icon="person-outline" title="アカウント" detail="プロフィール画像を変更" onPress={handleAvatarOptions} />
+            <View style={styles.rowDivider} />
+            <ProfileRow icon="person-remove-outline" title="ブロック中のユーザー" detail="非表示にした相手の確認・解除" onPress={() => router.push('/blocked-users' as any)} />
           </View>
         </View>
 

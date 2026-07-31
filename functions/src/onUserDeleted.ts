@@ -104,15 +104,19 @@ export const onUserDeleted = functionsV1.auth.user().onDelete(async (user) => {
   // category_stats.participantCount / avgDistanceKm を自動補正する。
 
   // 3. 通知・バッジ・月間集計のサブコレクション
-  const [notificationsSnap, badgesSnap, monthlyStatsSnap] = await Promise.all([
+  const [notificationsSnap, badgesSnap, monthlyStatsSnap, ownBlocksSnap, blockedByOthersSnap] = await Promise.all([
     db.collection(`users/${uid}/notifications`).get(),
     db.collection(`users/${uid}/badges`).get(),
     db.collection(`users/${uid}/monthlyStats`).get(),
+    db.collection(`users/${uid}/blocks`).get(),
+    db.collectionGroup('blocks').where('blockedUid', '==', uid).get(),
   ]);
   await batchDelete(db, [
     ...notificationsSnap.docs.map((d) => d.ref),
     ...badgesSnap.docs.map((d) => d.ref),
     ...monthlyStatsSnap.docs.map((d) => d.ref),
+    ...ownBlocksSnap.docs.map((d) => d.ref),
+    ...blockedByOthersSnap.docs.map((d) => d.ref),
   ]);
 
   // 4. users/{uid} 本体（クライアント側削除が何らかの理由で失敗していた場合の保険）
@@ -133,6 +137,7 @@ export const onUserDeleted = functionsV1.auth.user().onDelete(async (user) => {
     deletedNotifications: notificationsSnap.size,
     deletedBadges: badgesSnap.size,
     deletedMonthlyStats: monthlyStatsSnap.size,
+    deletedBlocks: ownBlocksSnap.size + blockedByOthersSnap.size,
     deletedAuthoredReactions: authoredReactionsSnap.size,
     deletedDeclarations: declarationsSnap.size,
     deletedDeclarationCheers: declarationCheerRefs.size,

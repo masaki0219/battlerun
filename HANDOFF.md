@@ -1,6 +1,6 @@
 # HANDOFF
 
-最終更新: 2026-07-29
+最終更新: 2026-07-31
 
 ## プロジェクトの目的
 
@@ -8,7 +8,7 @@
 
 ## 現在の状態
 
-`feat/ui-consolidation` ブランチで作業中。アプリ名（`expo.name` / `CFBundleDisplayName`、ランチャー表示）は `Zelio`、アプリ内UIの見出し等の表記は `ZELIO`、Bundle Identifier / Android package は `com.masaki.zelio`、ディープリンク scheme は `zelio`。
+`feat/ui-consolidation` ブランチで作業中。アプリ名（`expo.name` / `CFBundleDisplayName`、ランチャー表示）とアプリ内UI表記は `ZELIO` に統一済み。Bundle Identifier / Android package は `com.masaki.zelio`、ディープリンク scheme は `zelio`。
 
 **Firebase は新プロジェクト `zelio-run` へ移行済み**（2026-07-19 に再度方針転換し移行を実施。`.env` / `eas.json` 3プロファイル / `.firebaserc` / `lib/legal.ts` を zelio-run へ更新し、ルール・インデックス・Hosting・Functions 全14関数・シークレット・Authユーザー2件を zelio-run へデプロイ/移行した）。旧 `battlerun-75eb6` は Firestore テストデータのコピー完了を確認するまで残しておくこと。残作業は「未解決・要確認」を参照。
 
@@ -23,6 +23,33 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 ※ 同フォルダの `BattleRunホーム画面作成 (コピー).zip` は旧版。パレット（`theme.css`）は同一だが、ヒーローが2陣営のVSゲージで、チーム内ランキングが無い。**最終版はこちら（コピーでない方）**。
 
 ## 最後に完了したこと
+
+### App Store Review Guideline 1.2 対応（2026-07-31）
+
+- ニックネーム、チャレンジ名・説明・チーム名、出撃宣言メモへ共通の不適切表現フィルターを適用し、NFKC正規化と区切り文字除去で単純なすり抜けも抑制した。クライアント検証に加え、非公開チャレンジ作成FunctionとFirestoreルールにも防御を追加した。
+- 宣言、ライブ参加、アクティビティ、非公開チャレンジから「通報・ブロック」を開ける共通セーフティモーダルを実装した。通報は理由・任意詳細・対象スナップショットを非公開の `contentReports` へ保存し、ブロックした相手の投稿・ランキング・ライブ表示・非公開チャレンジを非表示にする。双方間の応援/リアクションはFirestoreルールと通知Functionの両方で遮断し、相手へブロック通知は送らない。
+- 管理者専用の通報キュー `app/admin/reports.tsx` を追加し、未対応・確認中・対応済み・却下を監査UID/日時付きで更新できるようにした。アカウント削除Functionはブロック参照も清掃する。`OPERATIONS.md` に1日2回以上の確認、原則24時間以内の一次対応、緊急エスカレーション、証跡記録を定義した。
+- アプリ内ヘルプ・利用規約・プライバシーポリシー、`APP_STORE_SUBMISSION.md`、`RELEASE_TEST_CHECKLIST.md` を同期した。Publicリポジトリ `masaki0219/app-support` のZELIOページも更新し、commit `619bd72` をmainへpush済み（新規/privateリポジトリは作成していない）。Support / Privacy / Terms は公開後の本文とHTTP 200を確認済み。
+- `npm run typecheck`、`npm run test:unit`、Functions build、Firestore Rulesテスト、iOS Expo export、`git diff --check` が成功。Firestore ruleset `projects/zelio-run/rulesets/3260ff5c-1392-4b04-8067-2d00ed892558` と関連Functions 5件（`onReactionCreated` / `onDeclarationCheerCreated` / `onPresenceCheerWritten` / `validateBattleTitleOnCreate` / `onUserDeleted`）を `zelio-run` へデプロイ済み（エラー0件）。ZELIO本体の差分は未コミット・未push。
+- Xcode実機確認に備えて `npx expo prebuild --platform ios --clean` でGit管理外の `ios/` を再生成し、CocoaPods 115件を導入した。生成後は表示名 `ZELIO`、Bundle ID `com.masaki.zelio`、新AppIconを確認し、`ios/ZELIO.xcworkspace` をXcodeで開いた。Metroは同プロジェクトの8081番で応答中。接続履歴のあるiPhone 15はCoreDevice上で `unavailable` のため、端末のUSB接続・ロック解除・信頼/Developer Mode確認後、XcodeでSigning Teamを選択して実行するのが直近手順。
+
+### ZELIOブランドアセット・公開URL整備（2026-07-31）
+
+- ユーザー追加の `assets/zelio_icon_1024.png`（1024×1024）をiOS/共通アイコンへ採用し、`icon.png` を1024×1024・不透明・角丸なしへ置換した。Android用 `adaptive-icon.png` は提供画像の背景だけを透明化し、図柄を中央へ75%縮小して1024×1024の安全領域内へ配置。Android 13のテーマアイコン用 `monochrome-icon.png`（1024×1024・白＋透明）と通知用 `notification-icon.png`（96×96・白＋透明）、Web用 `favicon.png`（256×256）も作成した。縦長の提供画像を `splash-background.png` として追加し、iOSはfull-screen cover、Androidは中央ロゴ＋背景色のプラットフォーム別 `expo-splash-screen` 設定へ変更した。アプリ表示名も `ZELIO` に統一。
+- 画像編集スキルで通知用モノクロ案も生成したが、元のZ形状を正確に保てなかったため不採用。アプリが参照する画像は提供素材を決定的にリサイズ・余白調整したものだけ。元の2画像は削除せず保持している。
+- 既存のPublicリポジトリ `masaki0219/app-support`（Pages: `main/docs`）を確認し、`docs/zelio/index.html`・`privacy.html`・`terms.html` とサポート一覧/READMEを追加して `79893d2` をmainへpush。旧 `/battlerun/` はリンク切れ防止のため残した。Publicリポジトリ `masaki0219/masaki0219.github.io` へZELIOカードを追加して `72c1a6f` をmainへpush。新規リポジトリは作成していない。
+- 公開URLはすべてHTTP 200と本文を確認済み: Support `https://masaki0219.github.io/app-support/zelio/`、Marketing `https://masaki0219.github.io/`、Privacy `https://masaki0219.github.io/app-support/zelio/privacy.html`、Terms `https://masaki0219.github.io/app-support/zelio/terms.html`。`lib/legal.ts` と `APP_STORE_SUBMISSION.md` も同URLへ更新した。
+- 公開プライバシーポリシーとアプリ内文面を、メールアドレス、GPS精度/高度、宣言・応援等のUGC、Supabaseフィードバックまで含む現行実装へ同期。利用規約も利用者投稿・禁止事項・サービス変更を補った。
+- 確認成功: アセット寸法/alpha確認、`npx expo config --type introspect`、Expo Doctor 18/18、`npm run typecheck`、`npm run test:unit`、`npx expo export --platform ios`。Expoの仕様上、スプラッシュの最終見た目はExpo Go/dev buildでは再現できないため、preview/production buildでの確認が残る。ZELIOリポジトリの変更は未コミット・未push。
+
+### 全体レビュー v3（2026-07-30・シミュレータ＋静的確認）
+
+- iPhone 17 / iOS 26.4 Simulator、Expo Go、ローカル Firebase Emulator のみを使い、ホーム、公開/非公開チャレンジ、統計、GPS記録、停止、通知、プロフィール、ヘルプ、活動詳細、テーマを実操作した。最大 Dynamic Type とテーマ画面のアクセシビリティツリーも確認。本番 Firebase への書き込みはなく、試験GPS記録は破棄した。起動用の一時変更はすべて復元済み。
+- 総合レポートとスクリーンショットを `Desktop/ZELIO/review_report/20260730_v1/` に作成した。結論は「アプリ内のビジュアルとコア記録体験は良質だが、現状のApp Store提出は非推奨」。P0は、Expo初期アイコン/スプラッシュ、Support URL 404と提出情報プレースホルダー、UGC通報/ブロック不足、Proテーマの表示不反映・状態未復元、ネイティブbuild経路未解決。
+- 新規P1は、複数の開催中チャレンジの一部が一覧から隠れる、最大文字サイズでランタブが崩れる、オレンジCTAの白文字が2.96:1、テーマ画面のVoiceOver情報不足、統計の「今月」が直近50件/端末月とサーバー月次集計で不一致になり得る、App Check未導入、依存脆弱性の再トリアージ。
+- テーマは公開チャレンジで保存すると一般エラー、Pro作成者の非公開チャレンジで保存しても詳細へ反映されず、再訪すると `sports` に戻ることを再現した。テーマ定義は主要画面から消費されず、`Battle` 型/store mappingにもthemeがない。
+- 2026-07-30の公開確認: `https://zelio-run.web.app/support.html` は404、privacy/termsはリダイレクト後200。`APP_STORE_SUBMISSION.md` の担当者・デモアカウントは未入力。
+- 確認成功: `npm run typecheck`、`npm run test:unit`、Functions build、Firestore Rules全72チェック、Expo Doctor 18/18、iOS Expo export。`npm audit --omit=dev` はrootが critical 0 / high 21 / moderate 25、functionsが critical 0 / high 0 / moderate 9 / low 1。コード修正・Firebaseデプロイ・commit/pushは行っていない。
 
 ### ブランド/仕様判断の反映実装（2026-07-29・ユーザー決裁済み）
 
@@ -285,9 +312,11 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 
 ## 次にやること
 
-1. 2026-07-29 の修正（v1分の**記録開始時の権限フローと keep-awake**、v2実装分の**停止ダイアログ・チーム選択モーダル・特大文字のランタブ・カレンダー週表示・チーム変更リンク・ロゴ/語彙変更**）を実機またはシミュレータで目視確認する。英語設定の端末で日英ラベル切替（`lib/locale.ts` の Intl 判定）も1回見ておく。画面ロック・アプリ切替を含む10〜30分の実走を1本通し、距離・ルート・停止が想定どおりかを見る。そのうえで `RELEASE_TEST_CHECKLIST.md` シナリオ1〜8へ進む。
+1. **2つのTestFlight/実機アカウントで `RELEASE_TEST_CHECKLIST.md` のシナリオ9を通し確認する。** 特に通報作成→管理者キューでのステータス更新、ブロック後の双方の表示・応援/リアクション・通知遮断、解除後の復帰を確認する。App Review用デモアカウントには、別ユーザーの宣言・ライブ参加・アクティビティが見える開催中チャレンジを用意する。
 
 ## その次の候補
+- 現行差分からEAS preview buildを作成し、物理端末でホーム画面アイコン、iOS full-screen splash、Android adaptive icon/Android 12 splashを確認する
+- 残るP0のProテーマを完成させるか、審査提出版から一時的に導線を外す
 - 実機でオフライン停止→端末キュー保存→オンライン復帰後30秒以内の再送と、サマリー集計の15秒フォールバックを確認する
 - 実機で新機能を目視確認する: 一時停止/再開、カウントダウン、目標バー、1kmラップ、記録削除、開始前GPSチップ
 - `RELEASE_TEST_CHECKLIST.md` の通し確認（Day-0、GPS保存、再送、ランキング反映、アカウント削除を2アカウントの実機で）を行う
@@ -302,7 +331,7 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 
 ## 未解決・要確認
 
-- **UGCの通報・ブロックが未実装（2026-07-29）**: ニックネーム・チャレンジ名・宣言メモ・応援があり、App Store Guideline 1.2 の観点で指摘されうる（確認レベルは推定）。禁止語検証はニックネームまで拡張済みだが、通報導線・ブロック・通報の運用処理は未着手。ブロックの粒度（表示のみ / 応援も遮断）と通報後の運用体制を決めてから実装する。
+- ~~UGCの通報・ブロックが未実装~~ **解決済み（2026-07-31）**: 投稿前フィルター、投稿別の通報、ユーザーブロック、相互インタラクション/通知遮断、管理者通報キュー、公開連絡先、運用手順まで実装・デプロイ済み。実際に原則24時間以内の一次対応を継続する運用と、提出前の2アカウント実機確認は人手で必要。
 - ~~「陣営」と「チーム」の統一先が未決定~~ **解決済み（2026-07-29 ユーザー決裁）**: ユーザー向け表示は「チーム」へ統一済み（Functions 通知文言含む、デプロイ済み）。軍事フレーバーはPro「陣取り合戦風」テーマとバッジ名へ退避。「出撃宣言」は世界観として存続。
 - **ネイティブ dev build がローカルで通らない（2026-07-29）**: `npx expo run:ios` が `cannot link directly with 'SwiftUICore'` で失敗する（`useFrameworks: static` 環境）。EASビルドで再現するかは未確認。ローカルで実機確認する場合はここが先に必要。
 
@@ -347,12 +376,15 @@ eas build --profile development --platform ios
 ## 確認方法
 
 ```bash
-npx tsc --noEmit                # 型チェック（npmスクリプト未定義）
+npm run typecheck               # TypeScript型チェック
+npm run test:unit               # 純関数・バリデーションテスト
+cd functions && npm run build   # Functionsビルド
+cd ..
 npx expo export --platform ios  # Metro でバンドルが通るかの確認（シミュレータ不要）
 npm run test:rules              # Firestore ルールのテスト（Firebase エミュレータ必要）
 ```
 
-2026-07-20 時点: `npx tsc --noEmit`、`functions` の `npm run build`、`npm run test:unit`、`npx expo export --platform ios` 成功。`npm run test:rules` は全70件成功。
+2026-07-31 時点: `npm run typecheck`、`npm run test:unit`、Functions build、Firestore Rulesテスト、`npx expo export --platform ios`、`git diff --check` がすべて成功。
 
 ## 重要なファイル
 

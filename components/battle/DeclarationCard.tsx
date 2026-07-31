@@ -8,6 +8,7 @@ import { Colors, Spacing, BorderRadius, Shadow, Typography } from '../../design_
 import { declarationTimeLabel } from '../../utils/declarations';
 import { DECLARATION_NOTE_MAX_LENGTH, validateDeclarationNote } from '../../lib/validation/declaration';
 import type { RunDeclaration } from '../../types';
+import type { ReportTarget } from '../../lib/moderation';
 
 interface OwnDeclarationProps {
   declaration?: RunDeclaration;
@@ -141,11 +142,12 @@ export function DeclarationCard({ declaration, battleTitle, onDeclare }: OwnDecl
 }
 
 export function DeclarationList({
-  declarations, currentUserId, onCheer,
+  declarations, currentUserId, onCheer, onOpenSafety,
 }: {
   declarations: RunDeclaration[];
   currentUserId: string;
   onCheer: (declarationId: string) => Promise<void>;
+  onOpenSafety: (target: ReportTarget, displayName: string) => void;
 }) {
   const [sendingId, setSendingId] = useState<string | null>(null);
   if (declarations.length === 0) return null;
@@ -177,17 +179,33 @@ export function DeclarationList({
                 </Text>
               </View>
               {!own && (
-                <TouchableOpacity
-                  style={[styles.cheerButton, item.cheeredByMe && styles.cheeredButton]}
-                  onPress={() => void cheer(item.id)}
-                  disabled={item.cheeredByMe || sendingId === item.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${item.displayName}さんを応援`}
-                >
-                  {sendingId === item.id
-                    ? <ActivityIndicator size="small" color={Colors.accentDark} />
-                    : <Text style={styles.cheerText}>{item.cheeredByMe ? '応援済み' : '🔥 応援'}</Text>}
-                </TouchableOpacity>
+                <View style={styles.rowActions}>
+                  <TouchableOpacity
+                    style={[styles.cheerButton, item.cheeredByMe && styles.cheeredButton]}
+                    onPress={() => void cheer(item.id)}
+                    disabled={item.cheeredByMe || sendingId === item.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${item.displayName}さんを応援`}
+                  >
+                    {sendingId === item.id
+                      ? <ActivityIndicator size="small" color={Colors.accentDark} />
+                      : <Text style={styles.cheerText}>{item.cheeredByMe ? '応援済み' : '🔥 応援'}</Text>}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.safetyButton}
+                    onPress={() => onOpenSafety({
+                      type: 'declaration',
+                      id: item.id,
+                      targetUid: item.uid,
+                      battleId: item.battleId,
+                      contentSnapshot: [item.displayName, item.note].filter(Boolean).join(' / '),
+                    }, item.displayName)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${item.displayName}さんの安全メニュー`}
+                  >
+                    <Ionicons name="ellipsis-horizontal" size={17} color={Colors.textTertiary} />
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
           );
@@ -239,4 +257,6 @@ const styles = StyleSheet.create({
   cheerButton: { minWidth: 76, minHeight: 34, paddingHorizontal: 10, borderRadius: BorderRadius.full, backgroundColor: Colors.accentLight, alignItems: 'center', justifyContent: 'center' },
   cheeredButton: { backgroundColor: Colors.surfaceGray },
   cheerText: { fontSize: 10, fontWeight: Typography.fontWeight.bold, color: Colors.accentDark },
+  rowActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  safetyButton: { width: 30, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: BorderRadius.full },
 });

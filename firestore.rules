@@ -9,6 +9,14 @@ service cloud.firestore {
     function isAdmin() {
       return signedIn() && userDoc(request.auth.uid).data.role == 'admin';
     }
+    function safeUserText(text) {
+      return text is string
+        && !text.matches('.*(死ね|しねよ|消えろ|殺すぞ|ころすぞ|ぶっ殺す|レイプ|輪姦|児童ポルノ|援助交際|パパ活募集|ママ活募集).*');
+    }
+    function hasBlockBetween(firstUid, secondUid) {
+      return exists(/databases/$(database)/documents/users/$(firstUid)/blocks/$(secondUid))
+        || exists(/databases/$(database)/documents/users/$(secondUid)/blocks/$(firstUid));
+    }
     function isBattleParticipant(battleId) {
       return signedIn()
         && exists(/databases/$(database)/documents/battles/$(battleId)/participants/$(request.auth.uid));
@@ -55,11 +63,13 @@ service cloud.firestore {
         && validRunningPresenceSetting(request.resource.data)
         && request.resource.data.name is string
         && request.resource.data.name.size() >= 1
-        && request.resource.data.name.size() <= 40;
+        && request.resource.data.name.size() <= 40
+        && safeUserText(request.resource.data.name);
       allow update: if isSelf(userId)
         && request.resource.data.name is string
         && request.resource.data.name.size() >= 1
         && request.resource.data.name.size() <= 40
+        && safeUserText(request.resource.data.name)
         && request.resource.data.plan in ['free', 'pro']
         && validWeeklyGoal(request.resource.data.get('weeklyGoal', null))
         && validRunningPresenceSetting(request.resource.data)
@@ -94,6 +104,22 @@ service cloud.firestore {
         allow read: if isSelf(userId);
         allow write: if false;
       }
+
+      match /blocks/{blockedUid} {
+        allow read: if isSelf(userId);
+        allow create, update: if isSelf(userId)
+          && blockedUid != request.auth.uid
+          && request.resource.data.keys().hasOnly([
+            'blockerUid', 'blockedUid', 'displayName', 'createdAt'
+          ])
+          && request.resource.data.blockerUid == request.auth.uid
+          && request.resource.data.blockedUid == blockedUid
+          && request.resource.data.displayName is string
+          && request.resource.data.displayName.size() >= 1
+          && request.resource.data.displayName.size() <= 40
+          && request.resource.data.createdAt == request.time;
+        allow delete: if isSelf(userId);
+      }
     }
 
     // ランキング等で使う公開範囲を限定したプロフィール。
@@ -103,7 +129,8 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['name', 'avatarUrl', 'avatarEmoji', 'updatedAt'])
         && request.resource.data.name is string
         && request.resource.data.name.size() >= 1
-        && request.resource.data.name.size() <= 40;
+        && request.resource.data.name.size() <= 40
+        && safeUserText(request.resource.data.name);
       allow delete: if false;
     }
 
@@ -126,6 +153,10 @@ service cloud.firestore {
         && request.resource.data.title is string
         && request.resource.data.title.size() >= 1
         && request.resource.data.title.size() <= 60
+        && safeUserText(request.resource.data.title)
+        && request.resource.data.description is string
+        && request.resource.data.description.size() <= 200
+        && safeUserText(request.resource.data.description)
         && request.resource.data.categories is list
         && request.resource.data.categories.size() >= 2
         && request.resource.data.categories.size() <= 20
@@ -249,7 +280,8 @@ service cloud.firestore {
               && request.resource.data.sessionId == presenceDoc().data.sessionId
               && request.resource.data.createdAt == request.time
               && presenceDoc().data.visible == true
-              && presenceDoc().data.lastBeatAt >= request.time - duration.value(3, 'm');
+              && presenceDoc().data.lastBeatAt >= request.time - duration.value(3, 'm')
+              && !hasBlockBetween(request.auth.uid, runnerId);
           }
 
           allow read: if isBattleParticipant(battleId);
@@ -276,6 +308,7 @@ service cloud.firestore {
           && request.resource.data.plannedAt <= request.time + duration.value(24, 'h')
           && request.resource.data.get('note', '') is string
           && request.resource.data.get('note', '').size() <= 20
+          && safeUserText(request.resource.data.get('note', ''))
           && request.resource.data.status == 'planned'
           && request.resource.data.createdAt is timestamp;
         allow update: if isBattleParticipant(battleId)
@@ -293,7 +326,11 @@ service cloud.firestore {
             && request.resource.data.keys().hasOnly(['fromUid', 'createdAt'])
             && request.resource.data.fromUid == request.auth.uid
             && request.resource.data.createdAt is timestamp
-            && get(/databases/$(database)/documents/battles/$(battleId)/declarations/$(declarationId)).data.uid != request.auth.uid;
+            && get(/databases/$(database)/documents/battles/$(battleId)/declarations/$(declarationId)).data.uid != request.auth.uid
+            && !hasBlockBetween(
+              request.auth.uid,
+              get(/databases/$(database)/documents/battles/$(battleId)/declarations/$(declarationId)).data.uid
+            );
           allow update, delete: if false;
         }
       }
@@ -314,9 +351,52 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/activities/$(activityId)).data.visibility == 'public_v2'
           && request.resource.data.keys().hasOnly(['type', 'userId', 'createdAt'])
           && request.resource.data.userId == userId
-          && request.resource.data.type in ['👏', '🔥', '💪', '⚡'];
+          && request.resource.data.type in ['👏', '🔥', '💪', '⚡']
+          && !hasBlockBetween(
+            request.auth.uid,
+            get(/databases/$(database)/documents/activities/$(activityId)).data.userId
+          );
         allow delete: if isSelf(userId);
       }
+    }
+
+    match /contentReports/{reportId} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'reporterUid', 'targetType', 'targetId', 'targetUid', 'battleId',
+          'contentSnapshot', 'reason', 'details', 'status', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.reporterUid == request.auth.uid
+        && request.resource.data.targetType in ['user', 'battle', 'declaration', 'presence', 'activity']
+        && request.resource.data.targetId is string
+        && request.resource.data.targetId.size() >= 1
+        && request.resource.data.targetId.size() <= 200
+        && (!('targetUid' in request.resource.data) || request.resource.data.targetUid is string)
+        && (!('battleId' in request.resource.data) || (
+          request.resource.data.battleId is string && request.resource.data.battleId.size() <= 200
+        ))
+        && (!('contentSnapshot' in request.resource.data) || (
+          request.resource.data.contentSnapshot is string && request.resource.data.contentSnapshot.size() <= 500
+        ))
+        && request.resource.data.reason in [
+          'harassment', 'hate', 'sexual', 'violence', 'spam', 'impersonation', 'other'
+        ]
+        && (!('details' in request.resource.data) || (
+          request.resource.data.details is string && request.resource.data.details.size() <= 300
+        ))
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow read: if isAdmin();
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'reviewedBy', 'reviewedAt', 'updatedAt'
+        ])
+        && request.resource.data.status in ['pending', 'reviewing', 'resolved', 'dismissed']
+        && request.resource.data.reviewedBy == request.auth.uid
+        && request.resource.data.reviewedAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
     }
   }
 }

@@ -15,6 +15,8 @@ import type { RoutePoint, ReactionType } from '../../types';
 import { Colors, DarkColors, RoutePaceColors, BorderRadius, TextStyles } from '../../design_tokens';
 import { MonoLabel } from '../../components/ui/MonoLabel';
 import { KmSplitsCard } from '../../components/run/KmSplitsCard';
+import { SafetyActionsModal } from '../../components/moderation/SafetyActionsModal';
+import { useBlockedUsers } from '../../hooks/useBlockedUsers';
 import { kmSplits, elevationGainM, estimatedCalories } from '../../utils/displayStats';
 import { buildRouteVisualization, type RoutePaceBand } from '../../utils/routeSplits';
 
@@ -82,6 +84,8 @@ export default function ActivityDetailScreen() {
   const [battleContributions, setBattleContributions] = useState<BattleContribution[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  const [showSafety, setShowSafety] = useState(false);
+  const { blockedUserIds } = useBlockedUsers(user?.id);
 
   useEffect(() => {
     if (!id || !user) return;
@@ -238,6 +242,24 @@ export default function ActivityDetailScreen() {
     );
   }
 
+  if (activity.userId !== user?.id && blockedUserIds.has(activity.userId)) {
+    return (
+      <SafeAreaView style={s.root}>
+        <View style={s.header}>
+          <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="戻る">
+            <Ionicons name="chevron-back" size={20} color={Colors.textSecondary} />
+          </TouchableOpacity>
+          <Text style={s.headerTitle}>公開記録</Text>
+        </View>
+        <View style={s.center}>
+          <Ionicons name="eye-off-outline" size={34} color={Colors.textTertiary} />
+          <Text style={s.blockedTitle}>ブロック中のユーザーの記録です</Text>
+          <Text style={s.blockedDetail}>解除はプロフィールの「ブロック中のユーザー」から行えます</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   const startDt = new Date(activity.startedAt);
   const endDt = new Date(activity.endedAt);
   const dateStr = startDt.toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
@@ -273,7 +295,7 @@ export default function ActivityDetailScreen() {
         <View style={{ flex: 1 }}>
           <Text style={s.headerTitle}>{dateStr}</Text>
         </View>
-        {user?.id === activity.userId && (
+        {user?.id === activity.userId ? (
           deleting ? (
             <ActivityIndicator size="small" color={Colors.textTertiary} />
           ) : (
@@ -286,6 +308,15 @@ export default function ActivityDetailScreen() {
               <Ionicons name="trash-outline" size={20} color={Colors.textTertiary} />
             </TouchableOpacity>
           )
+        ) : (
+          <TouchableOpacity
+            onPress={() => setShowSafety(true)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel={`${activity.displayName}さんの安全メニュー`}
+          >
+            <Ionicons name="ellipsis-horizontal" size={21} color={Colors.textTertiary} />
+          </TouchableOpacity>
         )}
       </View>
 
@@ -428,6 +459,18 @@ export default function ActivityDetailScreen() {
           </View>
         </View>
       </ScrollView>
+      {user && (
+        <SafetyActionsModal
+          visible={showSafety}
+          currentUserId={user.id}
+          target={{
+            type: 'activity', id: activity.id, targetUid: activity.userId,
+            contentSnapshot: `${activity.displayName} / ${activity.distanceKm.toFixed(2)}km`,
+          }}
+          targetDisplayName={activity.displayName}
+          onClose={() => setShowSafety(false)}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -441,6 +484,8 @@ const s = StyleSheet.create({
     backgroundColor: Colors.surface, borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   headerTitle: { fontSize: 14, fontWeight: '700', color: Colors.textPrimary, marginTop: 2 },
+  blockedTitle: { marginTop: 12, fontSize: 15, fontWeight: '700', color: Colors.textPrimary },
+  blockedDetail: { marginTop: 5, fontSize: 11, color: Colors.textSecondary },
   scroll: { paddingBottom: 48 },
 
   heroCard: {

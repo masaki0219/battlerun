@@ -119,6 +119,14 @@ export default function AdminIndexScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
+        <TouchableOpacity style={styles.reportQueue} onPress={() => router.push('/admin/reports' as any)}>
+          <View style={styles.reportQueueIcon}><Text style={styles.reportQueueEmoji}>🛡️</Text></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.reportQueueTitle}>通報キュー</Text>
+            <Text style={styles.reportQueueDetail}>ユーザーからの安全に関する通報を確認・処理</Text>
+          </View>
+          <Text style={styles.reportQueueArrow}>›</Text>
+        </TouchableOpacity>
         <Button
           label="＋ パブリックランを新規作成"
           onPress={() => router.push('/admin/battle/new')}
@@ -194,6 +202,12 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.semibold, color: Colors.textPrimary },
   scroll: { padding: Spacing.lg, gap: Spacing.lg },
   createBtn: { marginBottom: Spacing.sm },
+  reportQueue: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.md, borderRadius: BorderRadius.lg, backgroundColor: Colors.primaryLight, borderWidth: 1, borderColor: Colors.primaryBorder },
+  reportQueueIcon: { width: 42, height: 42, borderRadius: BorderRadius.full, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center' },
+  reportQueueEmoji: { fontSize: 20 },
+  reportQueueTitle: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.bold, color: Colors.primaryDark },
+  reportQueueDetail: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary, marginTop: 2 },
+  reportQueueArrow: { fontSize: 26, color: Colors.primary },
   sectionTitle: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.semibold, color: Colors.textSecondary },
   card: { marginBottom: 0 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: Spacing.sm },

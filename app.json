@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Zelio",
+    "name": "ZELIO",
     "slug": "battlerun",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,15 +8,16 @@
     "userInterfaceStyle": "light",
     "scheme": "zelio",
     "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#F8FAFB"
+      "image": "./assets/splash-background.png",
+      "resizeMode": "cover",
+      "backgroundColor": "#030814"
     },
     "ios": {
+      "icon": "./assets/icon.png",
       "supportsTablet": false,
       "bundleIdentifier": "com.masaki.zelio",
       "infoPlist": {
-        "CFBundleDisplayName": "Zelio",
+        "CFBundleDisplayName": "ZELIO",
         "NSLocationWhenInUseUsageDescription": "ランニング・ウォーキングの走行距離を計測し、参加中のチャレンジへ反映するために位置情報を使用します。",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "記録中にアプリがバックグラウンドへ移動しても走行距離の計測を続けるために使用します。",
         "NSMotionUsageDescription": "歩数モードで歩数と推定距離を計測するためにモーションデータを使用します。",
@@ -27,9 +28,11 @@
       }
     },
     "android": {
+      "icon": "./assets/icon.png",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#F8FAFB"
+        "monochromeImage": "./assets/monochrome-icon.png",
+        "backgroundColor": "#030814"
       },
       "permissions": [
         "ACCESS_FINE_LOCATION",
@@ -48,9 +51,30 @@
     "plugins": [
       "expo-router",
       [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#030814",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 220,
+          "resizeMode": "contain",
+          "ios": {
+            "backgroundColor": "#030814",
+            "image": "./assets/splash-background.png",
+            "resizeMode": "cover",
+            "enableFullScreenImage_legacy": true
+          },
+          "android": {
+            "backgroundColor": "#030814",
+            "image": "./assets/splash-icon.png",
+            "imageWidth": 220,
+            "resizeMode": "contain"
+          }
+        }
+      ],
+      [
         "expo-notifications",
         {
-          "icon": "./assets/icon.png",
+          "icon": "./assets/notification-icon.png",
           "color": "#087B73",
           "sounds": []
         }

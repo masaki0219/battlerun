@@ -4,15 +4,20 @@ import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '../ui/Avatar';
 import { BorderRadius, Colors, Shadow, Spacing, Typography } from '../../design_tokens';
 import type { RunningPresence } from '../../types';
+import type { ReportTarget } from '../../lib/moderation';
 
 export function RunningPresenceCard({
   presences,
   currentUserId,
+  battleId,
   onCheer,
+  onOpenSafety,
 }: {
   presences: RunningPresence[];
   currentUserId: string;
+  battleId: string;
   onCheer: (presence: RunningPresence) => Promise<void>;
+  onOpenSafety: (target: ReportTarget, displayName: string) => void;
 }) {
   const [sendingKey, setSendingKey] = useState<string | null>(null);
   if (presences.length === 0) return null;
@@ -51,25 +56,38 @@ export function RunningPresenceCard({
                 <Text style={styles.state}>ラン中</Text>
               </View>
               {!own && (
-                <TouchableOpacity
-                  style={[styles.cheerButton, presence.cheeredByMe && styles.cheeredButton]}
-                  onPress={() => void cheer(presence)}
-                  disabled={presence.cheeredByMe || sendingKey === key}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${presence.displayName}さんへ応援を送る`}
-                  accessibilityState={{ disabled: presence.cheeredByMe || sendingKey === key }}
-                >
-                  {sendingKey === key
-                    ? <ActivityIndicator size="small" color={Colors.accentDark} />
-                    : (
-                      <>
-                        <Ionicons name="flame" size={14} color={presence.cheeredByMe ? Colors.textTertiary : Colors.accentDark} />
-                        <Text style={[styles.cheerText, presence.cheeredByMe && styles.cheeredText]}>
-                          {presence.cheeredByMe ? '応援済み' : '応援'}
-                        </Text>
-                      </>
-                    )}
-                </TouchableOpacity>
+                <View style={styles.rowActions}>
+                  <TouchableOpacity
+                    style={[styles.cheerButton, presence.cheeredByMe && styles.cheeredButton]}
+                    onPress={() => void cheer(presence)}
+                    disabled={presence.cheeredByMe || sendingKey === key}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${presence.displayName}さんへ応援を送る`}
+                    accessibilityState={{ disabled: presence.cheeredByMe || sendingKey === key }}
+                  >
+                    {sendingKey === key
+                      ? <ActivityIndicator size="small" color={Colors.accentDark} />
+                      : (
+                        <>
+                          <Ionicons name="flame" size={14} color={presence.cheeredByMe ? Colors.textTertiary : Colors.accentDark} />
+                          <Text style={[styles.cheerText, presence.cheeredByMe && styles.cheeredText]}>
+                            {presence.cheeredByMe ? '応援済み' : '応援'}
+                          </Text>
+                        </>
+                      )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.safetyButton}
+                    onPress={() => onOpenSafety({
+                      type: 'presence', id: `${presence.uid}:${presence.sessionId}`,
+                      targetUid: presence.uid, battleId, contentSnapshot: presence.displayName,
+                    }, presence.displayName)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${presence.displayName}さんの安全メニュー`}
+                  >
+                    <Ionicons name="ellipsis-horizontal" size={17} color={Colors.textTertiary} />
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
           );
@@ -102,4 +120,6 @@ const styles = StyleSheet.create({
   cheeredText: { color: Colors.textSecondary },
   privacyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderTopWidth: 1, borderTopColor: Colors.borderLight, paddingVertical: Spacing.sm },
   privacyText: { fontSize: 9, color: Colors.textSecondary },
+  rowActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  safetyButton: { width: 30, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: BorderRadius.full },
 });
