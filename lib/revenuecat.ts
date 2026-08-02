@@ -18,12 +18,9 @@ const API_KEY = process.env['EXPO_PUBLIC_REVENUECAT_API_KEY'] ?? '';
 // RevenueCatダッシュボードの既存設定に合わせた識別子。ダッシュボード側を正とする。
 const PRO_ENTITLEMENT_ID = 'Zelio Pro';
 
-export type ProPlanPeriod = 'monthly' | 'annual';
-
-const PACKAGE_IDS: Record<ProPlanPeriod, string> = {
-  monthly: '$rc_monthly',
-  annual: '$rc_annual',
-};
+// リリース初期は月額だけを販売する。RevenueCatのOfferingに年額が残っていても
+// クライアントはこのPackage identifier以外を表示・購入しない。
+const PRO_MONTHLY_PACKAGE_ID = '$rc_monthly';
 
 if (!API_KEY) {
   console.warn('[RevenueCat] APIキーが設定されていません。.env の EXPO_PUBLIC_REVENUECAT_API_KEY を確認してください。');
@@ -72,43 +69,29 @@ export async function initRevenueCat(userId: string): Promise<void> {
 export interface ProPackageInfo {
   /** ストアがローカライズ済みの価格表記（例: "¥480"） */
   priceString: string;
-  /** 課金周期の日本語ラベル（例: "月額"）。パースできない場合は空文字 */
-  periodLabel: string;
-}
-
-function periodLabelFromIso(period: string | null | undefined): string {
-  if (!period) return '';
-  if (period.includes('Y')) return '年額';
-  if (period.includes('M')) return '月額';
-  if (period.includes('W')) return '週額';
-  return '';
 }
 
 /**
- * Proプラン（月額・年額）の価格・課金周期を取得する（購入ボタン周辺の表示用）。
+ * Pro月額プランの価格を取得する（購入ボタン周辺の表示用）。
  * Apple審査ガイドライン3.1.2で、購入前に価格・期間の明示が求められるため。
- * Offering に存在しない周期は結果に含まれない。
+ * Offering に年額パッケージが残っていても取得対象にしない。
  */
-export async function getProPlanPrices(): Promise<Partial<Record<ProPlanPeriod, ProPackageInfo>>> {
-  if (!API_KEY) return {};
+export async function getProMonthlyPlan(): Promise<ProPackageInfo | null> {
+  if (!API_KEY) return null;
   const Purchases = getPurchases();
-  if (!Purchases) return {};
+  if (!Purchases) return null;
   try {
     const offerings = await Purchases.getOfferings();
     const packages = offerings.current?.availablePackages ?? [];
-    const plans: Partial<Record<ProPlanPeriod, ProPackageInfo>> = {};
-    for (const period of Object.keys(PACKAGE_IDS) as ProPlanPeriod[]) {
-      const pkg = packages.find((p: { identifier: string }) => p.identifier === PACKAGE_IDS[period]);
-      if (pkg) {
-        plans[period] = {
-          priceString: pkg.product.priceString,
-          periodLabel: periodLabelFromIso(pkg.product.subscriptionPeriod),
-        };
-      }
-    }
-    return plans;
+    const monthlyPackage = packages.find(
+      (pkg: { identifier: string }) => pkg.identifier === PRO_MONTHLY_PACKAGE_ID,
+    );
+    if (!monthlyPackage) return null;
+    return {
+      priceString: monthlyPackage.product.priceString,
+    };
   } catch {
-    return {};
+    return null;
   }
 }
 
@@ -130,7 +113,7 @@ export async function checkProEntitlement(): Promise<boolean> {
  * Firestoreの`users/{uid}.plan`はRevenueCat Webhook経由で数秒遅れて反映されるため、
  * ここではFirestoreを直接更新せず、RevenueCat entitlementをauthStoreへ即時反映する。
  */
-export async function purchasePro(period: ProPlanPeriod): Promise<boolean> {
+export async function purchasePro(): Promise<boolean> {
   const Purchases = getPurchases();
   if (!API_KEY || !Purchases) {
     // 黙って false を返すと呼び出し元がガードを忘れたとき「押しても無反応」に戻るため、理由付きで失敗させる
@@ -139,7 +122,7 @@ export async function purchasePro(period: ProPlanPeriod): Promise<boolean> {
   try {
     const offerings = await Purchases.getOfferings();
     const proPackage = offerings.current?.availablePackages.find(
-      (p: { identifier: string }) => p.identifier === PACKAGE_IDS[period],
+      (p: { identifier: string }) => p.identifier === PRO_MONTHLY_PACKAGE_ID,
     );
     if (!proPackage) {
       throw new Error(

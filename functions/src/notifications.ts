@@ -70,7 +70,7 @@ export const onReactionCreated = onDocumentCreated(
   },
 );
 
-/** 出撃宣言への応援を宣言者へ通知する。 */
+/** ラン宣言への応援を宣言者へ通知する。 */
 export const onDeclarationCheerCreated = onDocumentCreated(
   'battles/{battleId}/declarations/{declarationId}/cheers/{fromUid}',
   async (event) => {

@@ -15,7 +15,7 @@ import {
   RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
 import {
-  doc, setDoc, updateDoc, addDoc, deleteDoc, collection, Timestamp, getDoc,
+  deleteField, doc, setDoc, updateDoc, addDoc, deleteDoc, collection, Timestamp, getDoc,
   getDocs, query, where, orderBy, serverTimestamp,
 } from 'firebase/firestore';
 
@@ -89,6 +89,7 @@ async function seed() {
     // alice のユーザードキュメント（plan/role/titles自己変更拒否確認用）
     await setDoc(doc(db, 'users/alice'), {
       name: 'Alice',
+      avatarUrl: null,
       plan: 'free',
       role: 'user',
       titles: [],
@@ -99,12 +100,12 @@ async function seed() {
       name: 'Carol', plan: 'free', role: 'user', titles: [], runningPresenceVisible: true,
     });
     await setDoc(doc(db, 'publicProfiles/alice'), { name: 'Alice', avatarUrl: null, avatarEmoji: null, updatedAt: Timestamp.now() });
-    await setDoc(doc(db, 'publicProfiles/carol'), { name: 'Carol', avatarUrl: null, avatarEmoji: null, updatedAt: Timestamp.now() });
+    await setDoc(doc(db, 'publicProfiles/carol'), { name: 'Carol', avatarEmoji: null, updatedAt: Timestamp.now() });
     await setDoc(doc(db, 'activities/publicAct'), {
       userId: 'alice', visibility: 'public_v2', distanceKm: 2, battleIds: ['battle1'],
       startedAt: Timestamp.now(), endedAt: Timestamp.now(), durationSeconds: 1200,
     });
-    await setDoc(doc(db, 'users/alice/badges/first_run'), { badgeId: 'first_run', name: '初陣ランナー' });
+    await setDoc(doc(db, 'users/alice/badges/first_run'), { badgeId: 'first_run', name: 'はじめの一歩' });
     await setDoc(doc(db, 'users/alice/monthlyStats/2026-07'), {
       km: 12.5, count: 3, durationSec: 5400, elevationM: 120,
     });
@@ -181,11 +182,11 @@ async function run() {
     'fail',
   );
   await check(
-    'participants: 本人が有効な陣営へtotalDistanceKm:0で参加できる',
+    'participants: 本人の直接参加は拒否（Callable Functionのみ）',
     setDoc(doc(aliceDb, 'battles/battle2/participants/alice'), {
       userId: 'alice', categoryId: 'teamA', totalDistanceKm: 0, activityCount: 0,
     }),
-    'succeed',
+    'fail',
   );
   await check(
     'participants: 歩数チャレンジの日次加算値を新規参加時に自己設定できない',
@@ -208,9 +209,9 @@ async function run() {
     'fail',
   );
   await check(
-    'participants: categoryIdのみの更新は許可',
+    'participants: categoryIdのみでも直接更新は拒否（Callable Functionのみ）',
     updateDoc(doc(aliceDb, 'battles/battle1/participants/alice'), { categoryId: 'teamB' }),
-    'succeed',
+    'fail',
   );
 
   // ── activities ─────────────────────────────────────────────────────
@@ -272,9 +273,49 @@ async function run() {
     'fail',
   );
   await check(
+    'users/{uid}: アプリ内アバターアイコンは更新できる',
+    updateDoc(doc(aliceDb, 'users/alice'), { avatarEmoji: '🐶' }),
+    'succeed',
+  );
+  await check(
+    'users/{uid}: アプリ外のアイコンは拒否',
+    updateDoc(doc(aliceDb, 'users/alice'), { avatarEmoji: '📷' }),
+    'fail',
+  );
+  await check(
+    'users/{uid}: 写真URLは拒否',
+    updateDoc(doc(aliceDb, 'users/alice'), { avatarUrl: 'https://example.com/avatar.jpg' }),
+    'fail',
+  );
+  await check(
+    'users/{uid}: 旧写真URLフィールドは削除できる',
+    updateDoc(doc(aliceDb, 'users/alice'), { avatarUrl: deleteField() }),
+    'succeed',
+  );
+  await check(
     'publicProfiles: 明白な嫌がらせ表現を含む公開名は拒否',
     updateDoc(doc(aliceDb, 'publicProfiles/alice'), { name: '殺すぞ' }),
     'fail',
+  );
+  await check(
+    'publicProfiles: アプリ内アバターアイコンは更新できる',
+    updateDoc(doc(aliceDb, 'publicProfiles/alice'), { avatarEmoji: '🐱' }),
+    'succeed',
+  );
+  await check(
+    'publicProfiles: アプリ外のアイコンは拒否',
+    updateDoc(doc(aliceDb, 'publicProfiles/alice'), { avatarEmoji: '📷' }),
+    'fail',
+  );
+  await check(
+    'publicProfiles: 写真URLは拒否',
+    updateDoc(doc(aliceDb, 'publicProfiles/alice'), { avatarUrl: 'https://example.com/avatar.jpg' }),
+    'fail',
+  );
+  await check(
+    'publicProfiles: 旧写真URLフィールドは削除できる',
+    updateDoc(doc(aliceDb, 'publicProfiles/alice'), { avatarUrl: deleteField() }),
+    'succeed',
   );
   await check(
     'battles: 不適切な説明の作成はサーバールールで拒否',
@@ -632,9 +673,28 @@ async function run() {
     'fail',
   );
   await check(
+    'users/{uid}: battleIdsの自己更新は拒否（Callable Functionのみ更新可）',
+    updateDoc(doc(aliceDb, 'users/alice'), { battleIds: ['battle1', 'battle2', 'battle3'] }),
+    'fail',
+  );
+  await check(
     'users/{uid}: 新規登録時のpersonalRecords自己設定は拒否',
     setDoc(doc(daveDb, 'users/dave'), {
       name: 'Dave', plan: 'free', personalRecords: { fastest1kSec: 1 },
+    }),
+    'fail',
+  );
+  await check(
+    'users/{uid}: 新規登録時のbattleIds自己設定は拒否',
+    setDoc(doc(daveDb, 'users/dave'), {
+      name: 'Dave', plan: 'free', battleIds: ['battle1', 'battle2', 'battle3'],
+    }),
+    'fail',
+  );
+  await check(
+    'users/{uid}: 新規登録時の月次バックフィル済み偽装は拒否',
+    setDoc(doc(daveDb, 'users/dave'), {
+      name: 'Dave', plan: 'free', monthlyStatsBackfillVersion: 1,
     }),
     'fail',
   );

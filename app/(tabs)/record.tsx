@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Alert, ActivityIndicator, Modal, Pressable, Switch, Animated, Easing,
+  Alert, ActivityIndicator, Modal, Pressable, Switch, Animated, Easing, AppState, Linking,
+  Platform, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
@@ -20,7 +21,7 @@ import {
 import { useAuthStore } from '../../stores/authStore';
 import { useBattleStore } from '../../stores/battleStore';
 import { useRecentActivities } from '../../hooks/useRecentActivities';
-import type { Activity, MeasurementType, RunGoal } from '../../types';
+import type { Activity, GpsWarmupSeed, MeasurementType, RoutePoint, RunGoal } from '../../types';
 import { Colors, DarkColors, Spacing, BorderRadius, Shadow, TextStyles } from '../../design_tokens';
 import { MonoLabel } from '../../components/ui/MonoLabel';
 import { StatBlock } from '../../components/ui/StatBlock';
@@ -38,7 +39,14 @@ import {
   DEFAULT_VOICE_COACH_SETTINGS,
   type VoiceCoachSettings,
 } from '../../utils/voiceCoach';
-import { GPS_START_ACCURACY_M } from '../../utils/gpsQuality';
+import {
+  GPS_ANDROID_TIME_INTERVAL_MS,
+  GPS_DISTANCE_INTERVAL_M,
+  START_ACCEPTABLE_ACCURACY_M,
+  START_READY_ACCURACY_M,
+  WARMUP_GOOD_POINT_COUNT,
+  WARMUP_POINT_MAX_AGE_MS,
+} from '../../utils/gpsProcessing';
 import { STEP_BATTLE_DAILY_CAP_KM } from '../../lib/constants';
 import { decorLabel } from '../../lib/locale';
 
@@ -73,7 +81,14 @@ function goalLabel(goal: RunGoal): string {
   return goal.type === 'distance' ? `${goal.value}km` : `${Math.round(goal.value / 60)}分`;
 }
 
-type GpsReadiness = 'checking' | 'ready' | 'weak' | 'no-permission' | 'unavailable';
+type GpsReadiness =
+  | 'preparing'
+  | 'acceptable'
+  | 'ready'
+  | 'no-permission'
+  | 'approximate'
+  | 'services-disabled'
+  | 'unavailable';
 
 function formatTime(s: number): string {
   const h = Math.floor(s / 3600);
@@ -92,6 +107,7 @@ function formatPace(distKm: number, sec: number): string {
 }
 
 export default function RecordScreen() {
+  const { fontScale } = useWindowDimensions();
   const { user } = useAuthStore();
   const {
     publicBattles, privateBattles, myMemberships,
@@ -136,12 +152,18 @@ export default function RecordScreen() {
   const [selectedGoalIdx, setSelectedGoalIdx] = useState(0);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [gpsReadiness, setGpsReadiness] = useState<GpsReadiness | null>(null);
+  const [gpsWarmupRestartKey, setGpsWarmupRestartKey] = useState(0);
+  const [backgroundPermissionGranted, setBackgroundPermissionGranted] = useState<boolean | null>(null);
   const [hudCheerName, setHudCheerName] = useState<string | null>(null);
   const spokenIntervalRef = useRef(0);
   const lastVoiceDistanceRef = useRef(0);
   const lastVoiceElapsedRef = useRef(0);
   const goalAnnouncedRef = useRef(false);
   const stopGuardRef = useRef(false);
+  const warmupSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
+  const warmupStartedAtRef = useRef<number | null>(null);
+  const warmupReadyCountRef = useRef(0);
+  const lastWarmupPointRef = useRef<RoutePoint | null>(null);
   const latestRunCheer = useRunCheers({
     battleId: primaryPresenceBattleId,
     runnerId: user?.id,
@@ -243,28 +265,142 @@ export default function RecordScreen() {
     }
   }, [isRecording]);
 
-  // 開始前のGPS捕捉状態。権限の要求はせず（要求は開始時）、許可済みなら測位を1回試す
+  // 記録開始前から本番と同じBestForNavigationでウォームアップする。
+  // distanceIntervalは更新通知条件であり、記録中の3mジッター除去とは別の処理。
   useEffect(() => {
     if (isRecording || selectedMode !== 'gps') { setGpsReadiness(null); return; }
     let cancelled = false;
-    setGpsReadiness('checking');
+    let expiryTimer: ReturnType<typeof setInterval> | null = null;
+    let localSubscription: Location.LocationSubscription | null = null;
+    setGpsReadiness('preparing');
+    warmupStartedAtRef.current = Date.now();
+    warmupReadyCountRef.current = 0;
+    lastWarmupPointRef.current = null;
+
+    const stopWarmup = () => {
+      localSubscription?.remove();
+      if (warmupSubscriptionRef.current === localSubscription) warmupSubscriptionRef.current = null;
+      localSubscription = null;
+      if (expiryTimer) clearInterval(expiryTimer);
+      expiryTimer = null;
+    };
+
     (async () => {
+      const provider = await Location.getProviderStatusAsync().catch(() => null);
+      if (cancelled) return;
+      if (!provider) {
+        setGpsReadiness('unavailable');
+        return;
+      }
+      if (!provider.locationServicesEnabled) {
+        setGpsReadiness('services-disabled');
+        return;
+      }
       const permission = await Location.getForegroundPermissionsAsync().catch(() => null);
       if (cancelled) return;
       if (!permission?.granted) { setGpsReadiness('no-permission'); return; }
+      if (Platform.OS === 'android' && permission.android?.accuracy !== 'fine') {
+        setGpsReadiness('approximate');
+        return;
+      }
+
       try {
-        const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        if (!cancelled) {
-          const accuracy = location.coords.accuracy;
-          setGpsReadiness(
-            typeof accuracy === 'number' && accuracy > GPS_START_ACCURACY_M ? 'weak' : 'ready',
-          );
+        const subscription = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.BestForNavigation,
+            distanceInterval: GPS_DISTANCE_INTERVAL_M,
+            // expo-location 19ではtimeIntervalはAndroid専用。iOSの頻度制御には使わない。
+            ...(Platform.OS === 'android' ? { timeInterval: GPS_ANDROID_TIME_INTERVAL_MS } : {}),
+          },
+          (location) => {
+            if (cancelled) return;
+            const accuracy = location.coords.accuracy;
+            const ageMs = Date.now() - location.timestamp;
+            if (
+              typeof accuracy !== 'number'
+              || !Number.isFinite(accuracy)
+              || accuracy <= 0
+              || accuracy > START_ACCEPTABLE_ACCURACY_M
+              || ageMs < 0
+              || ageMs > WARMUP_POINT_MAX_AGE_MS
+            ) {
+              warmupReadyCountRef.current = 0;
+              lastWarmupPointRef.current = null;
+              setGpsReadiness('preparing');
+              return;
+            }
+
+            const point: RoutePoint = {
+              lat: location.coords.latitude,
+              lng: location.coords.longitude,
+              timestamp: location.timestamp,
+              accuracy,
+            };
+            if (typeof location.coords.altitude === 'number' && Number.isFinite(location.coords.altitude)) {
+              point.alt = location.coords.altitude;
+            }
+            if (
+              typeof location.coords.altitudeAccuracy === 'number'
+              && Number.isFinite(location.coords.altitudeAccuracy)
+            ) {
+              point.altitudeAccuracy = Math.max(0, location.coords.altitudeAccuracy);
+            }
+            lastWarmupPointRef.current = point;
+            warmupReadyCountRef.current = accuracy <= START_READY_ACCURACY_M
+              ? warmupReadyCountRef.current + 1
+              : 0;
+            setGpsReadiness(
+              warmupReadyCountRef.current >= WARMUP_GOOD_POINT_COUNT ? 'ready' : 'acceptable',
+            );
+          },
+        );
+        if (cancelled) {
+          subscription.remove();
+          return;
         }
+        localSubscription = subscription;
+        warmupSubscriptionRef.current = subscription;
+        expiryTimer = setInterval(() => {
+          const last = lastWarmupPointRef.current;
+          if (last && Date.now() - last.timestamp > WARMUP_POINT_MAX_AGE_MS) {
+            lastWarmupPointRef.current = null;
+            warmupReadyCountRef.current = 0;
+            setGpsReadiness('preparing');
+          }
+        }, 1_000);
       } catch {
         if (!cancelled) setGpsReadiness('unavailable');
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      stopWarmup();
+    };
+  }, [isRecording, selectedMode, gpsWarmupRestartKey]);
+
+  // 画面OFF時の記録可否を開始前に見える状態にする。
+  // 端末設定から戻った場合も再確認し、表示だけが古いまま残らないようにする。
+  useEffect(() => {
+    if (isRecording || selectedMode !== 'gps') {
+      setBackgroundPermissionGranted(null);
+      return;
+    }
+    let cancelled = false;
+    const refresh = async () => {
+      const permission = await Location.getBackgroundPermissionsAsync().catch(() => null);
+      if (!cancelled) setBackgroundPermissionGranted(permission?.granted === true);
+    };
+    void refresh();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void refresh();
+        setGpsWarmupRestartKey((value) => value + 1);
+      }
+    });
+    return () => {
+      cancelled = true;
+      subscription.remove();
+    };
   }, [isRecording, selectedMode]);
 
   // カウントダウン: 3→2→1→開始
@@ -272,7 +408,28 @@ export default function RecordScreen() {
     if (countdown === null) return;
     if (countdown <= 0) {
       setCountdown(null);
-      startRecording(selectedMode, GOAL_OPTIONS[selectedGoalIdx]?.goal ?? null);
+      let warmupSeed: GpsWarmupSeed | null = null;
+      if (selectedMode === 'gps') {
+        const point = lastWarmupPointRef.current;
+        const pointAgeMs = point ? Date.now() - point.timestamp : Infinity;
+        if (
+          !point
+          || typeof point.accuracy !== 'number'
+          || point.accuracy <= 0
+          || point.accuracy > START_ACCEPTABLE_ACCURACY_M
+          || pointAgeMs < 0
+          || pointAgeMs > WARMUP_POINT_MAX_AGE_MS
+        ) {
+          Alert.alert('GPSを準備しています', '正確な開始地点を取得できませんでした。空が見える場所でGPS状態が更新されてから、もう一度STARTを押してください。');
+          return;
+        }
+        warmupSeed = {
+          point,
+          warmupDurationMs: Math.max(0, Date.now() - (warmupStartedAtRef.current ?? Date.now())),
+          readyAccuracyM: point.accuracy,
+        };
+      }
+      startRecording(selectedMode, GOAL_OPTIONS[selectedGoalIdx]?.goal ?? null, warmupSeed);
       if (voiceGuide) Speech.speak('スタート', { language: 'ja-JP', rate: 1.0 });
       return;
     }
@@ -282,13 +439,27 @@ export default function RecordScreen() {
     return () => clearTimeout(timer);
   }, [countdown, selectedMode, selectedGoalIdx, voiceGuide]);
 
-  /**
-   * GPSモードの位置情報権限を、カウントダウンより前に確定させる。
-   * - 使用中の許可が無ければ要求し、拒否ならランを開始しない（時間だけ進む状態を作らない）
-   * - 常に許可は「画面を消しても記録が続く」理由を説明してから任意で要求する。
-   *   拒否されてもフォアグラウンド監視で記録は続くため、開始自体は妨げない。
-   */
-  async function ensureLocationPermission(): Promise<boolean> {
+  async function ensureForegroundLocationPermission(): Promise<boolean> {
+    const provider = await Location.getProviderStatusAsync().catch(() => null);
+    if (!provider) {
+      Alert.alert(
+        '位置情報を確認できません',
+        '端末の位置情報状態を確認できませんでした。少し待ってからもう一度お試しください。',
+      );
+      return false;
+    }
+    if (!provider.locationServicesEnabled) {
+      Alert.alert(
+        '位置情報サービスがOFFです',
+        'GPS距離を記録するには、端末の位置情報サービスをONにしてください。',
+        [
+          { text: '閉じる', style: 'cancel' },
+          { text: '端末設定を開く', onPress: () => { void Linking.openSettings(); } },
+        ],
+      );
+      return false;
+    }
+
     let foreground = await Location.getForegroundPermissionsAsync().catch(() => null);
     if (!foreground?.granted) {
       if (foreground && !foreground.canAskAgain) {
@@ -299,6 +470,7 @@ export default function RecordScreen() {
         return false;
       }
       foreground = await Location.requestForegroundPermissionsAsync().catch(() => null);
+      setGpsWarmupRestartKey((value) => value + 1);
     }
     if (!foreground?.granted) {
       Alert.alert(
@@ -308,21 +480,95 @@ export default function RecordScreen() {
       return false;
     }
 
-    const background = await Location.getBackgroundPermissionsAsync().catch(() => null);
-    if (background && !background.granted && background.canAskAgain) {
-      const proceed = await new Promise<boolean>((resolve) => {
+    if (Platform.OS === 'android' && foreground.android?.accuracy !== 'fine') {
+      Alert.alert(
+        '正確な位置情報が必要です',
+        '概算位置では走行距離とチーム貢献距離を正確に計測できません。端末設定でZELIOの位置情報を「正確」にしてください。',
+        [
+          { text: '閉じる', style: 'cancel' },
+          { text: '端末設定を開く', onPress: () => { void Linking.openSettings(); } },
+        ],
+      );
+      return false;
+    }
+
+    // expo-location 19.0.8 の公開型は iOS に scope だけを持ち、full/reduced accuracyを公開しない。
+    // any/castで推測せず、iOSはウォームアップ点の実accuracy (35m以内) で開始可否を守る。
+
+    return true;
+  }
+
+  /**
+   * バックグラウンド位置情報の設定だけを行う。
+   * 設定後に記録を勝手に開始せず、利用者が状態表示を確認してから改めてSTARTできるようにする。
+   */
+  async function configureBackgroundLocation(): Promise<void> {
+    if (!(await ensureForegroundLocationPermission())) return;
+
+    let background = await Location.getBackgroundPermissionsAsync().catch(() => null);
+    if (background?.granted) {
+      setBackgroundPermissionGranted(true);
+      Alert.alert(
+        '設定済みです',
+        '位置情報は「常に許可」されています。実際の動作状態は記録開始後の画面にも表示します。',
+      );
+      return;
+    }
+
+    if (background?.canAskAgain !== false) {
+      setBackgroundPermissionGranted(null);
+      await Location.requestBackgroundPermissionsAsync().catch(() => null);
+      background = await Location.getBackgroundPermissionsAsync().catch(() => null);
+      setBackgroundPermissionGranted(background?.granted === true);
+      if (background?.granted) {
         Alert.alert(
-          '画面を消しても記録を続けますか？',
-          '「常に許可」にすると、画面をロックしたり他のアプリを開いたりしても計測が続きます。許可しない場合はこの画面を開いたままにしてください。',
+          '位置情報の設定が完了しました',
+          '「常に許可」に設定できました。準備ができたらSTARTを押してください。',
+        );
+        return;
+      }
+    } else {
+      setBackgroundPermissionGranted(false);
+    }
+
+    Alert.alert(
+      '設定はまだ完了していません',
+      '端末設定で ZELIO の位置情報を「常に許可」にしてください。この画面へ戻ると設定状態が更新されます。',
+      [
+        { text: '閉じる', style: 'cancel' },
+        { text: '端末設定を開く', onPress: () => { void Linking.openSettings(); } },
+      ],
+    );
+  }
+
+  /**
+   * GPSモードの位置情報権限を、カウントダウンより前に確定させる。
+   * - 使用中の許可が無ければ要求し、拒否ならランを開始しない（時間だけ進む状態を作らない）
+   * - 画面OFFの記録が未設定なら、設定するか画面を開いたまま開始するかを明示する。
+   * - 「設定する」は設定だけを行い、この呼び出しでは記録を開始しない。
+   */
+  async function ensureLocationPermission(): Promise<boolean> {
+    if (!(await ensureForegroundLocationPermission())) return false;
+
+    const background = await Location.getBackgroundPermissionsAsync().catch(() => null);
+    setBackgroundPermissionGranted(background?.granted === true);
+    if (!background?.granted) {
+      const action = await new Promise<'configure' | 'foreground' | 'cancel'>((resolve) => {
+        Alert.alert(
+          '画面OFFでも記録するための設定',
+          '端末の位置情報を「常に許可」にすると、画面をロックしたり他のアプリを開いたりしても計測が続きます。設定後は状態を確認して、STARTをもう一度押してください。',
           [
-            { text: 'あとで', style: 'cancel', onPress: () => resolve(false) },
-            { text: '設定する', onPress: () => resolve(true) },
+            { text: '画面を開いたまま開始', style: 'cancel', onPress: () => resolve('foreground') },
+            { text: '設定する', onPress: () => resolve('configure') },
           ],
+          { cancelable: true, onDismiss: () => resolve('cancel') },
         );
       });
-      if (proceed) {
-        await Location.requestBackgroundPermissionsAsync().catch(() => null);
+      if (action === 'configure') {
+        await configureBackgroundLocation();
+        return false;
       }
+      return action === 'foreground';
     }
     return true;
   }
@@ -334,8 +580,22 @@ export default function RecordScreen() {
         Alert.alert('モーション権限が必要です', '歩数モードを使うには、端末設定でモーションとフィットネスを許可してください。');
         return;
       }
-    } else if (!(await ensureLocationPermission())) {
-      return;
+    } else {
+      if (!(await ensureLocationPermission())) return;
+      const warmupPoint = lastWarmupPointRef.current;
+      const warmupAgeMs = warmupPoint ? Date.now() - warmupPoint.timestamp : Infinity;
+      if (
+        (gpsReadiness !== 'ready' && gpsReadiness !== 'acceptable')
+        || !warmupPoint
+        || warmupAgeMs < 0
+        || warmupAgeMs > WARMUP_POINT_MAX_AGE_MS
+      ) {
+        Alert.alert(
+          'GPSを準備しています',
+          '正確な開始地点を取得中です。空が見える場所で「GPS 準備OK」または「開始できます」と表示されてからSTARTを押してください。',
+        );
+        return;
+      }
     }
     setCountdown(3);
   }
@@ -612,16 +872,64 @@ export default function RecordScreen() {
                   style={[
                     s.gpsDot,
                     gpsReadiness === 'ready' && { backgroundColor: Colors.primary },
-                    (gpsReadiness === 'weak' || gpsReadiness === 'unavailable') && { backgroundColor: Colors.accent },
+                    gpsReadiness === 'acceptable' && { backgroundColor: Colors.accent },
+                    (gpsReadiness === 'approximate'
+                      || gpsReadiness === 'services-disabled'
+                      || gpsReadiness === 'unavailable') && { backgroundColor: Colors.accent },
                   ]}
                 />
                 <Text style={s.gpsChipText}>
-                  {gpsReadiness === 'checking' && 'GPS 確認中…'}
+                  {gpsReadiness === 'preparing' && 'GPS 準備中…'}
                   {gpsReadiness === 'ready' && 'GPS 準備OK'}
-                  {gpsReadiness === 'weak' && 'GPS精度が安定するまでお待ちください'}
+                  {gpsReadiness === 'acceptable' && 'GPS精度はやや低めですが開始できます'}
                   {gpsReadiness === 'no-permission' && '位置情報は開始時に許可できます'}
+                  {gpsReadiness === 'approximate' && '正確な位置情報を設定してください'}
+                  {gpsReadiness === 'services-disabled' && '端末の位置情報サービスがOFFです'}
                   {gpsReadiness === 'unavailable' && 'GPS信号を取得できません'}
                 </Text>
+              </View>
+            )}
+
+            {selectedMode === 'gps' && (
+              <View style={[
+                s.backgroundStatusCard,
+                backgroundPermissionGranted === true && s.backgroundStatusCardEnabled,
+              ]} accessibilityLiveRegion="polite">
+                <Ionicons
+                  name={backgroundPermissionGranted === true
+                    ? 'checkmark-circle'
+                    : backgroundPermissionGranted === null
+                      ? 'time-outline'
+                      : 'lock-closed-outline'}
+                  size={20}
+                  color={backgroundPermissionGranted === true ? Colors.primary : Colors.textSecondary}
+                />
+                <View style={s.backgroundStatusCopy}>
+                  <Text style={s.backgroundStatusTitle}>
+                    {backgroundPermissionGranted === null
+                      ? '画面OFFの位置情報を確認中…'
+                      : backgroundPermissionGranted
+                        ? '画面OFFの位置情報：許可済み'
+                        : '画面OFFの位置情報：未設定'}
+                  </Text>
+                  <Text style={s.backgroundStatusHint}>
+                    {backgroundPermissionGranted === null
+                      ? '端末の権限状態を確認しています'
+                      : backgroundPermissionGranted
+                        ? '記録開始後にも実際の動作状態を表示します'
+                        : '未設定では、この画面を開いたままにしてください'}
+                  </Text>
+                </View>
+                {backgroundPermissionGranted === false && (
+                  <TouchableOpacity
+                    style={s.backgroundSettingsButton}
+                    onPress={() => { void configureBackgroundLocation(); }}
+                    accessibilityRole="button"
+                    accessibilityLabel="画面OFFでも記録する設定を開く"
+                  >
+                    <Text style={s.backgroundSettingsButtonText}>設定</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             )}
 
@@ -661,19 +969,31 @@ export default function RecordScreen() {
             ) : last ? (
               <>
                 <SectionHeader label="前回のラン" />
-                <View style={s.lastRunCard}>
-                  <ListRow
-                    icon={last.measurementType === 'steps' ? 'footsteps-outline' : 'navigate-outline'}
-                    title={`${last.distanceKm.toFixed(1)}km・${formatTime(last.durationSeconds)}`}
-                    onPress={() => router.push(`/activity/${last.id}` as any)}
-                    right={
-                      <View style={s.lastRunRight}>
-                        <Text style={s.lastRunAgo}>{relativeDay(last.startedAt)}</Text>
-                        <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
-                      </View>
-                    }
-                  />
-                </View>
+                <TouchableOpacity
+                  style={s.lastRunCard}
+                  onPress={() => router.push(`/activity/${last.id}` as any)}
+                  activeOpacity={0.65}
+                  accessibilityRole="button"
+                  accessibilityLabel={`前回のラン、距離${last.distanceKm.toFixed(1)}キロ、時間${formatTime(last.durationSeconds)}、${relativeDay(last.startedAt)}`}
+                >
+                  <View style={[s.lastRunContent, fontScale >= 2 && s.lastRunContentLarge]}>
+                    <View style={s.lastRunIcon}>
+                      <Ionicons
+                        name={last.measurementType === 'steps' ? 'footsteps-outline' : 'navigate-outline'}
+                        size={18}
+                        color={Colors.primary}
+                      />
+                    </View>
+                    <View style={s.lastRunMetrics}>
+                      <Text style={s.lastRunMetric}>距離 {last.distanceKm.toFixed(1)}km</Text>
+                      <Text style={s.lastRunMetric}>時間 {formatTime(last.durationSeconds)}</Text>
+                    </View>
+                    <View style={s.lastRunRight}>
+                      <Text style={s.lastRunAgo}>{relativeDay(last.startedAt)}</Text>
+                      <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
+                    </View>
+                  </View>
+                </TouchableOpacity>
 
                 <View style={s.weekHead}>
                   <Text style={TextStyles.sectionTitle}>今週</Text>
@@ -820,7 +1140,7 @@ export default function RecordScreen() {
       {!isPaused && measurementType === 'gps' && gpsWarning && (
         <View style={s.warnBanner}>
           <Ionicons name="warning-outline" size={14} color={DarkColors.accent} />
-          <Text style={s.warnBannerText}>⚠ GPS信号が不安定です。画面を開いたまま走ってください</Text>
+          <Text style={s.warnBannerText}>GPS信号が不安定です。画面を開いたまま走ってください</Text>
         </View>
       )}
       {!isPaused && measurementType === 'gps' && !gpsWarning && locationMode === 'foreground' && (
@@ -833,6 +1153,12 @@ export default function RecordScreen() {
         <View style={s.warnBanner}>
           <Ionicons name="warning-outline" size={14} color={DarkColors.accent} />
           <Text style={s.warnBannerText}>位置情報の権限がありません。設定から許可してください</Text>
+        </View>
+      )}
+      {!isPaused && measurementType === 'gps' && !gpsWarning && locationMode === 'background' && (
+        <View style={s.hudReadyBanner}>
+          <Ionicons name="checkmark-circle-outline" size={14} color={DarkColors.primary} />
+          <Text style={s.hudReadyBannerText}>画面OFFでも記録できます</Text>
         </View>
       )}
       {!isPaused && measurementType === 'steps' && (
@@ -1120,6 +1446,26 @@ const s = StyleSheet.create({
   },
   gpsDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: Colors.textTertiary },
   gpsChipText: { fontSize: 11, fontWeight: '700' as const, color: Colors.textSecondary },
+  backgroundStatusCard: {
+    width: '88%', maxWidth: 360,
+    flexDirection: 'row' as const, alignItems: 'center' as const, gap: 10,
+    paddingHorizontal: 13, paddingVertical: 11,
+    borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  backgroundStatusCardEnabled: {
+    borderColor: Colors.primaryBorder,
+    backgroundColor: Colors.primaryLight,
+  },
+  backgroundStatusCopy: { flex: 1 },
+  backgroundStatusTitle: { fontSize: 12, fontWeight: '800' as const, color: Colors.textPrimary },
+  backgroundStatusHint: { marginTop: 2, fontSize: 10, lineHeight: 14, color: Colors.textSecondary },
+  backgroundSettingsButton: {
+    minWidth: 52, minHeight: 34, paddingHorizontal: 10,
+    borderRadius: BorderRadius.full, backgroundColor: Colors.primary,
+    alignItems: 'center' as const, justifyContent: 'center' as const,
+  },
+  backgroundSettingsButtonText: { fontSize: 11, fontWeight: '800' as const, color: Colors.textOnPrimary },
 
   countdownOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -1147,7 +1493,16 @@ const s = StyleSheet.create({
     borderRadius: BorderRadius.md,
     borderWidth: 1, borderColor: Colors.border,
     paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
   },
+  lastRunContent: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  lastRunContentLarge: { alignItems: 'flex-start', flexWrap: 'wrap' },
+  lastRunIcon: {
+    width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.surfaceGray,
+  },
+  lastRunMetrics: { flex: 1, minWidth: 150, gap: 2 },
+  lastRunMetric: { fontSize: 15, fontWeight: '700', color: Colors.textPrimary, fontVariant: ['tabular-nums'] },
   lastRunRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   lastRunAgo: { fontSize: 13, color: Colors.textTertiary, fontWeight: '600', fontVariant: ['tabular-nums'] },
   weekHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: Spacing.sm },
@@ -1189,6 +1544,13 @@ const s = StyleSheet.create({
     borderRadius: BorderRadius.sm, paddingHorizontal: 14, paddingVertical: 8,
   },
   warnBannerText: { fontSize: 11, fontWeight: '700', color: DarkColors.accent, textAlign: 'center' },
+  hudReadyBanner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    marginHorizontal: 20, marginBottom: 8, gap: 6,
+    backgroundColor: DarkColors.primarySoft,
+    borderRadius: BorderRadius.sm, paddingHorizontal: 14, paddingVertical: 8,
+  },
+  hudReadyBannerText: { fontSize: 11, fontWeight: '700', color: DarkColors.primary, textAlign: 'center' },
   hudStatsRow: {
     flexDirection: 'row',
     marginHorizontal: 20, marginBottom: 12,

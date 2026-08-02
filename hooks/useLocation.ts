@@ -1,8 +1,13 @@
 import { useEffect, useRef } from 'react';
+import { Platform } from 'react-native';
 import * as Location from 'expo-location';
 import { useRecordStore } from '../stores/recordStore';
 import { LOCATION_TASK_NAME } from '../lib/locationTask';
-import type { RoutePoint } from '../types';
+import type { GpsInputPoint } from '../utils/gpsProcessing';
+import {
+  GPS_ANDROID_TIME_INTERVAL_MS,
+  GPS_DISTANCE_INTERVAL_M,
+} from '../utils/gpsProcessing';
 
 // バックグラウンド追跡が登録済みでも位置更新が届かなくなる「静かな停止」を検知するまでの猶予時間
 const WATCHDOG_TIMEOUT_MS = 20000;
@@ -38,7 +43,6 @@ const WATCHDOG_CHECK_INTERVAL_MS = 5000;
  */
 export function useLocation({ enabled }: { enabled: boolean }) {
   const measurementType = useRecordStore((s) => s.measurementType);
-  const autoPauseEnabled = useRecordStore((s) => s.autoPauseEnabled);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
   const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -61,37 +65,40 @@ export function useLocation({ enabled }: { enabled: boolean }) {
       }
     };
 
-    const startForegroundWatch = async () => {
+    const startForegroundWatch = async (countAsFallback = false) => {
       // バックグラウンドタスクが先に登録されてしまっている場合は停止し、経路を1つに限定する
       // （ウォッチドッグ自体はフォアグラウンド監視中も継続して途絶を検知し続ける）
       await stopBackgroundTask();
       if (cancelled) return;
+      watchRef.current?.remove();
+      watchRef.current = null;
+      if (countAsFallback) useRecordStore.getState().noteForegroundFallback();
 
       try {
         watchRef.current = await Location.watchPositionAsync(
           {
             accuracy: Location.Accuracy.BestForNavigation,
-            timeInterval: 1000,
-            // オートポーズ中は静止サンプルも必要。保存対象には低速点を入れない。
-            distanceInterval: autoPauseEnabled ? 0 : 2,
+            // timeInterval は expo-location 19 の型上 Android のみ。iOSの頻度制御には使わない。
+            ...(Platform.OS === 'android' ? { timeInterval: GPS_ANDROID_TIME_INTERVAL_MS } : {}),
+            // 更新通知条件でありノイズ除去の代用ではない。3m commitAnchor処理は常時別に行う。
+            distanceInterval: GPS_DISTANCE_INTERVAL_M,
           },
           (loc) => {
             if (cancelled) return;
-            const newPoint: RoutePoint = {
+            const newPoint: GpsInputPoint = {
               lat: loc.coords.latitude,
               lng: loc.coords.longitude,
               timestamp: loc.timestamp,
+              accuracy: loc.coords.accuracy,
+              speed: loc.coords.speed,
             };
-            if (typeof loc.coords.accuracy === 'number' && Number.isFinite(loc.coords.accuracy)) {
-              newPoint.accuracy = Math.max(0, loc.coords.accuracy);
-            }
             if (typeof loc.coords.altitude === 'number' && Number.isFinite(loc.coords.altitude)) {
               newPoint.alt = loc.coords.altitude;
             }
             if (typeof loc.coords.altitudeAccuracy === 'number' && Number.isFinite(loc.coords.altitudeAccuracy)) {
               newPoint.altitudeAccuracy = Math.max(0, loc.coords.altitudeAccuracy);
             }
-            useRecordStore.getState().appendRoutePoint(newPoint, loc.coords.speed);
+            useRecordStore.getState().appendRoutePoint(newPoint, 'foreground');
           }
         );
         if (cancelled) { watchRef.current?.remove(); watchRef.current = null; return; }
@@ -125,7 +132,9 @@ export function useLocation({ enabled }: { enabled: boolean }) {
           console.warn('[useLocation] watchdog: no location update received for', WATCHDOG_TIMEOUT_MS, 'ms');
           if (!state.gpsWarning) useRecordStore.setState({ gpsWarning: true });
           if (state.locationMode === 'background') {
-            void startForegroundWatch();
+            // 実際に更新が途絶した復旧なので、次の良好点は前点と接続しない。
+            useRecordStore.getState().requestGpsSegmentBreak();
+            void startForegroundWatch(true);
           }
           // 次のチェックまでは再トリガーせず、更新再開の検知に専念する
           lastChangeAt = Date.now();
@@ -134,7 +143,7 @@ export function useLocation({ enabled }: { enabled: boolean }) {
     };
 
     const start = async () => {
-      const { status: fgStatus } = await Location.requestForegroundPermissionsAsync();
+      const { status: fgStatus } = await Location.getForegroundPermissionsAsync();
       if (cancelled) return;
       if (fgStatus !== 'granted') {
         useRecordStore.setState({ locationMode: 'denied' });
@@ -156,8 +165,11 @@ export function useLocation({ enabled }: { enabled: boolean }) {
           if (!isRegistered) {
             await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
               accuracy: Location.Accuracy.BestForNavigation,
-              timeInterval: 1000,
-              distanceInterval: autoPauseEnabled ? 0 : 2,
+              // timeInterval は Android のみ。iOSではCore Locationの更新頻度に依存する。
+              ...(Platform.OS === 'android' ? { timeInterval: GPS_ANDROID_TIME_INTERVAL_MS } : {}),
+              distanceInterval: GPS_DISTANCE_INTERVAL_M,
+              activityType: Location.ActivityType.Fitness,
+              pausesUpdatesAutomatically: false,
               showsBackgroundLocationIndicator: true,
               foregroundService: {
                 notificationTitle: '記録中',
@@ -171,11 +183,11 @@ export function useLocation({ enabled }: { enabled: boolean }) {
         } catch (e) {
           console.warn('[useLocation] startLocationUpdatesAsync failed, falling back to foreground watch:', e);
           if (cancelled) return;
-          await startForegroundWatch();
+          await startForegroundWatch(true);
         }
       } else {
         // bg権限なし: フォアグラウンド監視のみ
-        await startForegroundWatch();
+        await startForegroundWatch(false);
       }
     };
 
@@ -189,5 +201,5 @@ export function useLocation({ enabled }: { enabled: boolean }) {
       stopBackgroundTask();
       useRecordStore.setState({ locationMode: 'idle', gpsWarning: false });
     };
-  }, [enabled, measurementType, autoPauseEnabled]);
+  }, [enabled, measurementType]);
 }

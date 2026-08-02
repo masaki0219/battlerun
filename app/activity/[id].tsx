@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, Alert,
@@ -15,10 +15,15 @@ import type { RoutePoint, ReactionType } from '../../types';
 import { Colors, DarkColors, RoutePaceColors, BorderRadius, TextStyles } from '../../design_tokens';
 import { MonoLabel } from '../../components/ui/MonoLabel';
 import { KmSplitsCard } from '../../components/run/KmSplitsCard';
+import { RunShareCard } from '../../components/run/RunShareCard';
 import { SafetyActionsModal } from '../../components/moderation/SafetyActionsModal';
 import { useBlockedUsers } from '../../hooks/useBlockedUsers';
 import { kmSplits, elevationGainM, estimatedCalories } from '../../utils/displayStats';
 import { buildRouteVisualization, type RoutePaceBand } from '../../utils/routeSplits';
+import { buildRunShareMessage, formatShareDuration } from '../../utils/runShare';
+import { shareRunResult } from '../../lib/runSharing';
+import { isPro } from '../../lib/pro';
+import { useRunSharePreference } from '../../hooks/useRunSharePreference';
 
 const ROUTE_PACE_COLOR: Record<RoutePaceBand, string> = {
   fast: RoutePaceColors.fast,
@@ -78,13 +83,21 @@ interface ReactionCount {
 
 export default function ActivityDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { user } = useAuthStore();
+  const { user, proEntitlement } = useAuthStore();
+  const userIsPro = isPro(user?.plan, proEntitlement);
   const [activity, setActivity] = useState<ActivityData | null>(null);
   const [reactions, setReactions] = useState<ReactionCount[]>([]);
   const [battleContributions, setBattleContributions] = useState<BattleContribution[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const {
+    includeRouteInShare,
+    preferenceLoaded: sharePreferenceLoaded,
+    setIncludeRouteInShare,
+  } = useRunSharePreference(user?.id);
   const [showSafety, setShowSafety] = useState(false);
+  const shareCardRef = useRef<View>(null);
   const { blockedUserIds } = useBlockedUsers(user?.id);
 
   useEffect(() => {
@@ -206,6 +219,37 @@ export default function ActivityDetailScreen() {
     );
   }
 
+  async function handleShareRun() {
+    if (!activity || activity.userId !== user?.id || sharing || !sharePreferenceLoaded) return;
+    const dateLabel = new Date(activity.startedAt).toLocaleDateString('ja-JP', {
+      month: 'numeric', day: 'numeric',
+    });
+    const pace = activity.measurementType === 'gps'
+      ? formatPace(activity.distanceKm, activity.durationSeconds)
+      : null;
+    const primaryContribution = battleContributions[0] ?? null;
+    const impactLabel = primaryContribution
+      ? `「${primaryContribution.battleTitle}」に${primaryContribution.creditedDistanceKm.toFixed(1)}km貢献`
+      : null;
+    const message = buildRunShareMessage({
+      distanceKm: activity.distanceKm,
+      durationSeconds: activity.durationSeconds,
+      pace,
+      dateLabel,
+      impactLabel,
+    });
+
+    setSharing(true);
+    try {
+      await shareRunResult(shareCardRef.current, message, 'ラン結果をシェア');
+    } catch (error) {
+      console.warn('[ActivityDetail] share failed:', error);
+      Alert.alert('共有できませんでした', '時間をおいてもう一度お試しください。');
+    } finally {
+      setSharing(false);
+    }
+  }
+
   async function handleReaction(type: ReactionType) {
     if (!id || !user || !activity) return;
     const { doc: fDoc, setDoc, deleteDoc, serverTimestamp } = await import('firebase/firestore');
@@ -263,6 +307,7 @@ export default function ActivityDetailScreen() {
   const startDt = new Date(activity.startedAt);
   const endDt = new Date(activity.endedAt);
   const dateStr = startDt.toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
+  const shareDateStr = startDt.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' });
   const startTimeStr = startDt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
   const endTimeStr = endDt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
 
@@ -273,6 +318,13 @@ export default function ActivityDetailScreen() {
     : { segments: [], kmMarkers: [] };
   const elevationGain = hasRoute ? elevationGainM(activity.route) : null;
   const calories = estimatedCalories(activity.distanceKm, activity.durationSeconds);
+  const sharePace = activity.measurementType === 'gps'
+    ? formatPace(activity.distanceKm, activity.durationSeconds)
+    : null;
+  const primaryContribution = battleContributions[0] ?? null;
+  const shareImpactLabel = primaryContribution
+    ? `「${primaryContribution.battleTitle}」に${primaryContribution.creditedDistanceKm.toFixed(1)}km貢献${battleContributions.length > 1 ? `・ほか${battleContributions.length - 1}件` : ''}`
+    : null;
   let mapRegion: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number } | null = null;
   if (hasRoute) {
     const lats = activity.route.map((p) => p.lat);
@@ -296,18 +348,32 @@ export default function ActivityDetailScreen() {
           <Text style={s.headerTitle}>{dateStr}</Text>
         </View>
         {user?.id === activity.userId ? (
-          deleting ? (
-            <ActivityIndicator size="small" color={Colors.textTertiary} />
-          ) : (
+          <View style={s.headerActions}>
             <TouchableOpacity
-              onPress={handleDelete}
+              onPress={handleShareRun}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               accessibilityRole="button"
-              accessibilityLabel="この記録を削除"
+              accessibilityLabel="このラン結果をSNSに共有"
+              accessibilityState={{ busy: sharing, disabled: sharing || !sharePreferenceLoaded }}
+              disabled={sharing || !sharePreferenceLoaded}
             >
-              <Ionicons name="trash-outline" size={20} color={Colors.textTertiary} />
+              {sharing
+                ? <ActivityIndicator size="small" color={Colors.primary} />
+                : <Ionicons name="share-social-outline" size={20} color={Colors.primaryDark} />}
             </TouchableOpacity>
-          )
+            {deleting ? (
+              <ActivityIndicator size="small" color={Colors.textTertiary} />
+            ) : (
+              <TouchableOpacity
+                onPress={handleDelete}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel="この記録を削除"
+              >
+                <Ionicons name="trash-outline" size={20} color={Colors.textTertiary} />
+              </TouchableOpacity>
+            )}
+          </View>
         ) : (
           <TouchableOpacity
             onPress={() => setShowSafety(true)}
@@ -439,6 +505,62 @@ export default function ActivityDetailScreen() {
           </View>
         )}
 
+        {/* ── Share own activity ── */}
+        {user?.id === activity.userId && (
+          <View style={s.section}>
+            <Text style={TextStyles.sectionTitle}>このランをシェア</Text>
+            <RunShareCard
+              ref={shareCardRef}
+              distanceKm={activity.distanceKm}
+              durationLabel={formatShareDuration(activity.durationSeconds)}
+              paceLabel={sharePace?.includes('--') ? null : sharePace}
+              dateLabel={shareDateStr}
+              impactLabel={shareImpactLabel}
+              mapRegion={includeRouteInShare ? mapRegion : null}
+              routeVisualization={routeVisualization}
+              showWatermark={!userIsPro}
+            />
+            {!!mapRegion && (
+              <TouchableOpacity
+                style={s.routeShareToggle}
+                onPress={() => setIncludeRouteInShare((current) => !current)}
+                disabled={!sharePreferenceLoaded}
+                activeOpacity={0.75}
+                accessibilityRole="switch"
+                accessibilityState={{ checked: includeRouteInShare, disabled: !sharePreferenceLoaded }}
+                accessibilityLabel="共有画像にGPSルートを表示"
+              >
+                <Ionicons
+                  name={includeRouteInShare ? 'map' : 'map-outline'}
+                  size={16}
+                  color={includeRouteInShare ? Colors.primaryDark : Colors.textSecondary}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={s.routeShareToggleTitle}>
+                    {includeRouteInShare ? '共有画像にルートを表示中' : '共有画像のルートは非表示'}
+                  </Text>
+                  <Text style={s.routeShareToggleHint}>自宅付近などが映っていないか、プレビューを確認してください</Text>
+                </View>
+                <Ionicons name="swap-horizontal" size={16} color={Colors.textTertiary} />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[s.shareBtn, (sharing || !sharePreferenceLoaded) && s.shareBtnDisabled]}
+              onPress={handleShareRun}
+              activeOpacity={0.85}
+              disabled={sharing || !sharePreferenceLoaded}
+              accessibilityRole="button"
+              accessibilityLabel="このラン結果をSNSに共有"
+              accessibilityState={{ busy: sharing, disabled: sharing || !sharePreferenceLoaded }}
+            >
+              {sharing
+                ? <ActivityIndicator size="small" color={Colors.textOnPrimary} />
+                : <Ionicons name="share-social-outline" size={18} color={Colors.textOnPrimary} />}
+              <Text style={s.shareBtnText}>{sharing ? '共有画像を準備中…' : 'SNSにシェア'}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* ── Reactions ── */}
         <View style={s.section}>
           <Text style={TextStyles.sectionTitle}>リアクション</Text>
@@ -483,6 +605,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 12,
     backgroundColor: Colors.surface, borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 18 },
   headerTitle: { fontSize: 14, fontWeight: '700', color: Colors.textPrimary, marginTop: 2 },
   blockedTitle: { marginTop: 12, fontSize: 15, fontWeight: '700', color: Colors.textPrimary },
   blockedDetail: { marginTop: 5, fontSize: 11, color: Colors.textSecondary },
@@ -558,6 +681,20 @@ const s = StyleSheet.create({
   },
   battleTitle: { fontSize: 13, fontWeight: '800', color: Colors.textPrimary },
   battleContrib: { fontSize: 12, color: Colors.accent, fontWeight: '700', marginTop: 1, fontVariant: ['tabular-nums'] },
+
+  routeShareToggle: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    padding: 11, borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
+  },
+  routeShareToggleTitle: { fontSize: 12, fontWeight: '800', color: Colors.textPrimary },
+  routeShareToggleHint: { marginTop: 2, fontSize: 9, lineHeight: 13, color: Colors.textSecondary },
+  shareBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    minHeight: 48, borderRadius: BorderRadius.md, backgroundColor: DarkColors.background,
+  },
+  shareBtnDisabled: { opacity: 0.65 },
+  shareBtnText: { fontSize: 14, fontWeight: '800', color: Colors.textOnPrimary },
 
   reactionsRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   reactionBtn: {

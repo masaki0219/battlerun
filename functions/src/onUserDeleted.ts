@@ -51,7 +51,7 @@ export const onUserDeleted = functionsV1.auth.user().onDelete(async (user) => {
   const authoredReactionsSnap = await db.collectionGroup('reactions').where('userId', '==', uid).get();
   await batchDelete(db, authoredReactionsSnap.docs.map((doc) => doc.ref));
 
-  // 本人の出撃宣言、その宣言に付いた応援、および本人が送った応援を削除する。
+  // 本人のラン宣言、その宣言に付いた応援、および本人が送った応援を削除する。
   const [declarationsSnap, authoredCheersSnap] = await Promise.all([
     db.collectionGroup('declarations').where('uid', '==', uid).get(),
     db.collectionGroup('cheers').where('fromUid', '==', uid).get(),
@@ -125,7 +125,7 @@ export const onUserDeleted = functionsV1.auth.user().onDelete(async (user) => {
     db.doc(`publicProfiles/${uid}`).delete(),
   ]);
 
-  // 5. Storageのプロフィール画像。クライアント削除に失敗しても残さない。
+  // 5. 廃止済みの写真機能で保存された旧画像。移行完了までは削除保険を維持する。
   await getStorage().bucket().file(`avatars/${uid}`).delete({ ignoreNotFound: true }).catch((error) => {
     logger.warn('onUserDeleted: avatar deletion failed', { uid, error: (error as Error).message });
   });

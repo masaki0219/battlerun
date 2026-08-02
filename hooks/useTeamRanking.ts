@@ -45,14 +45,23 @@ export function useTeamRanking(
 ): TeamRanking {
   const [state, setState] = useState<Omit<TeamRanking, 'loading'>>(EMPTY);
   const [loading, setLoading] = useState(false);
+  const [resolvedKey, setResolvedKey] = useState<string | null>(null);
+  const requestKey = battleId && categoryId && myUserId
+    ? `${battleId}:${categoryId}:${myUserId}`
+    : null;
 
   useEffect(() => {
     if (!battleId || !categoryId || !myUserId) {
       setState(EMPTY);
       setLoading(false);
+      setResolvedKey(null);
       return;
     }
+    // 閲覧中チャレンジを切り替えた直後に、前のチーム順位を一瞬表示しない。
+    setState(EMPTY);
     setLoading(true);
+    setResolvedKey(null);
+    const effectKey = `${battleId}:${categoryId}:${myUserId}`;
     let generation = 0;
     const unsubscribe = onSnapshot(collection(db, 'battles', battleId, 'participants'), async (snap) => {
       const currentGeneration = ++generation;
@@ -96,16 +105,26 @@ export function useTeamRanking(
             myKm,
             gapToNextKm,
           });
+          setResolvedKey(effectKey);
         }
       } catch {
-        if (currentGeneration === generation) setState(EMPTY);
+        if (currentGeneration === generation) {
+          setState(EMPTY);
+          setResolvedKey(effectKey);
+        }
       } finally {
         if (currentGeneration === generation) setLoading(false);
       }
-    }, () => { setState(EMPTY); setLoading(false); });
+    }, () => {
+      setState(EMPTY);
+      setResolvedKey(effectKey);
+      setLoading(false);
+    });
 
     return () => { generation += 1; unsubscribe(); };
   }, [battleId, categoryId, myUserId, topCount]);
 
+  if (!requestKey) return { ...EMPTY, loading: false };
+  if (resolvedKey !== requestKey) return { ...EMPTY, loading: true };
   return { ...state, loading };
 }

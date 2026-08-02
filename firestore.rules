@@ -37,6 +37,21 @@ service cloud.firestore {
       return !('runningPresenceVisible' in data)
         || data.runningPresenceVisible is bool;
     }
+    function validAvatarEmoji(data) {
+      return data.get('avatarEmoji', null) in [
+        null,
+        '🐱', '🐶', '🐻', '🐼', '🐨', '🐯', '🦁', '🐸',
+        '🐰', '🐹', '🦊', '🐺', '🐮', '🐷', '🐧', '🐬',
+        '🦄', '🦔', '🦋', '🦦', '🐙', '🦈', '🐘', '🦒'
+      ];
+    }
+    function keepsOrRemovesLegacyAvatarUrl() {
+      return !('avatarUrl' in request.resource.data)
+        || (
+          ('avatarUrl' in resource.data)
+          && request.resource.data.avatarUrl == resource.data.avatarUrl
+        );
+    }
     function canReadBattle(battleId) {
       let battle = get(/databases/$(database)/documents/battles/$(battleId));
       return signedIn() && exists(/databases/$(database)/documents/battles/$(battleId)) && (
@@ -57,8 +72,13 @@ service cloud.firestore {
         && !('totalDistanceKm' in request.resource.data)
         && !('activityCount' in request.resource.data)
         && !('personalRecords' in request.resource.data)
+        && !('battleIds' in request.resource.data)
+        && !('monthlyStatsBackfillVersion' in request.resource.data)
+        && !('monthlyStatsBackfilledAt' in request.resource.data)
         && !('revenuecatLastEventAtMs' in request.resource.data)
         && !('lastStatsSyncAtMs' in request.resource.data)
+        && !('avatarUrl' in request.resource.data)
+        && validAvatarEmoji(request.resource.data)
         && validWeeklyGoal(request.resource.data.get('weeklyGoal', null))
         && validRunningPresenceSetting(request.resource.data)
         && request.resource.data.name is string
@@ -71,11 +91,15 @@ service cloud.firestore {
         && request.resource.data.name.size() <= 40
         && safeUserText(request.resource.data.name)
         && request.resource.data.plan in ['free', 'pro']
+        && keepsOrRemovesLegacyAvatarUrl()
+        && validAvatarEmoji(request.resource.data)
         && validWeeklyGoal(request.resource.data.get('weeklyGoal', null))
         && validRunningPresenceSetting(request.resource.data)
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
           'plan', 'role', 'titles', 'totalDistanceKm', 'activityCount',
           'personalRecords',
+          'battleIds',
+          'monthlyStatsBackfillVersion', 'monthlyStatsBackfilledAt',
           'revenuecatLastEventAtMs', 'revenuecatLastEventId', 'revenuecatExpirationAtMs',
           'lastStatsSyncAtMs'
         ]);
@@ -125,8 +149,17 @@ service cloud.firestore {
     // ランキング等で使う公開範囲を限定したプロフィール。
     match /publicProfiles/{userId} {
       allow read: if signedIn();
-      allow create, update: if isSelf(userId)
-        && request.resource.data.keys().hasOnly(['name', 'avatarUrl', 'avatarEmoji', 'updatedAt'])
+      allow create: if isSelf(userId)
+        && request.resource.data.keys().hasOnly(['name', 'avatarEmoji', 'updatedAt'])
+        && validAvatarEmoji(request.resource.data)
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 1
+        && request.resource.data.name.size() <= 40
+        && safeUserText(request.resource.data.name);
+      allow update: if isSelf(userId)
+        && request.resource.data.keys().hasOnly(['name', 'avatarEmoji', 'avatarUrl', 'updatedAt'])
+        && keepsOrRemovesLegacyAvatarUrl()
+        && validAvatarEmoji(request.resource.data)
         && request.resource.data.name is string
         && request.resource.data.name.size() >= 1
         && request.resource.data.name.size() <= 40
@@ -176,40 +209,13 @@ service cloud.firestore {
           ||
           (request.resource.data.type == 'public' && isAdmin())
         );
-      allow update: if isAdmin() || (
-        signedIn()
-        && resource.data.type == 'private'
-        && resource.data.createdBy == request.auth.uid
-        && userDoc(request.auth.uid).data.plan == 'pro'
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['theme'])
-        && request.resource.data.theme in ['sports', 'rpg', 'territory', 'cyber', 'casual', 'school', 'corporate']
-      );
+      allow update: if isAdmin();
       allow delete: if isAdmin();
 
       match /participants/{userId} {
         allow read: if isSelf(userId) || canReadBattle(battleId);
-        allow create: if isSelf(userId)
-          && exists(/databases/$(database)/documents/battles/$(battleId))
-          && get(/databases/$(database)/documents/battles/$(battleId)).data.status == 'active'
-          && request.resource.data.keys().hasOnly([
-            'userId', 'categoryId', 'totalDistanceKm', 'activityCount', 'joinedAt'
-          ])
-          && request.resource.data.userId == userId
-          && request.resource.data.totalDistanceKm == 0
-          && request.resource.data.get('activityCount', 0) == 0
-          && (
-            !('categoryIds' in get(/databases/$(database)/documents/battles/$(battleId)).data)
-            || request.resource.data.categoryId in get(/databases/$(database)/documents/battles/$(battleId)).data.categoryIds
-          );
-        // 距離がまだ0の間だけ陣営選択を変更可能。集計済み距離はFunctionsだけが更新する。
-        allow update: if isSelf(userId)
-          && request.resource.data.get('totalDistanceKm', null) == resource.data.get('totalDistanceKm', null)
-          && request.resource.data.get('activityCount', null) == resource.data.get('activityCount', null)
-          && request.resource.data.get('userId', null) == resource.data.get('userId', null)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['categoryId'])
-          && resource.data.totalDistanceKm == 0
-          && resource.data.get('activityCount', 0) == 0;
-        allow delete: if (isSelf(userId) && resource.data.totalDistanceKm == 0) || isAdmin();
+        // 参加・チーム変更・退出は、上限と距離を原子的に検証するCallable Functionsだけが行う。
+        allow create, update, delete: if isAdmin();
       }
 
       match /category_stats/{categoryId} {

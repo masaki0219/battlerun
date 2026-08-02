@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import { useBattleStore } from '../../stores/battleStore';
-import { Colors, DarkColors, Spacing, Shadow, BorderRadius, TextStyles, Typography, otherTeamColor } from '../../design_tokens';
+import { Colors, DarkColors, Spacing, Shadow, BorderRadius, TextStyles, Typography, teamColor } from '../../design_tokens';
 import { MonoLabel } from '../../components/ui/MonoLabel';
 import { StatBlock } from '../../components/ui/StatBlock';
 import { ProgressBar } from '../../components/ui/ProgressBar';
@@ -17,6 +17,7 @@ import { ListRow } from '../../components/ui/ListRow';
 import { RankBadge } from '../../components/ui/RankBadge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { VersusGauge } from '../../components/viz/VersusGauge';
+import { FactionColumns } from '../../components/viz/FactionColumns';
 import { useBattleParticipants } from '../../hooks/useBattleParticipants';
 import { useTeamRanking } from '../../hooks/useTeamRanking';
 import { useBattleProcessContributions } from '../../hooks/useBattleProcessContributions';
@@ -26,6 +27,7 @@ import { CategorySelectModal } from '../../components/battle/CategorySelectModal
 import type { CategoryStats, Battle, Category } from '../../types';
 import { inviteWebUrl } from '../../lib/invite';
 import { useBlockedUsers } from '../../hooks/useBlockedUsers';
+import { prioritizeTeams } from '../../utils/teamDisplay';
 
 // ─── countdown helpers ─────────────────────────────────────────
 function timeLeft(endAt: string): { d: number; h: number; m: number } {
@@ -52,7 +54,7 @@ interface RecentActivity {
 export default function BattleDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuthStore();
-  const { publicBattles, privateBattles, myMemberships, joinBattle } = useBattleStore();
+  const { publicBattles, privateBattles, myMemberships, joinBattle, leaveBattle } = useBattleStore();
 
   const [stats, setStats] = useState<CategoryStats[]>([]);
   const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
@@ -60,6 +62,8 @@ export default function BattleDetailScreen() {
   const [fetchedBattle, setFetchedBattle] = useState<Battle | null>(null);
   const [showTeamChange, setShowTeamChange] = useState(false);
   const [changingTeam, setChangingTeam] = useState(false);
+  const [leavingBattle, setLeavingBattle] = useState(false);
+  const [canLeaveBattle, setCanLeaveBattle] = useState<boolean | null>(null);
   const [showSafety, setShowSafety] = useState(false);
   const { blockedUserIds } = useBlockedUsers(user?.id);
 
@@ -80,6 +84,31 @@ export default function BattleDetailScreen() {
   const processContributions = useBattleProcessContributions(
     battle && !isIndividual && myCatId ? id : undefined,
   );
+
+  useEffect(() => {
+    if (!id || !user || !membership) {
+      setCanLeaveBattle(null);
+      return;
+    }
+    return onSnapshot(doc(db, 'battles', id, 'participants', user.id), (snapshot) => {
+      if (!snapshot.exists()) {
+        setCanLeaveBattle(false);
+        return;
+      }
+      const data = snapshot.data();
+      const stepCredits = data['stepCreditKmByDay'];
+      const hasStepCredit = stepCredits && typeof stepCredits === 'object'
+        ? Object.values(stepCredits as Record<string, unknown>).some(
+            (value) => typeof value === 'number' && value > 0,
+          )
+        : false;
+      setCanLeaveBattle(
+        ((data['totalDistanceKm'] as number | undefined) ?? 0) <= 0
+        && ((data['activityCount'] as number | undefined) ?? 0) <= 0
+        && !hasStepCredit,
+      );
+    }, () => setCanLeaveBattle(null));
+  }, [id, user?.id, membership?.battleId]);
 
   // ── store に存在しない場合の fallback fetch ────────────────
   useEffect(() => {
@@ -207,6 +236,14 @@ export default function BattleDetailScreen() {
     : null;
   const bothZero = gaugeLeft && gaugeRight && val(gaugeLeft) <= 0 && val(gaugeRight) <= 0;
   const maxVal = Math.max(...sorted.map(val), 0.01);
+  const multiTeamColumns = prioritizeTeams(sorted, myCatId).map((team) => ({
+    id: team.categoryId,
+    label: team.label,
+    km: val(team),
+    rank: allZero ? null : 1 + sorted.filter((item) => val(item) > val(team)).length,
+    isMine: team.categoryId === myCatId,
+    color: teamColor(team.categoryId),
+  }));
 
   async function shareInvite(targetBattle: Battle) {
     if (!targetBattle.inviteCode) return;
@@ -214,6 +251,35 @@ export default function BattleDetailScreen() {
       title: `${targetBattle.title}に招待`,
       message: `ZELIOの「${targetBattle.title}」に参加しよう！\n${inviteWebUrl(targetBattle.inviteCode)}\n招待コード: ${targetBattle.inviteCode}`,
     }).catch((error) => console.warn('[BattleDetail] invite share failed:', error));
+  }
+
+  function confirmLeaveBattle() {
+    if (!user || !battle || leavingBattle || !canLeaveBattle) return;
+    const targetBattleId = battle.id;
+    const userId = user.id;
+    Alert.alert(
+      'チャレンジから退出しますか？',
+      '参加情報を削除し、参加中の一覧から外します。退出後はもう一度参加できます。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: '退出する',
+          style: 'destructive',
+          onPress: () => {
+            setLeavingBattle(true);
+            void leaveBattle(targetBattleId, userId)
+              .then(() => router.back())
+              .catch((error) => {
+                Alert.alert(
+                  '退出できませんでした',
+                  error instanceof Error ? error.message : '通信状態を確認して、もう一度お試しください。',
+                );
+              })
+              .finally(() => setLeavingBattle(false));
+          },
+        },
+      ],
+    );
   }
 
   return (
@@ -240,15 +306,6 @@ export default function BattleDetailScreen() {
               <Ionicons name="podium-outline" size={20} color={Colors.textSecondary} />
             </TouchableOpacity>
           )}
-          <TouchableOpacity
-            style={s.navIconBtn}
-            onPress={() => router.push(`/battle/theme?id=${id}` as any)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            accessibilityRole="button"
-            accessibilityLabel="チャレンジのテーマを変更"
-          >
-            <Ionicons name="color-palette-outline" size={20} color={Colors.textSecondary} />
-          </TouchableOpacity>
           <TouchableOpacity
             style={s.navIconBtn}
             onPress={() => setShowSafety(true)}
@@ -295,11 +352,16 @@ export default function BattleDetailScreen() {
             <StatBlock dark align="center" label="分" value={pad(m)} />
           </View>
 
-          {gaugeLeft && gaugeRight ? (
+          {sorted.length >= 3 ? (
+            <View style={s.heroGauge}>
+              <Text style={s.multiTeamHint}>自チームと順位が近いチームから表示</Text>
+              <FactionColumns factions={multiTeamColumns} valueSuffix={rankType === 'average' ? 'km/人' : 'km'} />
+            </View>
+          ) : gaugeLeft && gaugeRight ? (
             <View style={s.heroGauge}>
               <VersusGauge
-                left={{ label: gaugeLeft.label, km: val(gaugeLeft), isMine: !!myTeam }}
-                right={{ label: gaugeRight.label, km: val(gaugeRight), isMine: false }}
+                left={{ label: gaugeLeft.label, km: val(gaugeLeft), isMine: gaugeLeft.categoryId === myCatId, color: teamColor(gaugeLeft.categoryId) }}
+                right={{ label: gaugeRight.label, km: val(gaugeRight), isMine: gaugeRight.categoryId === myCatId, color: teamColor(gaugeRight.categoryId) }}
                 size="lg"
                 dark
                 unit={rankType === 'average' ? 'km/人' : 'km'}
@@ -358,7 +420,7 @@ export default function BattleDetailScreen() {
               sorted.map((cat, i) => {
                 const isMine = cat.categoryId === myCatId;
                 const displayRank = allZero ? null : 1 + sorted.filter((item) => val(item) > val(cat)).length;
-                const barColor = isMine ? Colors.primary : otherTeamColor(i);
+                const barColor = teamColor(cat.categoryId);
                 return (
                   <View key={cat.categoryId} style={s.rankRow}>
                     <Text style={[s.rankNum, isMine && s.rankNumMine]}>{displayRank ?? '—'}</Text>
@@ -401,6 +463,29 @@ export default function BattleDetailScreen() {
               currentUserId={user?.id}
               blockedUserIds={blockedUserIds}
             />
+          </View>
+        )}
+
+        {!!membership && canLeaveBattle !== null && (
+          <View style={s.sectionCard}>
+            <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.sm }]}>参加設定</Text>
+            {canLeaveBattle ? (
+              <TouchableOpacity
+                style={s.leaveButton}
+                onPress={confirmLeaveBattle}
+                disabled={leavingBattle}
+                accessibilityRole="button"
+                accessibilityLabel="このチャレンジから退出"
+                accessibilityState={{ disabled: leavingBattle, busy: leavingBattle }}
+              >
+                {leavingBattle
+                  ? <ActivityIndicator size="small" color={Colors.error} />
+                  : <Ionicons name="exit-outline" size={16} color={Colors.error} />}
+                <Text style={s.leaveButtonText}>{leavingBattle ? '退出中…' : 'このチャレンジから退出'}</Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={s.leaveUnavailableText}>距離を加算済みのため、このチャレンジからは退出できません。</Text>
+            )}
           </View>
         )}
 
@@ -469,6 +554,12 @@ export default function BattleDetailScreen() {
 }
 
 const s = StyleSheet.create({
+  leaveButton: {
+    minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm,
+    borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.error,
+  },
+  leaveButtonText: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.error },
+  leaveUnavailableText: { fontSize: Typography.fontSize.sm, lineHeight: 20, color: Colors.textSecondary },
   teamChangeLink: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -535,6 +626,7 @@ const s = StyleSheet.create({
   },
   countDivider: { width: 1, alignSelf: 'stretch', backgroundColor: DarkColors.line, marginVertical: 6 },
   heroGauge: { marginTop: 2 },
+  multiTeamHint: { marginBottom: Spacing.sm, fontSize: 10, color: DarkColors.textSecondary },
   heroPace: {
     flexDirection: 'row',
     alignItems: 'center',

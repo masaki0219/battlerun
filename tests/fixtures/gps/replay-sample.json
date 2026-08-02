@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "samples": [
+    { "timestamp": 1000, "latitude": 35, "longitude": 139, "accuracy": 5, "altitude": null, "altitudeAccuracy": null, "speed": 0, "segmentId": 0 },
+    { "timestamp": 2000, "latitude": 35.000009, "longitude": 139, "accuracy": 5, "altitude": null, "altitudeAccuracy": null, "speed": 1, "segmentId": 0 },
+    { "timestamp": 3000, "latitude": 35.000045, "longitude": 139, "accuracy": 5, "altitude": null, "altitudeAccuracy": null, "speed": 4, "segmentId": 0 },
+    { "timestamp": 4000, "latitude": 35.0009, "longitude": 139, "accuracy": 5, "altitude": null, "altitudeAccuracy": null, "speed": 95, "segmentId": 0 },
+    { "timestamp": 5000, "latitude": 35.00009, "longitude": 139, "accuracy": 80, "altitude": null, "altitudeAccuracy": null, "speed": null, "segmentId": 0 },
+    { "timestamp": 6000, "latitude": 35.00009, "longitude": 139, "accuracy": 5, "altitude": null, "altitudeAccuracy": null, "speed": 2, "segmentId": 0 },
+    { "timestamp": 26000, "latitude": 35.00018, "longitude": 139, "accuracy": 5, "altitude": null, "altitudeAccuracy": null, "speed": 1, "segmentId": 1 }
+  ]
+}

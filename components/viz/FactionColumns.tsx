@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, Animated, StyleSheet } from 'react-native';
-import { DarkColors, Typography, Spacing, BorderRadius, Animation } from '../../design_tokens';
+import { View, Text, Animated, StyleSheet, ScrollView } from 'react-native';
+import { Colors, DarkColors, Typography, Spacing, BorderRadius, Animation } from '../../design_tokens';
+import { factionBarRatio } from '../../utils/teamDisplay';
 
 export interface FactionColumn {
   id: string;
@@ -9,6 +10,7 @@ export interface FactionColumn {
   /** 1始まりの順位 */
   rank: number | null;
   isMine: boolean;
+  color: string;
 }
 
 interface Props {
@@ -20,8 +22,7 @@ interface Props {
   valueSuffix?: string;
 }
 
-/** バーの最低の高さ（比率）。全陣営が僅差でも順位差が読めるようにする */
-const FLOOR = 0.32;
+const FLOOR = 0.15;
 
 /** バー上の実数値ラベルが占める高さ（fontSize 9 + marginBottom 4 + 余白） */
 const VALUE_LABEL_HEIGHT = 17;
@@ -29,14 +30,10 @@ const VALUE_LABEL_HEIGHT = 17;
 /**
  * 全陣営の距離を縦棒で並べるダーク面のチャート（ホームのヒーロー用）。
  *
- * ★スケールに注意: 高さは 0 起点ではなく「最下位〜首位」の幅で正規化する（最下位でも FLOOR は残す）。
- * 総距離は陣営間で僅差になりやすく、0 起点だと全部同じ高さに潰れて順位が読めないため。
- * 誤読を避けるために各バーの上に実数値（km）を必ず表示する。
+ * 首位を100%とした実比率を使い、値が小さい場合だけ最低高を残す。
  */
 export function FactionColumns({ factions, height = 120, valueSuffix = 'km' }: Props) {
   const max = Math.max(...factions.map((f) => f.km), 0);
-  const min = factions.length > 0 ? Math.min(...factions.map((f) => f.km)) : 0;
-  const span = max - min;
 
   // 各バーの上に実数値ラベルを置くため、その分だけバーの最大高さを詰める。
   // 詰めないと首位のバーが行の高さいっぱいまで伸び、ラベルが行外へはみ出して
@@ -53,21 +50,26 @@ export function FactionColumns({ factions, height = 120, valueSuffix = 'km' }: P
     }).start();
   }, [max, factions.length]);
 
-  return (
-    <View>
+  const chart = (
+    <View
+      style={factions.length > 3
+        ? [styles.wideChart, { width: Math.max(368, factions.length * 92) }]
+        : undefined}
+    >
       <View style={[styles.barsRow, { height }]}>
         {factions.map((f) => {
-          const ratio = max <= 0
-            ? FLOOR
-            : span > 0
-            ? FLOOR + (1 - FLOOR) * ((f.km - min) / span)
-            : 1;
+          const ratio = factionBarRatio(f.km, max, FLOOR);
           const barHeight = grow.interpolate({
             inputRange: [0, 1],
             outputRange: [0, Math.max(2, ratio * barArea)],
           });
           return (
-            <View key={f.id} style={styles.col}>
+            <View
+              key={f.id}
+              style={[styles.col, factions.length > 3 && styles.colWide]}
+              accessible
+              accessibilityLabel={`${f.label}、${f.km.toFixed(1)}${valueSuffix}、${f.rank == null ? '順位なし' : `${f.rank}位`}${f.isMine ? '、あなたのチーム' : ''}`}
+            >
               <Text
                 style={[styles.km, f.isMine && styles.kmMine]}
                 numberOfLines={1}
@@ -76,7 +78,11 @@ export function FactionColumns({ factions, height = 120, valueSuffix = 'km' }: P
                 {f.km.toFixed(1)} {valueSuffix}
               </Text>
               <Animated.View
-                style={[styles.bar, f.isMine ? styles.barMine : styles.barOther, { height: barHeight }]}
+                style={[
+                  styles.bar,
+                  { height: barHeight, backgroundColor: f.color },
+                  f.isMine && styles.barMine,
+                ]}
               />
             </View>
           );
@@ -86,8 +92,8 @@ export function FactionColumns({ factions, height = 120, valueSuffix = 'km' }: P
       <View style={styles.legendRow}>
         {factions.map((f) => (
           <View key={f.id} style={styles.legendCol}>
-            <View style={[styles.mark, f.isMine ? styles.markMine : styles.markOther]}>
-              <Text style={[styles.markText, f.isMine && styles.markTextMine]}>
+            <View style={[styles.mark, { backgroundColor: f.color }, f.isMine && styles.markMine]}>
+              <Text style={styles.markText}>
                 {f.label.slice(0, 1)}
               </Text>
             </View>
@@ -100,6 +106,17 @@ export function FactionColumns({ factions, height = 120, valueSuffix = 'km' }: P
       </View>
     </View>
   );
+
+  return factions.length > 3 ? (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator
+      contentContainerStyle={styles.scrollContent}
+      accessibilityLabel="全チームの成績。横にスクロールできます"
+    >
+      {chart}
+    </ScrollView>
+  ) : chart;
 }
 
 const styles = StyleSheet.create({
@@ -112,6 +129,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   col: { flex: 1, alignItems: 'center', justifyContent: 'flex-end' },
+  colWide: { flex: 0, width: 76 },
+  wideChart: { minWidth: 92 * 4 },
+  scrollContent: { paddingBottom: 4 },
   km: {
     fontSize: 9,
     fontWeight: Typography.fontWeight.bold,
@@ -127,12 +147,10 @@ const styles = StyleSheet.create({
     borderTopRightRadius: BorderRadius.sm,
   },
   barMine: {
-    backgroundColor: DarkColors.primary,
     borderWidth: 2,
     borderBottomWidth: 0,
     borderColor: DarkColors.primaryRing,
   },
-  barOther: { backgroundColor: DarkColors.barMuted },
 
   legendRow: { flexDirection: 'row', gap: Spacing.md, paddingTop: Spacing.sm },
   legendCol: { flex: 1, alignItems: 'center' },
@@ -143,10 +161,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  markMine: { backgroundColor: DarkColors.markStrong },
-  markOther: { backgroundColor: DarkColors.chip },
-  markText: { fontSize: 9, fontWeight: Typography.fontWeight.bold, color: DarkColors.textSecondary },
-  markTextMine: { color: DarkColors.markStrongText },
+  markMine: { borderWidth: 2, borderColor: DarkColors.primaryRing },
+  markText: { fontSize: 9, fontWeight: Typography.fontWeight.bold, color: Colors.textOnPrimary },
   legendLabel: {
     marginTop: 3,
     fontSize: 10,

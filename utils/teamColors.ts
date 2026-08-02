@@ -11,3 +11,14 @@ export function pickOtherTeamColor(palette: readonly string[], order: number): s
   const safeOrder = Number.isFinite(order) && order > 0 ? Math.floor(order) : 0;
   return palette[1 + (safeOrder % (palette.length - 1))];
 }
+
+/** 表示順や参加状態に左右されない、categoryIdベースのチーム色。 */
+export function pickTeamColor(palette: readonly string[], categoryId: string): string {
+  if (palette.length === 0) return '';
+  let hash = 2166136261;
+  for (let index = 0; index < categoryId.length; index += 1) {
+    hash ^= categoryId.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return palette[(hash >>> 0) % palette.length];
+}

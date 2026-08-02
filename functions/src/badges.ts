@@ -14,13 +14,13 @@ interface ActivityStats {
 }
 
 const BADGES: Array<{ id: string; name: string; earned: (stats: ActivityStats) => boolean }> = [
-  { id: 'first_run', name: '初陣ランナー', earned: (s) => s.activityCount >= 1 },
-  { id: 'early_bird', name: '朝活兵', earned: (s) => s.earlyMorningCount >= 1 },
+  { id: 'first_run', name: 'はじめの一歩', earned: (s) => s.activityCount >= 1 },
+  { id: 'early_bird', name: '朝活ランナー', earned: (s) => s.earlyMorningCount >= 1 },
   { id: 'streak_3', name: '3日連続ラン', earned: (s) => s.consecutiveDays >= 3 },
   { id: 'streak_7', name: '7日連続ラン', earned: (s) => s.consecutiveDays >= 7 },
   { id: 'monthly_10km', name: '月間10km', earned: (s) => s.monthlyDistanceKm >= 10 },
   { id: 'monthly_30km', name: '月間30km', earned: (s) => s.monthlyDistanceKm >= 30 },
-  { id: 'step_master', name: '歩兵隊長', earned: (s) => s.stepsModeCount >= 10 },
+  { id: 'step_master', name: 'ウォークマスター', earned: (s) => s.stepsModeCount >= 10 },
   { id: 'total_100km', name: '百里の旅人', earned: (s) => s.totalDistanceKm >= 100 },
 ];
 

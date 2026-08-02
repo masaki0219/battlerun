@@ -31,7 +31,7 @@ interface BadgeDef {
 const BADGE_DEFS: BadgeDef[] = [
   {
     id: 'first_run',
-    name: '初陣ランナー',
+    name: 'はじめの一歩',
     desc: '初めて記録した',
     icon: 'flag',
     color: Colors.primary,
@@ -39,7 +39,7 @@ const BADGE_DEFS: BadgeDef[] = [
   },
   {
     id: 'early_bird',
-    name: '朝活兵',
+    name: '朝活ランナー',
     desc: '朝7時前に記録した',
     icon: 'sunny',
     color: Colors.accentYellow,
@@ -83,7 +83,7 @@ const BADGE_DEFS: BadgeDef[] = [
   },
   {
     id: 'step_master',
-    name: '歩兵隊長',
+    name: 'ウォークマスター',
     desc: '歩数モードで10回記録した',
     icon: 'footsteps',
     color: Colors.accent,

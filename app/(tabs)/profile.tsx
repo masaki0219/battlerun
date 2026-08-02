@@ -5,17 +5,15 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { doc, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { deleteField, doc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import {
   EmailAuthProvider,
   reauthenticateWithCredential,
   deleteUser,
 } from 'firebase/auth';
-import { auth, db, storage, functions } from '../../lib/firebase';
+import { auth, db, functions } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
-import { purchasePro, restorePurchases, getProPlanPrices, isStoreAvailable, type ProPackageInfo, type ProPlanPeriod } from '../../lib/revenuecat';
+import { purchasePro, restorePurchases, getProMonthlyPlan, isStoreAvailable, type ProPackageInfo } from '../../lib/revenuecat';
 import { isPro } from '../../lib/pro';
 import { SUBSCRIPTION_DISCLAIMER } from '../../lib/legal';
 import { Ionicons } from '@expo/vector-icons';
@@ -85,15 +83,13 @@ const ANIMAL_EMOJIS = [
 
 export default function ProfileScreen() {
   const { user, proEntitlement, signOut, setRunningPresenceVisible } = useAuthStore();
-  const [uploading, setUploading] = useState(false);
   const [purchasing, setPurchasing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [presenceSaving, setPresenceSaving] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [proPlans, setProPlans] = useState<Partial<Record<ProPlanPeriod, ProPackageInfo>>>({});
-  const [proPlansLoading, setProPlansLoading] = useState(false);
-  const [proPlansReloadKey, setProPlansReloadKey] = useState(0);
-  const [selectedPeriod, setSelectedPeriod] = useState<ProPlanPeriod>('monthly');
+  const [proMonthlyPlan, setProMonthlyPlan] = useState<ProPackageInfo | null>(null);
+  const [proPlanLoading, setProPlanLoading] = useState(false);
+  const [proPlanReloadKey, setProPlanReloadKey] = useState(0);
   const [serverStats, setServerStats] = useState<{ totalDistanceKm: number; activityCount: number } | null>(null);
 
   // 自分の戦績（累計距離・ラン回数・ストリーク）
@@ -105,18 +101,16 @@ export default function ProfileScreen() {
   useEffect(() => {
     if (isPro(user?.plan, proEntitlement)) return;
     let cancelled = false;
-    setProPlansLoading(true);
-    getProPlanPrices()
-      .then((plans) => {
+    setProPlanLoading(true);
+    getProMonthlyPlan()
+      .then((plan) => {
         if (cancelled) return;
-        setProPlans(plans);
-        // 月額がOfferingに無い構成でも購入ボタンが機能するよう選択を補正する
-        if (!plans.monthly && plans.annual) setSelectedPeriod('annual');
+        setProMonthlyPlan(plan);
       })
-      .catch(() => { if (!cancelled) setProPlans({}); })
-      .finally(() => { if (!cancelled) setProPlansLoading(false); });
+      .catch(() => { if (!cancelled) setProMonthlyPlan(null); })
+      .finally(() => { if (!cancelled) setProPlanLoading(false); });
     return () => { cancelled = true; };
-  }, [user?.plan, proEntitlement, proPlansReloadKey]);
+  }, [user?.plan, proEntitlement, proPlanReloadKey]);
 
   useEffect(() => {
     if (!user) return;
@@ -133,11 +127,7 @@ export default function ProfileScreen() {
   }, [user?.id]);
 
   function handleAvatarOptions() {
-    Alert.alert('アイコンを変更', undefined, [
-      { text: '写真を選ぶ', onPress: handleAvatarPick },
-      { text: 'イラストを選ぶ', onPress: () => setShowEmojiPicker(true) },
-      { text: 'キャンセル', style: 'cancel' },
-    ]);
+    setShowEmojiPicker(true);
   }
 
   async function handlePresenceVisibility(visible: boolean) {
@@ -157,13 +147,13 @@ export default function ProfileScreen() {
     setShowEmojiPicker(false);
     try {
       const batch = writeBatch(db);
-      batch.update(doc(db, 'users', user.id), { avatarEmoji: emoji, avatarUrl: null });
+      batch.update(doc(db, 'users', user.id), { avatarEmoji: emoji, avatarUrl: deleteField() });
       batch.set(doc(db, 'publicProfiles', user.id), {
-        name: user.name, avatarEmoji: emoji, avatarUrl: null, updatedAt: serverTimestamp(),
+        name: user.name, avatarEmoji: emoji, avatarUrl: deleteField(), updatedAt: serverTimestamp(),
       }, { merge: true });
       await batch.commit();
       useAuthStore.setState((s) => ({
-        user: s.user ? { ...s.user, avatarEmoji: emoji, avatarUrl: undefined } : null,
+        user: s.user ? { ...s.user, avatarEmoji: emoji } : null,
       }));
     } catch {
       Alert.alert('エラー', 'アイコンの更新に失敗しました');
@@ -181,7 +171,7 @@ export default function ProfileScreen() {
     }
     setPurchasing(true);
     try {
-      const ok = await purchasePro(selectedPeriod);
+      const ok = await purchasePro();
       if (ok) {
         Alert.alert('🎉 ありがとうございます！', 'Proプランが有効になりました。');
       }
@@ -222,55 +212,6 @@ export default function ProfileScreen() {
     );
   }
 
-  async function handleAvatarPick() {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('権限が必要です', '写真へのアクセスを許可してください');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.6,
-    });
-    if (result.canceled || !result.assets[0]) return;
-
-    setUploading(true);
-    try {
-      const uri = result.assets[0].uri;
-
-      // React Native では fetch().blob() が不安定なため XMLHttpRequest で Blob を生成する
-      const blob = await new Promise<Blob>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.onload = () => resolve(xhr.response as Blob);
-        xhr.onerror = () => reject(new Error('blob 生成失敗'));
-        xhr.responseType = 'blob';
-        xhr.open('GET', uri, true);
-        xhr.send(null);
-      });
-
-      const storageRef = ref(storage, `avatars/${user!.id}`);
-      await uploadBytes(storageRef, blob);
-      const url = await getDownloadURL(storageRef);
-
-      const batch = writeBatch(db);
-      batch.update(doc(db, 'users', user!.id), { avatarUrl: url, avatarEmoji: null });
-      batch.set(doc(db, 'publicProfiles', user!.id), {
-        name: user!.name, avatarUrl: url, avatarEmoji: null, updatedAt: serverTimestamp(),
-      }, { merge: true });
-      await batch.commit();
-      useAuthStore.setState((s) => ({
-        user: s.user ? { ...s.user, avatarUrl: url, avatarEmoji: undefined } : null,
-      }));
-    } catch {
-      Alert.alert('エラー', 'アップロードに失敗しました');
-    } finally {
-      setUploading(false);
-    }
-  }
-
   async function doDeleteAccount(password: string) {
     if (!user) return;
     setDeleting(true);
@@ -280,15 +221,6 @@ export default function ProfileScreen() {
 
       const credential = EmailAuthProvider.credential(currentUser.email, password);
       await reauthenticateWithCredential(currentUser, credential);
-
-      // アバター画像を Storage から削除（認証が有効なうちに行う必要がある）
-      if (user.avatarUrl) {
-        try {
-          await deleteObject(ref(storage, `avatars/${user.id}`));
-        } catch {
-          // 存在しない場合は無視
-        }
-      }
 
       // Firebase Auth ユーザー削除（onAuthStateChanged が user: null をセットする）。
       // Firestore側のデータ（users/{uid}本体・activities・participants・通知・バッジ）は
@@ -365,8 +297,8 @@ export default function ProfileScreen() {
     : 'チャレンジで称号を獲得しよう';
   const userIsPro = isPro(user.plan, proEntitlement);
   // 価格（期間つき）を提示できるときだけ購入導線を有効にする
-  const hasProPrice = Boolean(proPlans.monthly || proPlans.annual);
-  const canPurchasePro = hasProPrice && !purchasing && !proPlansLoading;
+  const hasProPrice = proMonthlyPlan !== null;
+  const canPurchasePro = hasProPrice && !purchasing && !proPlanLoading;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -378,19 +310,17 @@ export default function ProfileScreen() {
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.profileCard}>
           <View style={styles.userRow}>
-            <TouchableOpacity onPress={handleAvatarOptions} disabled={uploading}>
-              {uploading ? (
-                <View style={styles.avatarLoading}>
-                  <ActivityIndicator color={Colors.primary} />
+            <TouchableOpacity
+              onPress={handleAvatarOptions}
+              accessibilityRole="button"
+              accessibilityLabel="アバターアイコンを変更"
+            >
+              <View>
+                <Avatar name={user.name} emoji={user.avatarEmoji} size="lg" />
+                <View style={styles.editBadge}>
+                  <Ionicons name="pencil" size={10} color={Colors.textOnPrimary} />
                 </View>
-              ) : (
-                <View>
-                  <Avatar name={user.name} uri={user.avatarUrl} emoji={user.avatarEmoji} size="lg" />
-                  <View style={styles.editBadge}>
-                    <Ionicons name="pencil" size={10} color={Colors.textOnPrimary} />
-                  </View>
-                </View>
-              )}
+              </View>
             </TouchableOpacity>
             <View style={styles.userInfo}>
               <View style={styles.userNameRow}>
@@ -460,37 +390,27 @@ export default function ProfileScreen() {
                   <View style={styles.proIcon}><Ionicons name="diamond-outline" size={20} color={Colors.accentDark} /></View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.proUpsellTitle}>もっと走りを楽しむ</Text>
-                    <Text style={styles.freeDesc}>友達チャレンジ作成、バトルテーマ、透かしなし共有を利用できます。</Text>
+                    <Text style={styles.freeDesc}>友達チャレンジ作成、透かしなし共有を利用できます。</Text>
                   </View>
                 </View>
-                {(proPlans.monthly || proPlans.annual) && (
+                {proMonthlyPlan && (
                   <View style={styles.planRow}>
-                    {(['monthly', 'annual'] as const).map((period) => {
-                      const plan = proPlans[period];
-                      if (!plan) return null;
-                      const selected = selectedPeriod === period;
-                      return (
-                        <TouchableOpacity
-                          key={period}
-                          style={[styles.planOption, selected && styles.planOptionSelected]}
-                          onPress={() => setSelectedPeriod(period)}
-                          accessibilityRole="radio"
-                          accessibilityState={{ selected }}
-                          accessibilityLabel={`${plan.periodLabel || (period === 'monthly' ? '月額' : '年額')} ${plan.priceString}`}
-                        >
-                          <Text style={[styles.planPeriod, selected && styles.planPeriodSelected]}>{plan.periodLabel || (period === 'monthly' ? '月額' : '年額')}</Text>
-                          <Text style={[styles.planPrice, selected && styles.planPriceSelected]}>{plan.priceString}</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
+                    <View
+                      style={[styles.planOption, styles.planOptionSelected]}
+                      accessible
+                      accessibilityLabel={`月額 ${proMonthlyPlan.priceString}`}
+                    >
+                      <Text style={[styles.planPeriod, styles.planPeriodSelected]}>月額</Text>
+                      <Text style={[styles.planPrice, styles.planPriceSelected]}>{proMonthlyPlan.priceString}</Text>
+                    </View>
                   </View>
                 )}
                 {/* 価格・期間を提示できないまま購入導線を出さない（サブスクの表示要件）。
                     取得できていないときは非活性にして再試行を出す。 */}
-                {!hasProPrice && !proPlansLoading && (
+                {!hasProPrice && !proPlanLoading && (
                   <View style={styles.priceErrorBox}>
                     <Text style={styles.priceErrorText}>価格を読み込めませんでした。通信状態を確認してください。</Text>
-                    <TouchableOpacity onPress={() => setProPlansReloadKey((key) => key + 1)} accessibilityRole="button">
+                    <TouchableOpacity onPress={() => setProPlanReloadKey((key) => key + 1)} accessibilityRole="button">
                       <Text style={styles.priceRetryText}>再読み込み</Text>
                     </TouchableOpacity>
                   </View>
@@ -503,9 +423,9 @@ export default function ProfileScreen() {
                   accessibilityRole="button"
                   accessibilityState={{ disabled: !canPurchasePro }}
                 >
-                  {purchasing || proPlansLoading
+                  {purchasing || proPlanLoading
                     ? <ActivityIndicator color={Colors.textOnAccent} />
-                    : <><Text style={styles.proStartText}>Proをはじめる</Text><Ionicons name="chevron-forward" size={16} color={Colors.textOnAccent} /></>}
+                    : <><Text style={styles.proStartText}>月額Proをはじめる</Text><Ionicons name="chevron-forward" size={16} color={Colors.textOnAccent} /></>}
                 </TouchableOpacity>
                 <TouchableOpacity onPress={handleRestore} style={styles.restoreButton}><Text style={styles.restoreText}>購入を復元する</Text></TouchableOpacity>
                 <Text style={styles.subscriptionDisclaimer}>{SUBSCRIPTION_DISCLAIMER}</Text>
@@ -539,7 +459,7 @@ export default function ProfileScreen() {
             <View style={styles.rowDivider} />
             <ProfileRow icon="medal-outline" title="表示中の称号" detail={profileTitle.replace('称号：', '')} onPress={() => router.push('/badges' as any)} />
             <View style={styles.rowDivider} />
-            <ProfileRow icon="person-outline" title="アカウント" detail="プロフィール画像を変更" onPress={handleAvatarOptions} />
+            <ProfileRow icon="person-outline" title="アバターアイコン" detail="アプリ内のアイコンから選ぶ" onPress={handleAvatarOptions} />
             <View style={styles.rowDivider} />
             <ProfileRow icon="person-remove-outline" title="ブロック中のユーザー" detail="非表示にした相手の確認・解除" onPress={() => router.push('/blocked-users' as any)} />
           </View>
@@ -593,7 +513,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </ScrollView>
 
-      {/* 動物イラスト選択モーダル */}
+      {/* アプリ内アバターアイコン選択モーダル */}
       <Modal
         visible={showEmojiPicker}
         transparent
@@ -656,10 +576,6 @@ const styles = StyleSheet.create({
   statDivider: { width: 1, alignSelf: 'stretch', backgroundColor: Colors.borderLight, marginVertical: 2 },
   rowDivider: { height: 1, backgroundColor: Colors.borderLight, marginLeft: 48 },
   userRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, padding: Spacing.lg },
-  avatarLoading: {
-    width: 56, height: 56, borderRadius: 28,
-    backgroundColor: Colors.surfaceGray, alignItems: 'center', justifyContent: 'center',
-  },
   editBadge: {
     position: 'absolute', bottom: -2, right: -2,
     backgroundColor: Colors.primary, borderRadius: 8,

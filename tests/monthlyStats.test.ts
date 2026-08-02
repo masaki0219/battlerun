@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { parseMonthlyStatsImpact, tokyoMonthKey as serverMonthKey } from '../functions/src/monthlyStats';
+import { aggregateMonthlyActivities, parseMonthlyStatsImpact, tokyoMonthKey as serverMonthKey } from '../functions/src/monthlyStats';
 import { recentTokyoMonthKeys, tokyoMonthKey } from '../utils/monthlyStats';
 
 const julyBoundary = new Date('2026-06-30T15:00:00.000Z');
@@ -21,5 +21,35 @@ assert.equal(
   }),
   null,
 );
+
+assert.equal(aggregateMonthlyActivities([]).size, 0, '活動0件は月次ドキュメントを作らない');
+assert.deepEqual(
+  aggregateMonthlyActivities([{
+    startedAtMs: Date.parse('2026-08-01T01:00:00.000Z'),
+    distanceKm: 4.2,
+    durationSec: 1500,
+  }]).get('2026-08'),
+  { monthKey: '2026-08', km: 4.2, count: 1, durationSec: 1500, elevationM: 0 },
+  '活動1件（GPS・歩数共通の保存形式）を正確に集計する',
+);
+
+const aggregated = aggregateMonthlyActivities([
+  ...Array.from({ length: 51 }, (_, index) => ({
+    startedAtMs: Date.parse(`2026-08-${String((index % 28) + 1).padStart(2, '0')}T03:00:00.000Z`),
+    distanceKm: 1,
+    durationSec: 600,
+    elevationM: 2,
+  })),
+  // 東京時間では8月1日00:00直前と直後。
+  { startedAtMs: Date.parse('2026-07-31T14:59:59.000Z'), distanceKm: 2, durationSec: 1200 },
+  { startedAtMs: Date.parse('2026-07-31T15:00:00.000Z'), distanceKm: 3, durationSec: 1800 },
+  { startedAtMs: Date.parse('2026-08-01T00:00:00.000Z'), distanceKm: 99, durationSec: 1, flagged: true },
+]);
+assert.deepEqual(aggregated.get('2026-07'), {
+  monthKey: '2026-07', km: 2, count: 1, durationSec: 1200, elevationM: 0,
+});
+assert.deepEqual(aggregated.get('2026-08'), {
+  monthKey: '2026-08', km: 54, count: 52, durationSec: 32_400, elevationM: 102,
+});
 
 console.log('monthlyStats tests passed');

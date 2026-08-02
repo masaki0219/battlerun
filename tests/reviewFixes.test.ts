@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { remainingLabel } from '../utils/displayStats';
 import { validateDisplayName, DISPLAY_NAME_MAX_LENGTH } from '../lib/validation/displayName';
-import { pickOtherTeamColor } from '../utils/teamColors';
+import { pickOtherTeamColor, pickTeamColor } from '../utils/teamColors';
+import { factionBarRatio, prioritizeTeams } from '../utils/teamDisplay';
 
 // ── remainingLabel: チャレンジ詳細のカウントダウン（切り捨て）と同じ丸めになること ──
 {
@@ -45,7 +46,34 @@ import { pickOtherTeamColor } from '../utils/teamColors';
   assert.equal(pickOtherTeamColor(palette, -1), palette[1]);
   assert.equal(pickOtherTeamColor(palette, Number.NaN), palette[1]);
   assert.equal(pickOtherTeamColor(['#000001'], 3), '#000001');
-  assert.equal(pickOtherTeamColor([], 0), '');
+assert.equal(pickOtherTeamColor([], 0), '');
 }
+
+// チーム色はcategoryIdだけで決まり、表示順や参加状態に依存しない。
+{
+  const palette = ['teal', 'orange', 'blue', 'purple'];
+  assert.equal(pickTeamColor(palette, 'team-a'), pickTeamColor(palette, 'team-a'));
+  assert.notEqual(pickTeamColor(palette, 'team-a'), '');
+  assert.equal(pickTeamColor([], 'team-a'), '');
+}
+
+// バーは首位を100%にした実比率とし、小値だけ下限を与える。
+assert.equal(factionBarRatio(46.1, 46.1), 1);
+assert.ok(Math.abs(factionBarRatio(41.1, 46.1) - (41.1 / 46.1)) < 0.000001);
+assert.equal(factionBarRatio(0, 46.1), 0);
+assert.equal(factionBarRatio(0.1, 100), 0.15);
+assert.equal(factionBarRatio(5, 0), 0);
+
+// 3チーム以上のコンパクト表示は自チームと近い順位を先にする。
+assert.deepEqual(
+  prioritizeTeams([
+    { categoryId: 'first' },
+    { categoryId: 'second' },
+    { categoryId: 'mine' },
+    { categoryId: 'fourth' },
+    { categoryId: 'fifth' },
+  ], 'mine').map((team) => team.categoryId),
+  ['mine', 'second', 'fourth', 'first', 'fifth'],
+);
 
 console.log('review fix tests passed');

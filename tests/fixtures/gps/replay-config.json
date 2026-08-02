@@ -1,0 +1,6 @@
+{
+  "distanceMaxAccuracyM": 35,
+  "maxRunningSpeedMps": 7,
+  "gapSegmentMs": 15000,
+  "minCommitDistanceM": 3
+}

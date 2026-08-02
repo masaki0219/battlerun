@@ -1,6 +1,9 @@
 // BattleRun 型定義
 // このファイルの型をアプリ全体で使うこと
 
+import type { GpsQualitySummary } from '../functions/src/gpsProcessing';
+export type { GpsQualitySummary } from '../functions/src/gpsProcessing';
+
 export type Plan = 'free' | 'pro';
 export type MeasurementType = 'gps' | 'steps';
 export type PauseKind = 'manual' | 'auto' | null;
@@ -73,7 +76,6 @@ export interface User {
   id: string;
   authId: string;
   name: string;
-  avatarUrl?: string;
   avatarEmoji?: string;
   plan: Plan;
   role?: 'admin';
@@ -116,6 +118,15 @@ export interface RoutePoint {
   seg?: true;
 }
 
+export type GpsPointSource = 'warmup' | 'foreground' | 'background';
+
+/** 記録開始時から5秒以内の場合だけ最初の基準点として使う。 */
+export interface GpsWarmupSeed {
+  point: RoutePoint;
+  warmupDurationMs: number;
+  readyAccuracyM: number;
+}
+
 /** ラン開始前に設定する任意目標 */
 export interface RunGoal {
   type: 'distance' | 'duration';
@@ -136,6 +147,10 @@ export interface Activity {
   endedAt: string;
   /** 一時停止していた合計時間（ms）。durationSeconds には含まれない */
   pausedMs?: number;
+  /** GPS距離処理方式。未設定は旧方式のオフライン記録としてサーバー互換処理を行う。 */
+  gpsProcessingVersion?: number;
+  /** 座標を含まない活動単位のGPS品質集計。正式距離の計算には使わない。 */
+  gpsQuality?: GpsQualitySummary;
   /** この活動によって更新された自己ベスト。サーバー集計後に設定される */
   newRecords?: PersonalRecordKey[];
 }
@@ -203,7 +218,7 @@ export type NotificationType =
   | 'title_earned'          // 称号獲得
   | 'battle_ended'          // バトル終了
   | 'reaction'              // 自分の記録にリアクション
-  | 'declaration_cheer'     // 出撃宣言への応援
+  | 'declaration_cheer'     // ラン宣言への応援
   | 'presence_cheer'        // 記録中に届いたライブ応援
   | 'battle_title_rejected'; // バトル名NGワードによる強制終了
 
@@ -255,17 +270,6 @@ export interface EarnedBadge {
   earnedAt: string;
 }
 
-// ===== テーマ =====
-
-export type BattleTheme =
-  | 'sports'
-  | 'rpg'
-  | 'territory'
-  | 'cyber'
-  | 'casual'
-  | 'school'
-  | 'corporate';
-
 // Zustand Store の型
 export interface RecordStore {
   isRecording: boolean;
@@ -278,7 +282,7 @@ export interface RecordStore {
   durationSeconds: number;
   route: RoutePoint[];
   goal: RunGoal | null;
-  startRecording: (type: MeasurementType, goal?: RunGoal | null) => void;
+  startRecording: (type: MeasurementType, goal?: RunGoal | null, warmupSeed?: GpsWarmupSeed | null) => void;
   pauseRecording: () => void;
   resumeRecording: () => void;
   setAutoPauseEnabled: (enabled: boolean) => void;
@@ -289,6 +293,10 @@ export interface RecordStore {
 export interface AuthStore {
   user: User | null;
   isLoading: boolean;
+  /** Firebase Auth のセッション自体は有効か。Firestoreプロフィール取得失敗とログアウトを区別する。 */
+  authSessionActive: boolean;
+  /** 認証済みプロフィールを読み込めなかった場合の復旧可能なエラー。 */
+  profileError: string | null;
   // RevenueCatの`pro` entitlementがアクティブかどうか（Firestoreのplanとは別管理）
   proEntitlement: boolean;
   signIn: (email: string, password: string) => Promise<void>;

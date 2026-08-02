@@ -8,16 +8,24 @@ export function useBattlePresence(battleId?: string, currentUserId?: string): {
   cheer: (presence: RunningPresence) => Promise<boolean>;
 } {
   const [presences, setPresences] = useState<RunningPresence[]>([]);
+  const [resolvedBattleId, setResolvedBattleId] = useState<string | undefined>(undefined);
 
   useFocusEffect(useCallback(() => {
     if (!battleId || !currentUserId) {
       setPresences([]);
+      setResolvedBattleId(undefined);
       return;
     }
-    const unsubscribe = subscribeBattlePresence(battleId, currentUserId, setPresences);
+    setPresences([]);
+    setResolvedBattleId(battleId);
+    const unsubscribe = subscribeBattlePresence(battleId, currentUserId, (nextPresences) => {
+      setPresences(nextPresences);
+      setResolvedBattleId(battleId);
+    });
     return () => {
       unsubscribe();
       setPresences([]);
+      setResolvedBattleId(undefined);
     };
   }, [battleId, currentUserId]));
 
@@ -39,5 +47,5 @@ export function useBattlePresence(battleId?: string, currentUserId?: string): {
     return created;
   }, [battleId, currentUserId]);
 
-  return { presences, cheer };
+  return { presences: resolvedBattleId === battleId ? presences : [], cheer };
 }

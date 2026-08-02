@@ -48,7 +48,7 @@ export function DeclarationCard({ declaration, battleTitle, onDeclare }: OwnDecl
           <Ionicons name={done ? 'checkmark' : 'flag'} size={21} color={done ? Colors.textOnPrimary : Colors.accentDark} />
         </View>
         <View style={styles.copy}>
-          <Text style={[styles.kicker, done && styles.doneKicker]}>{done ? '宣言達成！' : '今日の出撃宣言'}</Text>
+          <Text style={[styles.kicker, done && styles.doneKicker]}>{done ? '宣言達成！' : '今日のラン宣言'}</Text>
           <Text style={styles.currentTitle}>
             {done ? '自分で決めたランを完了しました' : declarationTimeLabel(declaration.plannedAt)}
           </Text>
@@ -86,7 +86,7 @@ export function DeclarationCard({ declaration, battleTitle, onDeclare }: OwnDecl
           <Ionicons name="flag-outline" size={20} color={Colors.accentDark} />
         </View>
         <View style={styles.copy}>
-          <Text style={styles.kicker}>今日の出撃宣言</Text>
+          <Text style={styles.kicker}>今日のラン宣言</Text>
           <Text style={styles.formTitle}>走り始める時間を自分で決める</Text>
           <Text style={styles.formBattle} numberOfLines={1}>{battleTitle}</Text>
         </View>

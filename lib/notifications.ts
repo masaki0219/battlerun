@@ -143,7 +143,7 @@ async function declarationReminderMap(): Promise<Record<string, string>> {
   }
 }
 
-/** 出撃宣言時刻のリマインド。宣言ごとに一度だけ、静音時間外に限り登録する。 */
+/** ラン宣言時刻のリマインド。宣言ごとに一度だけ、静音時間外に限り登録する。 */
 export async function scheduleDeclarationReminder(params: {
   declarationId: string;
   battleId: string;

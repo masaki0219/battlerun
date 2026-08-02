@@ -40,20 +40,21 @@ const FONT: Record<Size, number> = {
 
 export function Button({ label, onPress, variant = 'primary', size = 'md', disabled, loading, style }: Props) {
   const height = ComponentSize.buttonHeight[size];
-  const bg = BG[variant];
-  const color = FG[variant];
+  const unavailable = !!disabled || !!loading;
+  const bg = disabled ? Colors.surfaceGray : BG[variant];
+  const color = disabled ? Colors.textSecondary : FG[variant];
   const border = variant === 'secondary' ? { borderWidth: 1, borderColor: Colors.border } : null;
 
   return (
     <Pressable
       onPress={onPress}
-      disabled={disabled || loading}
+      disabled={unavailable}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ disabled: !!disabled || !!loading, busy: !!loading }}
+      accessibilityState={{ disabled: unavailable, busy: !!loading }}
       style={({ pressed }) => [
         styles.base,
-        { height, backgroundColor: bg, opacity: disabled ? 0.5 : pressed ? 0.85 : 1 },
+        { height, backgroundColor: bg, opacity: pressed ? 0.85 : 1 },
         border,
         style,
       ]}

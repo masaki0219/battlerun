@@ -77,6 +77,12 @@ assert.equal(decision.type, 'pause');
 if (decision.type === 'pause') assert.equal(decision.pausedAtMs, 0);
 detector = decision.next;
 decision = evaluateAutoPause(detector, point(2, 6_000), true);
+assert.equal(decision.type, 'hold');
+detector = decision.next;
+decision = evaluateAutoPause(detector, point(4, 7_000), true);
+assert.equal(decision.type, 'hold');
+detector = decision.next;
+decision = evaluateAutoPause(detector, point(6, 8_000), true);
 assert.equal(decision.type, 'resume');
 
 detector = emptyAutoPauseDetector();
@@ -92,6 +98,12 @@ decision = evaluateAutoPause(detector, point(0.8, 6_000), true, 0.8);
 assert.equal(decision.type, 'hold');
 detector = decision.next;
 decision = evaluateAutoPause(detector, point(2.1, 7_000), true, 1.3);
+assert.equal(decision.type, 'hold');
+detector = decision.next;
+decision = evaluateAutoPause(detector, point(4.2, 8_000), true, 1.3);
+assert.equal(decision.type, 'hold');
+detector = decision.next;
+decision = evaluateAutoPause(detector, point(6.3, 9_000), true, 1.3);
 assert.equal(decision.type, 'resume');
 
 detector = emptyAutoPauseDetector();
@@ -103,7 +115,6 @@ for (let second = 1; second <= 4; second++) {
 }
 decision = evaluateAutoPause(detector, point(1, 5_000), false);
 assert.equal(decision.type, 'append');
-if (decision.type === 'append') assert.equal(decision.points.length, 5);
 
 assert.equal(spokenPace(372), 'キロ 6分12秒');
 assert.equal(

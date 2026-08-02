@@ -6,6 +6,7 @@ interface Side {
   label: string;
   km: number;
   isMine: boolean;
+  color?: string;
 }
 
 interface Props {
@@ -54,8 +55,8 @@ export function VersusGauge({ left, right, size = 'md', dark = false, unit = 'km
   const txtSecondary = dark ? DarkColors.textSecondary : Colors.textSecondary;
   const trackBg = dark ? DarkColors.line : Colors.surfaceGray;
   const sepColor = dark ? DarkColors.marker : Colors.surface;
-  const leftColor = dark ? DarkColors.primary : Colors.primary;
-  const rightColor = dark ? DarkColors.accent : Colors.accent;
+  const leftColor = left.color ?? (dark ? DarkColors.primary : Colors.primary);
+  const rightColor = right.color ?? (dark ? DarkColors.accent : Colors.accent);
   const aheadColor = dark ? DarkColors.primary : Colors.primary;
   const behindColor = dark ? DarkColors.accent : Colors.accent;
 

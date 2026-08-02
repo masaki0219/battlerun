@@ -1,16 +1,25 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { MAX_ACTIVITY_DISTANCE_KM } from './constants';
+import {
+  GPS_PROCESSING_VERSION,
+  MAX_RUNNING_SPEED_MPS,
+  replayAcceptedGpsRoute,
+  type GpsInputPoint,
+  type GpsQualitySummary,
+  type ProcessedGpsPoint,
+} from './gpsProcessing';
 
-const MAX_SPEED_KMH = 25;
+const MAX_SPEED_KMH = MAX_RUNNING_SPEED_MPS * 3.6;
 const MAX_DURATION_SECONDS = 24 * 60 * 60;
 const MAX_OFFLINE_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_ROUTE_POINTS = 50_000;
 const ROUTE_CHUNK_SIZE = 500;
 const STEP_LENGTH_KM = 0.00075;
-const GPS_EXTREME_ACCURACY_M = 80;
+const LEGACY_GPS_EXTREME_ACCURACY_M = 80;
+const LEGACY_MAX_SPEED_KMH = 25;
 
-interface RoutePoint {
+interface LegacyRoutePoint {
   lat: number;
   lng: number;
   timestamp: number;
@@ -32,9 +41,11 @@ interface SubmitActivityData {
   endedAtMs?: unknown;
   pausedMs?: unknown;
   route?: unknown;
+  gpsProcessingVersion?: unknown;
+  gpsQuality?: unknown;
 }
 
-function haversine(a: RoutePoint, b: RoutePoint): number {
+function haversine(a: LegacyRoutePoint, b: LegacyRoutePoint): number {
   const radiusKm = 6371;
   const dLat = ((b.lat - a.lat) * Math.PI) / 180;
   const dLng = ((b.lng - a.lng) * Math.PI) / 180;
@@ -46,12 +57,13 @@ function haversine(a: RoutePoint, b: RoutePoint): number {
   return radiusKm * 2 * Math.asin(Math.sqrt(sin2));
 }
 
-function parseRoute(value: unknown, startedAtMs: number, endedAtMs: number): RoutePoint[] {
+/** 新方式導入前に端末キューへ入った活動だけに使う互換処理。 */
+function parseLegacyRoute(value: unknown, startedAtMs: number, endedAtMs: number): LegacyRoutePoint[] {
   if (!Array.isArray(value) || value.length > MAX_ROUTE_POINTS) {
     throw new HttpsError('invalid-argument', 'GPSルートの件数が不正です。');
   }
 
-  const route: RoutePoint[] = [];
+  const route: LegacyRoutePoint[] = [];
   // seg付きの点が検証で落ちた場合、次に採用する点へセグメント境界を引き継ぐ
   let pendingSegmentBreak = false;
   for (const raw of value) {
@@ -68,12 +80,12 @@ function parseRoute(value: unknown, startedAtMs: number, endedAtMs: number): Rou
       typeof lng !== 'number' || !Number.isFinite(lng) || lng < -180 || lng > 180 ||
       typeof timestamp !== 'number' || !Number.isFinite(timestamp) ||
       timestamp < startedAtMs - 60_000 || timestamp > endedAtMs + 60_000 ||
-      (typeof accuracy === 'number' && Number.isFinite(accuracy) && accuracy > GPS_EXTREME_ACCURACY_M)
+      (typeof accuracy === 'number' && Number.isFinite(accuracy) && accuracy > LEGACY_GPS_EXTREME_ACCURACY_M)
     ) {
       continue;
     }
 
-    const next: RoutePoint = { lat, lng, timestamp };
+    const next: LegacyRoutePoint = { lat, lng, timestamp };
     if (typeof accuracy === 'number' && Number.isFinite(accuracy) && accuracy >= 0) {
       next.accuracy = accuracy;
     }
@@ -88,7 +100,7 @@ function parseRoute(value: unknown, startedAtMs: number, endedAtMs: number): Rou
       const seconds = (next.timestamp - prev.timestamp) / 1000;
       if (seconds <= 0) continue;
       const speedKmh = (haversine(prev, next) / seconds) * 3600;
-      if (speedKmh > MAX_SPEED_KMH) continue;
+      if (speedKmh > LEGACY_MAX_SPEED_KMH) continue;
     }
     // セグメント境界を跨ぐペアは距離に数えないため、速度検査を免除しても距離の水増しにはならない
     if (prev && pendingSegmentBreak) next.seg = true;
@@ -98,14 +110,77 @@ function parseRoute(value: unknown, startedAtMs: number, endedAtMs: number): Rou
   return route;
 }
 
-function routeDistance(route: RoutePoint[]): number {
+function legacyRouteDistance(route: LegacyRoutePoint[]): number {
   return route.reduce((sum, point, index) => (
     index === 0 || point.seg ? sum : sum + haversine(route[index - 1], point)
   ), 0);
 }
 
+function gpsInputPoints(value: unknown, startedAtMs: number, endedAtMs: number): GpsInputPoint[] {
+  if (!Array.isArray(value) || value.length > MAX_ROUTE_POINTS) {
+    throw new HttpsError('invalid-argument', 'GPSルートの件数が不正です。');
+  }
+  return value.flatMap((raw): GpsInputPoint[] => {
+    if (!raw || typeof raw !== 'object') return [];
+    const point = raw as Record<string, unknown>;
+    const timestamp = point['timestamp'];
+    // OS時刻の微差だけを許容し、活動から大きく外れた点は正式距離へ入れない。
+    if (
+      typeof timestamp !== 'number'
+      || !Number.isFinite(timestamp)
+      || timestamp < startedAtMs - 60_000
+      || timestamp > endedAtMs + 60_000
+    ) return [];
+    return [{
+      lat: point['lat'],
+      lng: point['lng'],
+      timestamp,
+      accuracy: point['accuracy'],
+      alt: point['alt'],
+      altitudeAccuracy: point['altitudeAccuracy'],
+      seg: point['seg'],
+    }];
+  });
+}
+
+function finiteNonNegative(value: unknown, integer = false): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return 0;
+  return integer ? Math.floor(value) : value;
+}
+
+function nullableAccuracy(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/** 品質集計は診断専用。座標を含めず、数値だけを正規化して保存する。 */
+function parseGpsQuality(value: unknown): GpsQualitySummary | null {
+  if (!value || typeof value !== 'object') return null;
+  const data = value as Record<string, unknown>;
+  return {
+    processingVersion: GPS_PROCESSING_VERSION,
+    receivedPointCount: finiteNonNegative(data['receivedPointCount'], true),
+    acceptedPointCount: finiteNonNegative(data['acceptedPointCount'], true),
+    rejectedPointCount: finiteNonNegative(data['rejectedPointCount'], true),
+    rejectedByAccuracyCount: finiteNonNegative(data['rejectedByAccuracyCount'], true),
+    rejectedBySpeedCount: finiteNonNegative(data['rejectedBySpeedCount'], true),
+    rejectedByTimestampCount: finiteNonNegative(data['rejectedByTimestampCount'], true),
+    microJitterCount: finiteNonNegative(data['microJitterCount'], true),
+    segmentBreakCount: finiteNonNegative(data['segmentBreakCount'], true),
+    maxGapMs: finiteNonNegative(data['maxGapMs'], true),
+    accuracyMedianM: nullableAccuracy(data['accuracyMedianM']),
+    accuracyP95M: nullableAccuracy(data['accuracyP95M']),
+    rawDistanceM: finiteNonNegative(data['rawDistanceM']),
+    filteredDistanceM: finiteNonNegative(data['filteredDistanceM']),
+    warmupDurationMs: finiteNonNegative(data['warmupDurationMs'], true),
+    warmupReadyAccuracyM: nullableAccuracy(data['warmupReadyAccuracyM']),
+    foregroundFallbackCount: finiteNonNegative(data['foregroundFallbackCount'], true),
+    backgroundPointCount: finiteNonNegative(data['backgroundPointCount'], true),
+    foregroundPointCount: finiteNonNegative(data['foregroundPointCount'], true),
+  };
+}
+
 /**
- * App Check 済みのクライアントから記録を受け取り、公開メタデータと本人専用GPSルートを分離して保存する。
+ * 認証済みクライアントから記録を受け取り、公開メタデータと本人専用GPSルートを分離して保存する。
  * userId・表示名・反映先バトルはクライアント値を信用せずサーバーで確定する。
  */
 export const submitActivity = onCall(
@@ -169,12 +244,25 @@ export const submitActivity = onCall(
     const steps = typeof data.steps === 'number' && Number.isFinite(data.steps)
       ? Math.max(0, Math.floor(data.steps))
       : 0;
-    const route = measurementType === 'gps'
-      ? parseRoute(data.route, startedAtMs, endedAtMs)
-      : [];
-    const distanceKm = measurementType === 'gps'
-      ? routeDistance(route)
-      : steps * STEP_LENGTH_KM;
+    const usesSharedGpsProcessing = measurementType === 'gps'
+      && data.gpsProcessingVersion === GPS_PROCESSING_VERSION;
+    let route: Array<LegacyRoutePoint | ProcessedGpsPoint> = [];
+    let distanceKm = measurementType === 'steps' ? steps * STEP_LENGTH_KM : 0;
+    let gpsQuality: GpsQualitySummary | null = null;
+    if (measurementType === 'gps' && usesSharedGpsProcessing) {
+      const replay = replayAcceptedGpsRoute(gpsInputPoints(data.route, startedAtMs, endedAtMs));
+      route = replay.processedRoute;
+      distanceKm = replay.filteredDistanceM / 1_000;
+      const clientQuality = parseGpsQuality(data.gpsQuality);
+      gpsQuality = clientQuality
+        ? { ...clientQuality, processingVersion: GPS_PROCESSING_VERSION, filteredDistanceM: replay.filteredDistanceM }
+        : replay.summary;
+    } else if (measurementType === 'gps') {
+      // 更新前に端末キューへ保存済みの活動を失わないためだけの旧方式。新規活動は必ずv2を送る。
+      const legacyRoute = parseLegacyRoute(data.route, startedAtMs, endedAtMs);
+      route = legacyRoute;
+      distanceKm = legacyRouteDistance(legacyRoute);
+    }
     const averageSpeedKmh = distanceKm / (durationSeconds / 3600);
 
     if (
@@ -190,7 +278,12 @@ export const submitActivity = onCall(
     const userSnap = await userRef.get();
     if (!userSnap.exists) throw new HttpsError('failed-precondition', 'ユーザー情報がありません。');
     const user = userSnap.data()!;
-    const candidateBattleIds = ((user['battleIds'] as string[] | undefined) ?? []).slice(0, 50);
+    // 旧データでは終了済みIDが配列の先頭に残る場合がある。先に活動中かを判定し、
+    // その後で最大2件へ絞ることで、有効な参加枠を取りこぼさない。
+    const candidateBattleIds = [...new Set(
+      ((user['battleIds'] as unknown[] | undefined) ?? [])
+        .filter((id): id is string => typeof id === 'string'),
+    )].slice(0, 50);
 
     // 10分を超える遅延送信は個人履歴としては受理するが、過去バトルへの後付け加算はしない。
     const eligibleForBattleCredit = endedAtMs >= now - 10 * 60_000;
@@ -211,7 +304,7 @@ export const submitActivity = onCall(
         ) return null;
         return battleId;
       }))
-    ).filter((id): id is string => id !== null) : [];
+    ).filter((id): id is string => id !== null).slice(0, 2) : [];
 
     const saveBatch = db.batch();
     saveBatch.create(activityRef, {
@@ -225,6 +318,10 @@ export const submitActivity = onCall(
       durationSeconds,
       pausedMs,
       measurementType,
+      gpsProcessingVersion: measurementType === 'gps'
+        ? (usesSharedGpsProcessing ? GPS_PROCESSING_VERSION : 1)
+        : null,
+      gpsQuality: measurementType === 'gps' ? gpsQuality : null,
       startedAt: Timestamp.fromMillis(startedAtMs),
       endedAt: Timestamp.fromMillis(endedAtMs),
       submittedAt: Timestamp.now(),

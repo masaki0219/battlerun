@@ -2,8 +2,16 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { httpsCallable } from 'firebase/functions';
 import { auth, functions } from '../lib/firebase';
-import type { RecordStore, Activity, MeasurementType, PauseKind, RoutePoint, RunGoal } from '../types';
-import { MAX_SPEED_KMH } from '../lib/constants';
+import type {
+  RecordStore,
+  Activity,
+  MeasurementType,
+  PauseKind,
+  RoutePoint,
+  RunGoal,
+  GpsPointSource,
+  GpsWarmupSeed,
+} from '../types';
 import {
   emptyAutoPauseDetector,
   evaluateAutoPause,
@@ -11,45 +19,28 @@ import {
 } from '../utils/autoPause';
 import { completeDeclarationsForActivity } from '../lib/declarations';
 import {
-  hasStableStartAccuracy,
+  DEFAULT_GPS_PROCESSING_CONFIG,
+  DISTANCE_MAX_ACCURACY_M,
+  GPS_PROCESSING_VERSION,
+  GPS_QUALITY_ACCURACY_SAMPLE_LIMIT,
+  WARMUP_POINT_MAX_AGE_MS,
+  createInitialGpsProcessingState,
+  emptyGpsRuntimeQualityMetrics,
+  gpsDebugSample,
+  gpsQualitySummary,
+  processGpsPoint,
+  type GpsDebugSample,
+  type GpsInputPoint,
+  type GpsProcessingState,
+  type GpsRuntimeQualityMetrics,
+} from '../utils/gpsProcessing';
+import {
   hasUsableAutoPauseAccuracy,
-  hasUsableDistanceAccuracy,
 } from '../utils/gpsQuality';
-
-function haversine(a: RoutePoint, b: RoutePoint): number {
-  const R = 6371;
-  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
-  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
-  const sin2 =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.asin(Math.sqrt(sin2));
-}
-
-function filterInvalidPoints(route: RoutePoint[]): RoutePoint[] {
-  const valid: RoutePoint[] = [];
-  for (const point of route) {
-    if (!hasUsableDistanceAccuracy(point)) continue;
-    const prev = valid[valid.length - 1];
-    // セグメント先頭（一時停止からの再開点）は前の点との速度検査をしない
-    if (!prev || point.seg) {
-      valid.push(point);
-      continue;
-    }
-    const distKm = haversine(prev, point);
-    const timeSec = (point.timestamp - prev.timestamp) / 1000;
-    if (timeSec > 0 && (distKm / timeSec) * 3600 <= MAX_SPEED_KMH) valid.push(point);
-  }
-  return valid;
-}
-
-/** セグメント境界（一時停止区間）を跨ぐペアを除いた合計距離 */
-export function routeDistanceKm(route: RoutePoint[]): number {
-  return route.reduce((sum, pt, i) => {
-    if (i === 0 || pt.seg) return sum;
-    return sum + haversine(route[i - 1], pt);
-  }, 0);
-}
+import {
+  GPS_DEBUG_EXPORT_ENABLED,
+  saveLatestGpsDebugExport,
+} from '../lib/gpsDebug';
 
 const RECORDING_SESSION_KEY = '@battlerun_recording_session_v1';
 const PENDING_ACTIVITIES_KEY = '@battlerun_pending_activities_v1';
@@ -78,34 +69,15 @@ interface RecordState extends RecordStore {
   segmentPending: boolean;
   autoPauseDetector: AutoPauseDetectorState;
   lastLocationAt: number | null;
+  gpsProcessingState: GpsProcessingState;
+  gpsRuntimeQuality: GpsRuntimeQualityMetrics;
+  gpsDebugSamples: GpsDebugSample[];
   /** GPS点の追加。手動停止中は捨て、自動停止中は再開判定だけを続ける */
-  appendRoutePoint: (point: RoutePoint, observedSpeedMps?: number | null) => void;
-}
-
-function appendAcceptedPoints(
-  state: Pick<RecordState, 'route' | 'distanceKm' | 'segmentPending'>,
-  points: RoutePoint[],
-): Pick<RecordState, 'route' | 'distanceKm' | 'segmentPending'> {
-  let route = state.route;
-  let distanceKm = state.distanceKm;
-  let segmentPending = state.segmentPending;
-
-  for (const point of points) {
-    const marked: RoutePoint = segmentPending && route.length > 0 ? { ...point, seg: true } : point;
-    const prev = route[route.length - 1];
-    let added = 0;
-    if (prev && !marked.seg) {
-      const timeSec = (marked.timestamp - prev.timestamp) / 1000;
-      const distKm = haversine(prev, marked);
-      if (timeSec <= 0 || (distKm / timeSec) * 3600 > MAX_SPEED_KMH) continue;
-      added = distKm;
-    }
-    route = [...route, marked];
-    distanceKm += added;
-    segmentPending = false;
-  }
-
-  return { route, distanceKm, segmentPending };
+  appendRoutePoint: (point: GpsInputPoint, source: Exclude<GpsPointSource, 'warmup'>) => void;
+  /** バックグラウンド追跡から前景監視へ切り替えた回数を品質集計へ残す。 */
+  noteForegroundFallback: () => void;
+  /** 手動停止・復旧・ウォッチドッグ後の次の良好点を新セグメントにする。 */
+  requestGpsSegmentBreak: () => void;
 }
 
 /** 一時停止分を除いた実走行時間（秒） */
@@ -114,6 +86,57 @@ export function activeDurationSeconds(state: Pick<RecordState, 'startedAt' | 'pa
   const startMs = new Date(state.startedAt).getTime();
   const endMs = state.pausedAt ? new Date(state.pausedAt).getTime() : nowMs;
   return Math.max(0, Math.floor((endMs - startMs - state.pausedTotalMs) / 1000));
+}
+
+function routePointForAutoPause(input: GpsInputPoint): RoutePoint | null {
+  if (
+    typeof input.lat !== 'number' || !Number.isFinite(input.lat)
+    || typeof input.lng !== 'number' || !Number.isFinite(input.lng)
+    || typeof input.timestamp !== 'number' || !Number.isFinite(input.timestamp)
+  ) return null;
+  const point: RoutePoint = { lat: input.lat, lng: input.lng, timestamp: input.timestamp };
+  if (typeof input.accuracy === 'number' && Number.isFinite(input.accuracy)) point.accuracy = input.accuracy;
+  return point;
+}
+
+function observedSpeed(input: GpsInputPoint): number | null {
+  return typeof input.speed === 'number' && Number.isFinite(input.speed) && input.speed >= 0
+    ? input.speed
+    : null;
+}
+
+function restoreGpsProcessingState(route: RoutePoint[], distanceKm: number): GpsProcessingState {
+  const restored = createInitialGpsProcessingState();
+  const last = route[route.length - 1];
+  if (!last) return restored;
+  const anchor = {
+    lat: last.lat,
+    lng: last.lng,
+    timestamp: last.timestamp,
+    accuracy: typeof last.accuracy === 'number' && Number.isFinite(last.accuracy) && last.accuracy > 0
+      ? last.accuracy
+      : DISTANCE_MAX_ACCURACY_M,
+    ...(typeof last.alt === 'number' && Number.isFinite(last.alt) ? { alt: last.alt } : {}),
+    ...(typeof last.altitudeAccuracy === 'number' && Number.isFinite(last.altitudeAccuracy)
+      ? { altitudeAccuracy: last.altitudeAccuracy }
+      : {}),
+  };
+  return {
+    ...restored,
+    lastObservedPoint: anchor,
+    lastUsablePoint: anchor,
+    rawAnchor: anchor,
+    commitAnchor: anchor,
+    acceptedPointCount: route.length,
+    receivedPointCount: route.length,
+    rawDistanceM: Math.max(0, distanceKm * 1_000),
+    filteredDistanceM: Math.max(0, distanceKm * 1_000),
+    accuracySamplesM: route.flatMap((point) => (
+      typeof point.accuracy === 'number' && Number.isFinite(point.accuracy) && point.accuracy > 0
+        ? [point.accuracy]
+        : []
+    )).slice(-GPS_QUALITY_ACCURACY_SAMPLE_LIMIT),
+  };
 }
 
 export const useRecordStore = create<RecordState>((set, get) => ({
@@ -135,26 +158,58 @@ export const useRecordStore = create<RecordState>((set, get) => ({
   segmentPending: false,
   autoPauseDetector: emptyAutoPauseDetector(),
   lastLocationAt: null,
+  gpsProcessingState: createInitialGpsProcessingState(),
+  gpsRuntimeQuality: emptyGpsRuntimeQualityMetrics(),
+  gpsDebugSamples: [],
 
-  startRecording: (type: MeasurementType, goal: RunGoal | null = null) => {
+  startRecording: (
+    type: MeasurementType,
+    goal: RunGoal | null = null,
+    warmupSeed: GpsWarmupSeed | null = null,
+  ) => {
+    const nowMs = Date.now();
+    let gpsProcessingState = createInitialGpsProcessingState();
+    let route: RoutePoint[] = [];
+    let gpsDebugSamples: GpsDebugSample[] = [];
+    const gpsRuntimeQuality = emptyGpsRuntimeQualityMetrics();
+
+    if (
+      type === 'gps'
+      && warmupSeed
+      && nowMs - warmupSeed.point.timestamp >= 0
+      && nowMs - warmupSeed.point.timestamp <= WARMUP_POINT_MAX_AGE_MS
+    ) {
+      const input: GpsInputPoint = { ...warmupSeed.point };
+      const outcome = processGpsPoint(gpsProcessingState, input);
+      gpsProcessingState = outcome.nextState;
+      if (outcome.acceptedPoint) route = [outcome.acceptedPoint];
+      if (GPS_DEBUG_EXPORT_ENABLED) gpsDebugSamples = [gpsDebugSample(input, outcome)];
+      gpsRuntimeQuality.warmupDurationMs = Math.max(0, warmupSeed.warmupDurationMs);
+      gpsRuntimeQuality.warmupReadyAccuracyM = warmupSeed.readyAccuracyM;
+      gpsRuntimeQuality.foregroundPointCount = 1;
+    }
+
     set({
       isRecording: true,
       isPaused: false,
       pauseKind: null,
       measurementType: type,
-      distanceKm: 0,
+      distanceKm: gpsProcessingState.filteredDistanceM / 1_000,
       steps: 0,
       durationSeconds: 0,
-      route: [],
+      route,
       goal,
-      startedAt: new Date().toISOString(),
+      startedAt: new Date(nowMs).toISOString(),
       locationMode: 'idle',
       gpsWarning: false,
       pausedAt: null,
       pausedTotalMs: 0,
       segmentPending: false,
       autoPauseDetector: emptyAutoPauseDetector(),
-      lastLocationAt: null,
+      lastLocationAt: route[0]?.timestamp ?? null,
+      gpsProcessingState,
+      gpsRuntimeQuality,
+      gpsDebugSamples,
     });
   },
 
@@ -196,93 +251,102 @@ export const useRecordStore = create<RecordState>((set, get) => ({
     void AsyncStorage.setItem(AUTO_PAUSE_ENABLED_KEY, enabled ? 'true' : 'false');
   },
 
-  appendRoutePoint: (point: RoutePoint, observedSpeedMps?: number | null) => {
+  appendRoutePoint: (point: GpsInputPoint, source: Exclude<GpsPointSource, 'warmup'>) => {
     const state = get();
     if (!state.isRecording || state.pauseKind === 'manual') return;
 
-    // 位置更新自体はウォッチドッグへ伝えつつ、極端な低精度点と開始直後の不安定な点は距離へ入れない。
-    if (!hasUsableDistanceAccuracy(point) || (state.route.length === 0 && !hasStableStartAccuracy(point))) {
-      set({ lastLocationAt: point.timestamp, autoPauseDetector: emptyAutoPauseDetector() });
-      return;
-    }
+    const autoPoint = routePointForAutoPause(point);
+    const canEvaluateAutoPause = state.autoPauseEnabled
+      && autoPoint !== null
+      && hasUsableAutoPauseAccuracy(autoPoint);
+    const decision = canEvaluateAutoPause
+      ? evaluateAutoPause(
+          state.autoPauseDetector,
+          autoPoint,
+          state.pauseKind === 'auto',
+          observedSpeed(point),
+        )
+      : null;
 
-    if (state.measurementType !== 'gps' || !state.autoPauseEnabled) {
-      set({
-        ...appendAcceptedPoints(state, [point]),
-        autoPauseDetector: { ...emptyAutoPauseDetector(), lastPoint: point },
-        lastLocationAt: point.timestamp,
-      });
-      return;
-    }
+    const isResuming = state.pauseKind === 'auto' && decision?.type === 'resume';
+    const isStartingPause = state.pauseKind !== 'auto' && decision?.type === 'pause';
+    const remainsAutoPaused = state.pauseKind === 'auto' && !isResuming;
+    const forceNewSegment = state.segmentPending || isResuming;
+    const outcome = processGpsPoint(state.gpsProcessingState, point, {
+      forceNewSegment,
+      paused: remainsAutoPaused || isStartingPause,
+    });
 
-    // 距離には残せる中間精度の点でも、誤停止につながるためオートポーズ判定には使わない。
-    if (!hasUsableAutoPauseAccuracy(point)) {
-      set({
-        ...appendAcceptedPoints(state, [point]),
-        // 次の良好な点との速度計算にも低精度点を混ぜない。
-        autoPauseDetector: emptyAutoPauseDetector(),
-        lastLocationAt: point.timestamp,
-      });
-      return;
-    }
+    const route = outcome.acceptedPoint
+      ? [...state.route, outcome.acceptedPoint]
+      : state.route;
+    const gpsRuntimeQuality = {
+      ...state.gpsRuntimeQuality,
+      foregroundPointCount: state.gpsRuntimeQuality.foregroundPointCount + (source === 'foreground' ? 1 : 0),
+      backgroundPointCount: state.gpsRuntimeQuality.backgroundPointCount + (source === 'background' ? 1 : 0),
+    };
+    const gpsDebugSamples = GPS_DEBUG_EXPORT_ENABLED
+      ? [...state.gpsDebugSamples, gpsDebugSample(point, outcome)]
+      : state.gpsDebugSamples;
+    const timestamp = typeof point.timestamp === 'number' && Number.isFinite(point.timestamp)
+      ? point.timestamp
+      : Date.now();
 
-    const decision = evaluateAutoPause(
-      state.autoPauseDetector,
-      point,
-      state.pauseKind === 'auto',
-      observedSpeedMps,
-    );
-    if (decision.type === 'pause') {
+    const patch: Partial<RecordState> = {
+      route,
+      distanceKm: outcome.nextState.filteredDistanceM / 1_000,
+      gpsProcessingState: outcome.nextState,
+      gpsRuntimeQuality,
+      gpsDebugSamples,
+      // 低品質点も「位置更新は届いている」ためウォッチドッグには伝える。
+      lastLocationAt: timestamp,
+      segmentPending: forceNewSegment && !outcome.acceptedPoint,
+      autoPauseDetector: decision?.next ?? emptyAutoPauseDetector(),
+    };
+
+    if (isStartingPause && decision?.type === 'pause') {
       const startedAtMs = state.startedAt ? new Date(state.startedAt).getTime() : decision.pausedAtMs;
       const pausedAtMs = Math.max(startedAtMs, decision.pausedAtMs);
-      set({
-        isPaused: true,
-        pauseKind: 'auto',
-        pausedAt: new Date(pausedAtMs).toISOString(),
-        segmentPending: true,
-        autoPauseDetector: decision.next,
-        lastLocationAt: point.timestamp,
-        gpsWarning: false,
-      });
-      return;
+      patch.isPaused = true;
+      patch.pauseKind = 'auto';
+      patch.pausedAt = new Date(pausedAtMs).toISOString();
+      patch.segmentPending = true;
+      patch.gpsWarning = false;
+    } else if (isResuming) {
+      const pausedAtMs = state.pausedAt ? new Date(state.pausedAt).getTime() : timestamp;
+      patch.isPaused = false;
+      patch.pauseKind = null;
+      patch.pausedAt = null;
+      patch.pausedTotalMs = state.pausedTotalMs + Math.max(0, timestamp - pausedAtMs);
+      patch.gpsWarning = false;
     }
-    if (decision.type === 'resume') {
-      const pausedAtMs = state.pausedAt ? new Date(state.pausedAt).getTime() : point.timestamp;
-      const resumed = {
-        ...appendAcceptedPoints({ ...state, segmentPending: true }, [point]),
-        isPaused: false,
-        pauseKind: null as PauseKind,
-        pausedAt: null,
-        pausedTotalMs: state.pausedTotalMs + Math.max(0, point.timestamp - pausedAtMs),
-        autoPauseDetector: decision.next,
-        lastLocationAt: point.timestamp,
-        gpsWarning: false,
-      };
-      set(resumed);
-      return;
-    }
-    if (decision.type === 'append') {
-      set({
-        ...appendAcceptedPoints(state, decision.points),
-        autoPauseDetector: decision.next,
-        lastLocationAt: point.timestamp,
-      });
-      return;
-    }
-    set({ autoPauseDetector: decision.next, lastLocationAt: point.timestamp });
+
+    set(patch);
   },
+
+  noteForegroundFallback: () => {
+    const state = get();
+    set({
+      gpsRuntimeQuality: {
+        ...state.gpsRuntimeQuality,
+        foregroundFallbackCount: state.gpsRuntimeQuality.foregroundFallbackCount + 1,
+      },
+    });
+  },
+
+  requestGpsSegmentBreak: () => set({ segmentPending: true }),
 
   stopRecording: async () => {
     const state = get();
     if (!state.isRecording) throw new Error('記録はすでに停止しています。');
     const endedAt = new Date().toISOString();
 
-    // 歩数モード: route は空なので store に累積した distanceKm をそのまま使う
-    // GPS モード: チート防止済みの距離を route から再計算
-    const validRoute = state.measurementType === 'gps' ? filterInvalidPoints(state.route) : [];
+    // GPSルートは受信時点で共有純関数を通ったcommitAnchorだけを保持している。
+    // 終了時に3m未満の端数を足さず、逐次表示と同じ正式候補距離を使う。
+    const validRoute = state.measurementType === 'gps' ? state.route : [];
     const distanceKm = state.measurementType === 'steps'
       ? state.distanceKm
-      : routeDistanceKm(validRoute);
+      : state.gpsProcessingState.filteredDistanceM / 1_000;
 
     // setInterval ではなく開始時刻からの差分で計算
     // バックグラウンドから戻った後も正確な経過時間が得られる。一時停止分は除く
@@ -293,6 +357,9 @@ export const useRecordStore = create<RecordState>((set, get) => ({
       ? Math.max(0, Math.floor((endMs - new Date(state.startedAt).getTime() - pausedMs) / 1000))
       : 0;
 
+    const quality = state.measurementType === 'gps'
+      ? gpsQualitySummary(state.gpsProcessingState, state.gpsRuntimeQuality)
+      : undefined;
     const activity: Activity = {
       id: '',
       userId: '',
@@ -304,7 +371,25 @@ export const useRecordStore = create<RecordState>((set, get) => ({
       startedAt: state.startedAt ?? endedAt,
       endedAt,
       pausedMs,
+      ...(state.measurementType === 'gps' ? {
+        gpsProcessingVersion: GPS_PROCESSING_VERSION,
+        gpsQuality: quality,
+      } : {}),
     };
+
+    if (state.measurementType === 'gps' && quality && GPS_DEBUG_EXPORT_ENABLED) {
+      await saveLatestGpsDebugExport({
+        schemaVersion: 1,
+        startedAt: state.startedAt ?? endedAt,
+        endedAt,
+        config: DEFAULT_GPS_PROCESSING_CONFIG,
+        summary: quality,
+        samples: state.gpsDebugSamples,
+      }).catch((error) => {
+        // デバッグログ保存失敗でユーザーの活動保存を止めない。
+        console.warn('[recordStore] GPS debug export failed:', error);
+      });
+    }
 
     set({
       isRecording: false,
@@ -336,13 +421,17 @@ export const useRecordStore = create<RecordState>((set, get) => ({
       segmentPending: false,
       autoPauseDetector: emptyAutoPauseDetector(),
       lastLocationAt: null,
+      gpsProcessingState: createInitialGpsProcessingState(),
+      gpsRuntimeQuality: emptyGpsRuntimeQualityMetrics(),
+      gpsDebugSamples: [],
     });
   },
 }));
 
 type PersistedSession = Pick<RecordState,
   'isRecording' | 'isPaused' | 'pauseKind' | 'measurementType' | 'distanceKm' | 'steps' | 'durationSeconds' |
-  'route' | 'goal' | 'startedAt' | 'locationMode' | 'gpsWarning' | 'pausedAt' | 'pausedTotalMs'>;
+  'route' | 'goal' | 'startedAt' | 'locationMode' | 'gpsWarning' | 'pausedAt' | 'pausedTotalMs' |
+  'gpsProcessingState' | 'gpsRuntimeQuality'> & { gpsDebugSamples?: GpsDebugSample[] };
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 let hydrating = false;
@@ -372,6 +461,10 @@ function persistRecordingSoon() {
       gpsWarning: false,
       pausedAt: latest.pausedAt,
       pausedTotalMs: latest.pausedTotalMs,
+      gpsProcessingState: latest.gpsProcessingState,
+      gpsRuntimeQuality: latest.gpsRuntimeQuality,
+      // 正確な座標を含むため、明示的な開発フラグ有効時だけ復旧用に保持する。
+      ...(GPS_DEBUG_EXPORT_ENABLED ? { gpsDebugSamples: latest.gpsDebugSamples } : {}),
     };
     void AsyncStorage.setItem(RECORDING_SESSION_KEY, JSON.stringify(persisted));
   }, 5000);
@@ -394,12 +487,16 @@ export async function hydrateRecordingSession(): Promise<void> {
     if (!saved.isRecording || !saved.startedAt || !Array.isArray(saved.route)) return;
     const isPaused = saved.isPaused === true && typeof saved.pausedAt === 'string';
     const pauseKind: PauseKind = isPaused && saved.pauseKind === 'auto' ? 'auto' : isPaused ? 'manual' : null;
+    const savedDistanceKm = typeof saved.distanceKm === 'number' ? saved.distanceKm : 0;
+    const gpsProcessingState = saved.gpsProcessingState && typeof saved.gpsProcessingState === 'object'
+      ? saved.gpsProcessingState
+      : restoreGpsProcessingState(saved.route, savedDistanceKm);
     useRecordStore.setState({
       isRecording: true,
       isPaused,
       pauseKind,
       measurementType: saved.measurementType === 'steps' ? 'steps' : 'gps',
-      distanceKm: typeof saved.distanceKm === 'number' ? saved.distanceKm : 0,
+      distanceKm: gpsProcessingState.filteredDistanceM / 1_000,
       steps: typeof saved.steps === 'number' ? saved.steps : 0,
       durationSeconds: 0,
       route: saved.route,
@@ -413,6 +510,13 @@ export async function hydrateRecordingSession(): Promise<void> {
       segmentPending: true,
       autoPauseDetector: emptyAutoPauseDetector(),
       lastLocationAt: null,
+      gpsProcessingState,
+      gpsRuntimeQuality: saved.gpsRuntimeQuality && typeof saved.gpsRuntimeQuality === 'object'
+        ? saved.gpsRuntimeQuality
+        : emptyGpsRuntimeQualityMetrics(),
+      gpsDebugSamples: GPS_DEBUG_EXPORT_ENABLED && Array.isArray(saved.gpsDebugSamples)
+        ? saved.gpsDebugSamples
+        : [],
     });
   } catch {
     await AsyncStorage.removeItem(RECORDING_SESSION_KEY);
@@ -536,6 +640,8 @@ async function submitPending(item: PendingActivity): Promise<SubmittedActivityRe
     endedAtMs: new Date(item.activity.endedAt).getTime(),
     pausedMs: item.activity.pausedMs ?? 0,
     route: item.activity.route ?? [],
+    gpsProcessingVersion: item.activity.gpsProcessingVersion,
+    gpsQuality: item.activity.gpsQuality,
   });
   const submitted = result.data as {
     activityId: string;

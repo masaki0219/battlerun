@@ -1,7 +1,7 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions/v2';
-import { parseMonthlyStatsImpact } from './monthlyStats';
+import { parseMonthlyStatsImpact, tokyoMonthKey, type MonthlyStatsImpact } from './monthlyStats';
 
 const BATCH_SIZE = 500;
 
@@ -10,6 +10,26 @@ interface AggregationImpact {
   categoryId: string;
   creditedDistanceKm?: number;
   stepDayKey?: string;
+}
+
+function monthlyImpactFromActivity(data: Record<string, unknown>): MonthlyStatsImpact | null {
+  const saved = parseMonthlyStatsImpact(data['monthlyStatsImpact']);
+  if (saved) return saved;
+  const startedAt = data['startedAt'];
+  const km = data['distanceKm'];
+  const durationSec = data['durationSeconds'];
+  if (
+    !(startedAt instanceof Timestamp)
+    || typeof km !== 'number' || !Number.isFinite(km) || km < 0
+    || typeof durationSec !== 'number' || !Number.isFinite(durationSec) || durationSec < 0
+  ) return null;
+  return {
+    monthKey: tokyoMonthKey(startedAt.toMillis()),
+    km,
+    count: 1,
+    durationSec,
+    elevationM: 0,
+  };
 }
 
 /**
@@ -123,7 +143,7 @@ export const deleteActivity = onCall(
       await batch.commit();
     }
 
-    const initialMonthlyImpact = parseMonthlyStatsImpact(activity['monthlyStatsImpact']);
+    const initialMonthlyImpact = monthlyImpactFromActivity(activity);
     const monthlyStatsRef = initialMonthlyImpact
       ? db.doc(`users/${uid}/monthlyStats/${initialMonthlyImpact.monthKey}`)
       : null;
@@ -137,7 +157,7 @@ export const deleteActivity = onCall(
       ]);
       if (!freshActivitySnap.exists) return;
       const fresh = freshActivitySnap.data()!;
-      const freshMonthlyImpact = parseMonthlyStatsImpact(fresh['monthlyStatsImpact']);
+      const freshMonthlyImpact = monthlyImpactFromActivity(fresh);
       if (fresh['userStatsAggregated'] === true && userSnap.exists) {
         const user = userSnap.data()!;
         tx.update(userSnap.ref, {
@@ -146,7 +166,8 @@ export const deleteActivity = onCall(
         });
       }
       if (
-        fresh['userStatsAggregated'] === true
+        (fresh['userStatsAggregated'] === true
+          || ((userSnap.data()?.['monthlyStatsBackfillVersion'] as number | undefined) ?? 0) >= 1)
         && monthlyStatsRef && monthlyStatsSnap?.exists
         && freshMonthlyImpact != null
         && freshMonthlyImpact?.monthKey === initialMonthlyImpact?.monthKey

@@ -5,7 +5,7 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged,
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, serverTimestamp, writeBatch, onSnapshot, updateDoc } from 'firebase/firestore';
+import { deleteField, doc, setDoc, getDoc, serverTimestamp, writeBatch, onSnapshot, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import type { AuthStore, PersonalRecords, User, UserTitle } from '../types';
 
@@ -24,13 +24,29 @@ function personalRecordsFrom(value: unknown): PersonalRecords | undefined {
   return Object.keys(records).length > 0 ? records : undefined;
 }
 
+function profileLoadErrorMessage(error: unknown): string {
+  const rawCode = error && typeof error === 'object'
+    ? (error as { code?: unknown }).code
+    : null;
+  const code = typeof rawCode === 'string' ? rawCode.replace(/^firestore\//, '') : '';
+  if (code === 'permission-denied') {
+    return 'プロフィール情報へのアクセス権限を確認できませんでした。再試行しても解決しない場合はヘルプをご確認ください。';
+  }
+  if (code === 'unavailable' || code === 'deadline-exceeded' || code === 'network-request-failed') {
+    return 'オフラインまたは通信がタイムアウトしました。接続を確認して再試行してください。';
+  }
+  return 'プロフィール情報を読み込めませんでした。通信状態を確認して再試行してください。';
+}
+
 export const useAuthStore = create<AuthStore>((set) => ({
   user: null,
   isLoading: true,
+  authSessionActive: false,
+  profileError: null,
   proEntitlement: false,
 
   signIn: async (email, password) => {
-    set({ isLoading: true });
+    set({ isLoading: true, profileError: null });
     try {
       await signInWithEmailAndPassword(auth, email, password);
       // isLoading は onAuthStateChanged が user をセットしたタイミングで false になる
@@ -41,20 +57,18 @@ export const useAuthStore = create<AuthStore>((set) => ({
   },
 
   signUp: async (email, password, name) => {
-    set({ isLoading: true });
+    set({ isLoading: true, profileError: null });
     try {
       const result = await createUserWithEmailAndPassword(auth, email, password);
       const batch = writeBatch(db);
       batch.set(doc(db, 'users', result.user.uid), {
         name,
-        avatarUrl: null,
         plan: 'free',
         runningPresenceVisible: false,
         createdAt: new Date(),
       });
       batch.set(doc(db, 'publicProfiles', result.user.uid), {
         name,
-        avatarUrl: null,
         avatarEmoji: null,
         updatedAt: serverTimestamp(),
       });
@@ -68,7 +82,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
 
   signOut: async () => {
     await firebaseSignOut(auth);
-    set({ user: null });
+    set({ user: null, authSessionActive: false, profileError: null });
   },
 
   setProEntitlement: (active) => set({ proEntitlement: active }),
@@ -95,6 +109,7 @@ export function initAuthListener(): () => void {
     unsubscribeUser?.();
     unsubscribeUser = null;
     if (firebaseUser) {
+      useAuthStore.setState({ authSessionActive: true, profileError: null });
       try {
         const userRef = doc(db, 'users', firebaseUser.uid);
         const snap = await getDoc(userRef);
@@ -106,14 +121,12 @@ export function initAuthListener(): () => void {
             ?? 'ユーザー';
           await setDoc(doc(db, 'users', firebaseUser.uid), {
             name,
-            avatarUrl: firebaseUser.photoURL ?? null,
             plan: 'free',
             runningPresenceVisible: false,
             createdAt: new Date(),
           });
           await setDoc(doc(db, 'publicProfiles', firebaseUser.uid), {
             name,
-            avatarUrl: firebaseUser.photoURL ?? null,
             avatarEmoji: null,
             updatedAt: serverTimestamp(),
           });
@@ -121,18 +134,26 @@ export function initAuthListener(): () => void {
 
         const current = (await getDoc(userRef)).data()!;
         if (generation !== authGeneration) return;
-        await setDoc(doc(db, 'publicProfiles', firebaseUser.uid), {
+        // 旧写真機能のURLはログイン時にプロフィールから除去し、固定アイコンへ統一する。
+        const profileBatch = writeBatch(db);
+        profileBatch.update(userRef, { avatarUrl: deleteField() });
+        profileBatch.set(doc(db, 'publicProfiles', firebaseUser.uid), {
           name: (current['name'] as string | undefined) ?? 'ユーザー',
-          avatarUrl: (current['avatarUrl'] as string | null | undefined) ?? null,
           avatarEmoji: (current['avatarEmoji'] as string | null | undefined) ?? null,
+          avatarUrl: deleteField(),
           updatedAt: serverTimestamp(),
         }, { merge: true });
+        await profileBatch.commit();
         if (generation !== authGeneration) return;
 
         // plan・称号・累計値を含むサーバー更新をリアルタイムでUIへ反映する。
         unsubscribeUser = onSnapshot(userRef, (userSnap) => {
           if (!userSnap.exists()) {
-            useAuthStore.setState({ user: null, isLoading: false });
+            // Auth セッションは有効なまま。削除・権限エラーをログアウト表示に誤変換しない。
+            useAuthStore.setState({
+              profileError: 'プロフィール情報が見つかりません。通信状態を確認して再試行してください。',
+              isLoading: false,
+            });
             return;
           }
           const data = userSnap.data();
@@ -146,8 +167,7 @@ export function initAuthListener(): () => void {
             id: firebaseUser.uid,
             authId: firebaseUser.uid,
             name: data['name'] as string,
-            avatarUrl: data['avatarUrl'] as string | undefined,
-            avatarEmoji: data['avatarEmoji'] as string | undefined,
+            avatarEmoji: typeof data['avatarEmoji'] === 'string' ? data['avatarEmoji'] : undefined,
             plan: data['plan'] as 'free' | 'pro',
             role: data['role'] as 'admin' | undefined,
             createdAt: (data['createdAt'] as any)?.toDate?.()?.toISOString() ?? '',
@@ -159,17 +179,30 @@ export function initAuthListener(): () => void {
             personalRecords: personalRecordsFrom(data['personalRecords']),
             runningPresenceVisible: data['runningPresenceVisible'] === true,
           };
-          useAuthStore.setState({ user, isLoading: false });
+          useAuthStore.setState({ user, authSessionActive: true, profileError: null, isLoading: false });
         }, (error) => {
           console.error('[Auth] Firestoreユーザー購読失敗:', error);
-          useAuthStore.setState({ user: null, isLoading: false });
+          useAuthStore.setState({
+            authSessionActive: true,
+            profileError: profileLoadErrorMessage(error),
+            isLoading: false,
+          });
         });
       } catch (e) {
         console.error('[Auth] Firestoreユーザー取得失敗:', e);
-        useAuthStore.setState({ user: null, isLoading: false });
+        useAuthStore.setState({
+          authSessionActive: true,
+          profileError: profileLoadErrorMessage(e),
+          isLoading: false,
+        });
       }
     } else {
-      useAuthStore.setState({ user: null, isLoading: false });
+      useAuthStore.setState({
+        user: null,
+        authSessionActive: false,
+        profileError: null,
+        isLoading: false,
+      });
     }
   });
   return () => {

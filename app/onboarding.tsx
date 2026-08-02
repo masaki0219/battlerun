@@ -288,7 +288,7 @@ const ob2 = StyleSheet.create({
   startText: {
     fontSize: 36,
     fontWeight: '800',
-    color: Colors.textOnPrimary,
+    color: Colors.textOnAccent,
     letterSpacing: 2,
   },
   toggle: {

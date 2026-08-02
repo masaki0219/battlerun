@@ -5,9 +5,13 @@ import './presence.test';
 import './processContributions.test';
 import './routeSplits.test';
 import './gpsQuality.test';
+import './gpsProcessing.test';
 import './battleCredit.test';
 import './invite.test';
 import './reviewFixes.test';
 import './moderation.test';
+import './battleSelection.test';
+import './runShare.test';
+import './battleParticipation.test';
 
 console.log('all unit tests passed');

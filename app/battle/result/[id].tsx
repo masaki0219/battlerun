@@ -14,14 +14,16 @@ import { useAuthStore } from '../../../stores/authStore';
 import { useBattleStore } from '../../../stores/battleStore';
 import { isPro } from '../../../lib/pro';
 import type { Battle, CategoryStats } from '../../../types';
-import { Colors, DarkColors, Spacing, BorderRadius } from '../../../design_tokens';
+import { Colors, DarkColors, Spacing, BorderRadius, teamColor } from '../../../design_tokens';
 import { MonoLabel } from '../../../components/ui/MonoLabel';
 import { RankBadge } from '../../../components/ui/RankBadge';
 import { VersusGauge } from '../../../components/viz/VersusGauge';
+import { FactionColumns } from '../../../components/viz/FactionColumns';
 import { ProgressRing } from '../../../components/viz/ProgressRing';
 import { contributionShare } from '../../../utils/displayStats';
 import { useBattleParticipants } from '../../../hooks/useBattleParticipants';
 import { decorLabel } from '../../../lib/locale';
+import { prioritizeTeams } from '../../../utils/teamDisplay';
 
 function mapFirestoreToBattle(id: string, data: Record<string, unknown>): Battle {
   return {
@@ -155,6 +157,14 @@ export default function BattleResultScreen() {
   const rival = myTeamIdx > 0 ? sorted[myTeamIdx - 1] : myTeamIdx === 0 ? sorted[1] : undefined;
   const gaugeLeft = myTeam ?? sorted[0];
   const gaugeRight = myTeam ? rival : sorted[1];
+  const finalColumns = prioritizeTeams(sorted, myCatId).map((team) => ({
+    id: team.categoryId,
+    label: team.label,
+    km: valOf(team),
+    rank: allZero ? null : 1 + sorted.filter((item) => valOf(item) > valOf(team)).length,
+    isMine: team.categoryId === myCatId,
+    color: teamColor(team.categoryId),
+  }));
   const myShare = myTeam ? contributionShare(myStats.totalKm, myTeam.totalDistanceKm) : 0;
 
   const startDate = new Date(localBattle.startAt).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' });
@@ -207,20 +217,27 @@ export default function BattleResultScreen() {
 
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         {/* ── 最終 VS ゲージ（ダーク演出） ── */}
-        {!loading && gaugeLeft && gaugeRight && (
+        {!loading && sorted.length >= 3 ? (
+          <View style={s.finalVs}>
+            <MonoLabel color={DarkColors.textTertiary} size={9}>{decorLabel('最終結果', 'FINAL')}</MonoLabel>
+            <View style={{ marginTop: 12 }}>
+              <FactionColumns factions={finalColumns} valueSuffix={rankType === 'average' ? 'km/人' : 'km'} />
+            </View>
+          </View>
+        ) : !loading && gaugeLeft && gaugeRight ? (
           <View style={s.finalVs}>
             <MonoLabel color={DarkColors.textTertiary} size={9}>{decorLabel('最終結果', 'FINAL')}</MonoLabel>
             <View style={{ marginTop: 12 }}>
               <VersusGauge
-                left={{ label: gaugeLeft.label, km: valOf(gaugeLeft), isMine: !!myTeam }}
-                right={{ label: gaugeRight.label, km: valOf(gaugeRight), isMine: false }}
+                left={{ label: gaugeLeft.label, km: valOf(gaugeLeft), isMine: gaugeLeft.categoryId === myCatId, color: teamColor(gaugeLeft.categoryId) }}
+                right={{ label: gaugeRight.label, km: valOf(gaugeRight), isMine: gaugeRight.categoryId === myCatId, color: teamColor(gaugeRight.categoryId) }}
                 size="lg"
                 dark
                 unit={rankType === 'average' ? 'km/人' : 'km'}
               />
             </View>
           </View>
-        )}
+        ) : null}
 
         {/* ── Hero ── */}
         <View style={s.heroCard}>

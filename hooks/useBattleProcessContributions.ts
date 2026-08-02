@@ -31,13 +31,20 @@ export function useBattleProcessContributions(
 ): Record<string, ProcessContribution> {
   const [declarations, setDeclarations] = useState<ProcessDeclarationInput[]>([]);
   const [activities, setActivities] = useState<ProcessActivityInput[]>([]);
+  const [resolvedBattleId, setResolvedBattleId] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (!battleId) {
       setDeclarations([]);
       setActivities([]);
+      setResolvedBattleId(undefined);
       return;
     }
+
+    // チャレンジ切替直後は、前のチャレンジの過程データを表示しない。
+    setDeclarations([]);
+    setActivities([]);
+    setResolvedBattleId(battleId);
 
     const now = new Date();
     const weekStart = startOfCalendarWeek(now);
@@ -91,8 +98,9 @@ export function useBattleProcessContributions(
     };
   }, [battleId]);
 
-  return useMemo(
-    () => aggregateProcessContributions(declarations, activities),
-    [activities, declarations],
-  );
+  return useMemo(() => (
+    battleId && resolvedBattleId === battleId
+      ? aggregateProcessContributions(declarations, activities)
+      : {}
+  ), [activities, battleId, declarations, resolvedBattleId]);
 }

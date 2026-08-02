@@ -8,8 +8,10 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
     "test": "npm run test:unit",
     "test:unit": "ts-node --project tests/tsconfig.json tests/unit.test.ts",
+    "gps:replay": "ts-node scripts/replay-gps-log.ts",
     "test:rules": "firebase emulators:exec --only firestore \"ts-node --project tests/tsconfig.json tests/firestore-rules.test.ts\""
   },
   "dependencies": {
@@ -31,7 +33,6 @@
     "expo-device": "~8.0.10",
     "expo-font": "~14.0.12",
     "expo-haptics": "~15.0.8",
-    "expo-image-picker": "~17.0.11",
     "expo-keep-awake": "~15.0.8",
     "expo-linking": "~8.0.11",
     "expo-location": "~19.0.8",

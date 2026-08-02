@@ -3,9 +3,10 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { StatBlock } from '../ui/StatBlock';
 import { FactionColumns } from '../viz/FactionColumns';
-import { Colors, DarkColors, Typography, Spacing, BorderRadius, Shadow } from '../../design_tokens';
+import { Colors, DarkColors, Typography, Spacing, BorderRadius, Shadow, teamColor } from '../../design_tokens';
 import { sortedStats, statValue, daysLeft, remainingLabel } from '../../utils/displayStats';
 import type { Battle, CategoryStats } from '../../types';
+import { prioritizeTeams } from '../../utils/teamDisplay';
 
 /** 自分の陣営内での立ち位置（useTeamRanking の結果を表示用に絞ったもの） */
 export interface HeroTeamRank {
@@ -65,12 +66,13 @@ export function ActiveBattleHero({
       : Math.max(0, rivalKm - myKm + 0.01) / days)
     : null;
 
-  const columns = sorted.map((s) => ({
+  const columns = prioritizeTeams(sorted, myCategoryId).map((s) => ({
     id: s.categoryId,
     label: s.label,
     km: statValue(s, rt),
     rank: allZero ? null : 1 + sorted.filter((item) => statValue(item, rt) > statValue(s, rt)).length,
     isMine: s.categoryId === myCategoryId,
+    color: teamColor(s.categoryId),
   }));
 
   return (
@@ -137,9 +139,11 @@ export function ActiveBattleHero({
             )}
 
             {activeBattleCount > 1 && (
-              <View style={styles.multiChip}>
-                <Ionicons name="layers-outline" size={11} color={DarkColors.textSecondary} />
-                <Text style={styles.multiText} maxFontSizeMultiplier={1.3}>他 {activeBattleCount - 1} 件のチャレンジにも参加中</Text>
+              <View style={styles.multiInfo}>
+                <Ionicons name="information-circle-outline" size={14} color={DarkColors.textSecondary} />
+                <Text style={styles.multiText} maxFontSizeMultiplier={1.3}>
+                  ランの距離は参加中の{activeBattleCount}件すべてに反映されます
+                </Text>
               </View>
             )}
           </View>
@@ -298,17 +302,12 @@ const styles = StyleSheet.create({
 
   fallback: { paddingVertical: Spacing.sm },
 
-  multiChip: {
+  multiInfo: {
     flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 5,
-    backgroundColor: DarkColors.chip,
-    borderRadius: BorderRadius.full,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 5,
+    alignItems: 'flex-start',
+    gap: Spacing.xs,
   },
-  multiText: { fontSize: Typography.fontSize.xs, color: DarkColors.textSecondary },
+  multiText: { flex: 1, fontSize: Typography.fontSize.xs, color: DarkColors.textSecondary },
 
   footer: {
     backgroundColor: DarkColors.surfaceAlt,

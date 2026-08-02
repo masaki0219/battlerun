@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ProgressBar } from '../ui/ProgressBar';
-import { Colors, Typography, Spacing, otherTeamColor } from '../../design_tokens';
+import { Colors, Typography, Spacing, teamColor } from '../../design_tokens';
 import { statValue, statLabel, maxStat } from '../../utils/displayStats';
 import type { Battle, CategoryStats } from '../../types';
 
@@ -32,7 +32,7 @@ export function BattleRankRows({ battle, sorted, myCatId, expanded, onToggleExpa
   const row = (s: CategoryStats) => {
     const isMine = s.categoryId === myCatId;
     const rank = allZero ? null : 1 + sorted.filter((item) => statValue(item, rt) > statValue(s, rt)).length;
-    const barColor = isMine ? Colors.primary : otherTeamColor((rank ?? 1) - 1);
+    const barColor = teamColor(s.categoryId);
     return (
       <View key={s.categoryId} style={styles.rankRow}>
         <Text style={[styles.rankNum, isMine && styles.rankNumMine]}>{rank ?? '—'}</Text>

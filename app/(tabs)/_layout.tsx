@@ -262,7 +262,7 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{ headerShown: false }}
-      tabBar={(props) => <CustomTabBar {...props} />}
+      tabBar={(props) => isRecording ? null : <CustomTabBar {...props} />}
     >
       <Tabs.Screen name="battle" />
       <Tabs.Screen name="record" />

@@ -7,7 +7,7 @@ TestFlight ビルドでの通し検証用チェックリスト。サーバー集
 
 ## デプロイ順序（必須）
 
-1. Functions（`submitActivity` / `aggregateActivity` / badges）
+1. Functions（`submitActivity` / `aggregateActivity` / `joinBattle` / `leaveBattle` / `backfillMonthlyStats` / badges）
 2. Firestore indexes
 3. Firestore / Storage rules
 4. Hosting（利用規約・プライバシーポリシー・サポート・招待ページ）
@@ -25,7 +25,10 @@ TestFlight ビルドでの通し検証用チェックリスト。サーバー集
 - [ ] ラン直後にホームの週間距離、自分の距離、陣営内順位が更新される
 - [ ] 開催中チャレンジでは最終結果画面を表示できない
 - [ ] 終了通知タップで結果画面、終了前通知タップで詳細画面が開く
-- [ ] アカウント削除後に公開プロフィール、GPSルートチャンク、Storage画像が残らない
+- [ ] プロフィールではアプリ内アバターアイコンだけを選択でき、写真アクセスを要求しない
+- [ ] 旧プロフィール写真URLが表示されず、ログイン後にプロフィールデータから除去される
+- [ ] Firebase Storageへのクライアント読み書きが拒否される
+- [ ] アカウント削除後に公開プロフィールとGPSルートチャンクが残らない
 
 ## 前提条件
 
@@ -42,12 +45,15 @@ TestFlight ビルドでの通し検証用チェックリスト。サーバー集
 | # | 手順 | 期待結果 | 確認場所 |
 |---|---|---|---|
 | 1-1 | 新規アカウントで登録 | サインアップ完了、ホームに未参加ユーザー向けレイアウトが表示される | アプリ（バトルタブ） |
-| 1-2 | バトルタブを開く | 「開催中の作戦に参加しよう」カードが表示される。人数最少陣営に「援軍募集中！」バッジが出る | アプリ（バトルタブ） |
-| 1-3 | 陣営を選んで参加 | 参加処理がエラーなく完了し、参加中バトルとして表示が切り替わる | アプリ |
+| 1-2 | チャレンジタブを開く | 開催中の公開チャレンジが2〜3件、単一の「おすすめ」を作らず並列表示され、残り期間と参加人数が読める | アプリ（チャレンジタブ） |
+| 1-3 | チームを選んで参加 | 参加処理がエラーなく完了し、参加中チャレンジとして表示が切り替わる | アプリ |
 | 1-4 | `battles/{id}/participants/{uid}` を確認 | `userId`・`categoryId`・`totalDistanceKm: 0` が作成されている | Firebaseコンソール（Firestore） |
 | 1-5 | `battles/{id}/category_stats/{categoryId}` を確認 | `participantCount` が参加前より+1されている（クライアントからの直接更新ではなく `participantCounter` 経由） | Firebaseコンソール（Firestore） |
 | 1-6 | GPSモードで初回ランを記録・終了 | summary画面に遷移し、順位変動（変化なしなら「初回記録」等の表示）が出る | アプリ（record/summary） |
 | 1-7 | 数秒〜数十秒待って activity を確認 | `activities/{id}.aggregated === true` になる。`participants.totalDistanceKm` と `category_stats.totalDistanceKm` に加算されている | Firebaseコンソール（Firestore） |
+| 1-8 | 距離0の別チャレンジへ参加してから退出する | 2件目へ参加でき、退出後はparticipantsと`users/{uid}.battleIds`の両方から消え、参加人数も減る | アプリ / Firestore |
+| 1-9 | 開催中チャレンジ2件へ参加した状態で3件目へ参加する | Callable Functionが拒否し、participantsと`battleIds`のどちらにも中途半端なデータが残らない | アプリ / Firestore |
+| 1-10 | 1件へ距離を加算した後に退出を試す | 退出操作が利用不可になり、APIを直接呼んでもサーバーが拒否する | アプリ / Functionsログ |
 
 **Expo Goで検証可能か**: 1-1〜1-3, 1-6 は可（GPSはシミュレータ座標で代用可）。1-4, 1-5, 1-7 のサーバー集計反映はFirestoreコンソールで確認するため理論上Expo Goでも見えるが、**push/スケジューラ系との整合確認を含めTestFlight推奨**。
 
@@ -136,7 +142,7 @@ TestFlight ビルドでの通し検証用チェックリスト。サーバー集
 | 7-4 | 削除したuidの `battles/*/participants/{uid}` を検索（collectionGroup） | 0件になっている | Firebaseコンソール |
 | 7-5 | 削除したuidの `users/{uid}/notifications`、`users/{uid}/badges` を確認 | サブコレクションが空になっている | Firebaseコンソール |
 | 7-6 | 削除したuidの `users/{uid}` 本体を確認 | ドキュメントが存在しない | Firebaseコンソール |
-| 7-7 | アバター画像をアップロード済みの状態で削除 | Storageの `avatars/{uid}` が削除されている | Firebaseコンソール（Storage） |
+| 7-7 | アバターアイコンを設定済みの状態で削除 | `publicProfiles/{uid}` を含むプロフィール情報が削除されている | Firebaseコンソール（Firestore） |
 
 **注意**: `onUserDeleted` の `collectionGroup('participants')` 検索は、参加ドキュメントの `userId` フィールドに依存する。本リリース準備で導入したフィールドのため、**このリリース以降に参加したデータのみ対象**（導入前の参加データは対象外）。
 
@@ -158,8 +164,14 @@ TestFlight ビルドでの通し検証用チェックリスト。サーバー集
 | 8-8 | 友達チャレンジの「招待」を共有し、受信側でリンクを開く | Hostingページ→ZELIO起動→登録/ログイン後に6桁コードが自動入力される | Safari / アプリ |
 | 8-9 | ログアウト状態でSupport / Privacy / Termsを開く | 3ページが表示され、サポート窓口へ遷移できる | Safari |
 | 8-10 | 参加者0人、1人、2人の公式チャレンジを順に表示する | 全0kmは順位なし、少人数時は「最初のメンバーになろう」、実km値と人数が読める | アプリ |
+| 8-11 | 自分の過去のGPS活動詳細から共有し、ルート表示をON/OFFして画面を開き直す | ON時だけ地図とルートが画像に入り、注意文が表示される。選択が記録サマリーと活動詳細の双方で復元される | アプリ / SNS共有先 |
+| 8-12 | 記録直後と過去の活動詳細からSNS共有する | 距離・時間・平均ペース・貢献を含む画像が渡り、画像内にGitHubドメインが出ない。画像非対応時は発見用URL付きテキストへフォールバックする | アプリ / SNS共有先 |
+| 8-13 | 記録開始・一時停止・再開・終了を行う | 記録中と一時停止中はタブバーが隠れ、終了後に通常表示へ戻る | アプリ |
+| 8-14 | 保存済み活動が51件以上ある既存ユーザーで統計を開く | 一度だけ全履歴が東京時間基準でバックフィルされ、上段「今月」と月別内訳が同じ値になる | アプリ / Firestore |
+| 8-15 | Large / xxxLarge / accessibility-xxxLargeでチャレンジ・ラン画面を開く | 通知、残り日数、順位、前回ランの距離・時間、主要操作が消えない | アプリ / VoiceOver |
+| 8-16 | 3チーム以上のチャレンジを開く | 自チームと近い順位が先に見え、全チームへ横スクロールでき、同じ`categoryId`の色がホーム・詳細・結果で一致する | アプリ / VoiceOver |
 
-**Expo Goで検証可能か**: 8-1〜8-3、8-6、8-8〜8-10は一部可。8-4〜8-7は実GPS、ルート保存、Functions集計を含むためTestFlight必須。
+**Expo Goで検証可能か**: 8-1〜8-3、8-6、8-8〜8-12は一部可。8-4〜8-7は実GPS、ルート保存、Functions集計を含むためTestFlight必須。8-11〜8-12のSNSアプリへの実送信はTestFlight/実機推奨。
 
 ---
 

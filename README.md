@@ -123,7 +123,7 @@ firebase deploy --only firestore:indexes
 firebase deploy --only firestore:rules
 ```
 
-Storageルールと法務ページも同時に反映する場合:
+写真アップロード停止用のStorageルールと法務ページも同時に反映する場合:
 
 ```bash
 firebase deploy --only storage,hosting

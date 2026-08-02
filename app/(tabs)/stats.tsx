@@ -47,23 +47,8 @@ export default function StatsScreen() {
   const lifetimeKm = user?.totalDistanceKm ?? recentKm;
   const lifetimeNote = user?.totalDistanceKm != null ? '生涯累計' : '直近50件';
   const longestRun = activities.reduce((max, activity) => Math.max(max, activity.distanceKm), 0);
-  const recentMonthlyKm = activities.reduce<Record<string, number>>((months, activity) => {
-    const date = new Date(activity.startedAt);
-    if (Number.isNaN(date.getTime())) return months;
-    const key = `${date.getFullYear()}-${date.getMonth()}`;
-    months[key] = (months[key] ?? 0) + activity.distanceKm;
-    return months;
-  }, {});
-  const recentBestMonthKm = Math.max(0, ...Object.values(recentMonthlyKm));
   const personalRecords = user?.personalRecords;
   const longestRecordKm = personalRecords?.longestRunKm ?? longestRun;
-  const bestMonthRecordKm = personalRecords?.bestMonthKm ?? recentBestMonthKm;
-  const monthKm = activities
-    .filter((activity) => {
-      const date = new Date(activity.startedAt);
-      return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
-    })
-    .reduce((sum, activity) => sum + activity.distanceKm, 0);
   const weekBuckets = weeklyBuckets(activities, now);
   const weekTotal = weekBuckets.reduce((sum, day) => sum + day.km, 0);
   // 「今週」表示・週間バーと同じカレンダー週（月曜始まり）で数える
@@ -77,6 +62,10 @@ export default function StatsScreen() {
   const currentWeekKey = calendarWeekKey(now);
   const recentMonthKeys = recentTokyoMonthKeys(now, 12);
   const monthlyStatsMap = new Map(monthlyStats.map((month) => [month.monthKey, month]));
+  const currentMonthKey = tokyoMonthKey(now);
+  const monthKm = monthlyStatsMap.get(currentMonthKey)?.km ?? 0;
+  const bestMonthRecordKm = personalRecords?.bestMonthKm
+    ?? Math.max(0, ...monthlyStats.map((month) => month.km));
   const monthlyChart = recentMonthKeys.map((monthKey) => ({
     monthKey,
     label: monthKey.endsWith('-01') ? '1月' : String(Number(monthKey.slice(5, 7))),
@@ -171,7 +160,10 @@ export default function StatsScreen() {
           <View>
             <View style={styles.sectionHead}>
               <Text style={styles.sectionTitle}>月間・年間</Text>
-              <Text style={styles.yearTotalLabel}>{currentYear}年</Text>
+              <View style={styles.periodLabels}>
+                <Text style={styles.rangeLabel}>直近12か月</Text>
+                <Text style={styles.yearTotalLabel}>{currentYear}年累計</Text>
+              </View>
             </View>
             <View style={styles.monthlyCard}>
               <View style={styles.annualRow}>
@@ -198,7 +190,7 @@ export default function StatsScreen() {
                 <MonthDetailCell label="時間" value={formatTime(selectedMonthlyStat.durationSec)} />
                 <MonthDetailCell label="推定獲得標高" value={`${Math.round(selectedMonthlyStat.elevationM)} m`} />
               </View>
-              <Text style={styles.monthlyNote}>機能公開後の新しい記録から集計されます。過去分の追加集計は行いません。</Text>
+              <Text style={styles.monthlyNote}>保存済みのGPS・歩数記録を東京時間の月ごとに集計しています。</Text>
             </View>
           </View>
 
@@ -212,7 +204,13 @@ export default function StatsScreen() {
               icon="trophy-outline"
               accent
             />
-            <SummaryCard label="今月" value={monthKm.toFixed(1)} unit="km" note={`${now.getMonth() + 1}月の合計`} valuePrimary />
+            <SummaryCard
+              label="今月"
+              value={monthKm.toFixed(1)}
+              unit="km"
+              note={`${Number(currentMonthKey.slice(5, 7))}月の合計`}
+              valuePrimary
+            />
             <SummaryCard label="連続日数" value={String(streak)} unit="日" note="現在の記録" />
           </View>
 
@@ -427,6 +425,8 @@ const styles = StyleSheet.create({
   personalRecordValue: { fontSize: 15, color: Colors.textPrimary, fontWeight: Typography.fontWeight.extrabold, marginTop: 4, fontVariant: ['tabular-nums'] },
 
   yearTotalLabel: { fontSize: 11, color: Colors.textSecondary, fontWeight: Typography.fontWeight.bold },
+  periodLabels: { alignItems: 'flex-end', gap: 2 },
+  rangeLabel: { fontSize: 9, color: Colors.textSecondary },
   monthlyCard: { backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, borderWidth: 1, borderColor: Colors.border, padding: Spacing.lg, ...Shadow.sm },
   annualRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.lg },
   annualNumber: { fontSize: 28, fontWeight: Typography.fontWeight.extrabold, color: Colors.primaryDark, marginTop: 2, fontVariant: ['tabular-nums'] },

@@ -13,4 +13,4 @@ export const SUPPORT_CONTACT_URL = 'https://github.com/masaki0219/app-support/is
  * Apple審査ガイドライン 3.1.2（自動更新サブスクリプションの表示要件）対応。
  */
 export const SUBSCRIPTION_DISCLAIMER =
-  '購入すると自動更新サブスクリプションが開始されます。期間終了の24時間前までにキャンセルしない限り自動的に更新され、更新料金がApple IDに請求されます。App Storeの「サブスクリプション」設定からいつでも管理・キャンセルできます。';
+  '月額Proは1か月ごとの自動更新サブスクリプションです。期間終了の24時間前までにキャンセルしない限り自動的に更新され、更新料金がApple IDに請求されます。App Storeの「サブスクリプション」設定からいつでも管理・キャンセルできます。';

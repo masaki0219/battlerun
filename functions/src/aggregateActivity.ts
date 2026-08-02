@@ -11,8 +11,9 @@ import {
 } from './personalRecords';
 import { tokyoMonthKey, type MonthlyStatsImpact } from './monthlyStats';
 import { creditedBattleDistanceKm, tokyoDayKey } from './battleCredit';
+import { MAX_RUNNING_SPEED_MPS } from './gpsProcessing';
 
-const MAX_SPEED_KMH = 25;
+const MAX_SPEED_KMH = MAX_RUNNING_SPEED_MPS * 3.6;
 const TOKYO_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 function tokyoMonthBounds(timestamp: Timestamp): { from: Timestamp; to: Timestamp } {

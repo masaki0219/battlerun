@@ -25,11 +25,11 @@ import { StreakChip } from '../../components/viz/StreakChip';
 import { WeeklyGoalProgress } from '../../components/run/WeeklyGoalProgress';
 import { CategorySelectModal } from '../../components/battle/CategorySelectModal';
 import { ActiveBattleHero } from '../../components/battle/ActiveBattleHero';
+import { ActiveBattleSwitcher } from '../../components/battle/ActiveBattleSwitcher';
 import { PublicBattleCard } from '../../components/battle/PublicBattleCard';
 import { PrivateBattleCard } from '../../components/battle/PrivateBattleCard';
 import { PrivateBattleCreateForm } from '../../components/battle/PrivateBattleCreateForm';
 import { InviteCodeJoinView } from '../../components/battle/InviteCodeJoinView';
-import { JoinRecommendationCard } from '../../components/battle/JoinRecommendationCard';
 import { TeamRankingCard } from '../../components/battle/TeamRankingCard';
 import { DeclarationCard, DeclarationList } from '../../components/battle/DeclarationCard';
 import { RunningPresenceCard } from '../../components/battle/RunningPresenceCard';
@@ -39,6 +39,7 @@ import { useBattleProcessContributions } from '../../hooks/useBattleProcessContr
 import { useBattlePresence } from '../../hooks/useBattlePresence';
 import { useBlockedUsers } from '../../hooks/useBlockedUsers';
 import { weeklyBuckets, streakDays, weekOverWeek, weekStartLabel } from '../../utils/displayStats';
+import { resolveDisplayedBattle, sortActiveBattlesForDisplay } from '../../utils/battleSelection';
 import { Colors, Typography, Spacing, BorderRadius, Shadow } from '../../design_tokens';
 import type { Battle, Category, CategoryStats, RunningPresence } from '../../types';
 import type { ReportTarget } from '../../lib/moderation';
@@ -46,6 +47,8 @@ import { inviteWebUrl, normalizeInviteCode, PENDING_INVITE_CODE_KEY } from '../.
 
 type Tab = 'public' | 'private';
 type PrivateView = 'list' | 'create' | 'join_code' | 'join_select';
+
+const SELECTED_BATTLE_STORAGE_KEY = '@zelio_selected_battle_id';
 
 // ────────────────────────────────────────────────────────────────
 // メイン画面（state・購読・handler を集約。表示は components/battle/* に委譲）
@@ -67,6 +70,8 @@ export default function BattleScreen() {
   const [localLoading, setLocalLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [selectedBattleId, setSelectedBattleId] = useState<string | null>(null);
+  const [selectionOwnerId, setSelectionOwnerId] = useState<string | null>(null);
 
   // 各バトルの陣営統計をリアルタイム購読（public / private を同一フックで共通化）
   const publicStatsMap = useBattleCategoryStats(publicBattles);
@@ -103,6 +108,29 @@ export default function BattleScreen() {
     })();
     return () => { cancelled = true; };
   }, [params.inviteCode]);
+
+  // 閲覧中チャレンジはユーザーごとに保存する。別ユーザーへの選択状態の引き継ぎを防ぐ。
+  useEffect(() => {
+    let cancelled = false;
+    setSelectedBattleId(null);
+    setSelectionOwnerId(null);
+    if (!user?.id) return () => { cancelled = true; };
+
+    const userId = user.id;
+    void (async () => {
+      let savedBattleId: string | null = null;
+      try {
+        savedBattleId = await AsyncStorage.getItem(`${SELECTED_BATTLE_STORAGE_KEY}:${userId}`);
+      } catch (error) {
+        console.warn('[BattleScreen] selected battle restore failed:', error);
+      }
+      if (cancelled) return;
+      setSelectedBattleId(savedBattleId);
+      setSelectionOwnerId(userId);
+    })();
+
+    return () => { cancelled = true; };
+  }, [user?.id]);
 
   // 友達チャレンジ作成フォーム
   const [createTitle, setCreateTitle] = useState('');
@@ -170,30 +198,65 @@ export default function BattleScreen() {
       || !blockedUserIds.has(battle.createdBy),
   );
   const myBattleIdSet = new Set(myMemberships.map((m) => m.battleId));
-  const activeBattles = allBattles.filter(
+  const activeBattleById = new Map(allBattles.filter(
     (b) =>
       myBattleIdSet.has(b.id) &&
       b.status === 'active' &&
       new Date(b.startAt).getTime() <= now &&
       now <= new Date(b.endAt).getTime(),
-  );
-  const isParticipating = activeBattles.length > 0;
-  const primaryBattle = activeBattles[0] ?? null;
-  // 「他のチャレンジ」セクションには、上のヒーローで表示中の参加チャレンジを再掲しない
+  ).map((battle) => [battle.id, battle] as const));
+  // battleIds（= myMemberships）の安定順で最大2件を有効枠にする。
+  // 旧データに3件以上あっても、余剰分は下の「他のチャレンジ」に残して操作不能を避ける。
+  const activeBattles = myMemberships
+    .map((membership) => activeBattleById.get(membership.battleId))
+    .filter((battle): battle is Battle => !!battle)
+    .slice(0, 2);
+  const sortedActiveBattles = sortActiveBattlesForDisplay(activeBattles);
+  const displayedBattle = resolveDisplayedBattle(sortedActiveBattles, selectedBattleId);
+  const isParticipating = displayedBattle !== null;
+  const activeBattleIdsKey = sortedActiveBattles.map((battle) => battle.id).join('|');
+
+  // 保存済みの選択が終了・退出などで無効になったら、終了日時が近い有効な1件へ寄せる。
+  // 初期読み込み失敗時は、前回選択を誤って削除しない。
+  useEffect(() => {
+    if (!user || selectionOwnerId !== user.id || localLoading || loadFailed) return;
+    const normalizedBattleId = displayedBattle?.id ?? null;
+    if (selectedBattleId !== normalizedBattleId) {
+      setSelectedBattleId(normalizedBattleId);
+    }
+
+    const storageKey = `${SELECTED_BATTLE_STORAGE_KEY}:${user.id}`;
+    const persistence = normalizedBattleId
+      ? AsyncStorage.setItem(storageKey, normalizedBattleId)
+      : AsyncStorage.removeItem(storageKey);
+    void persistence.catch((error) => {
+      console.warn('[BattleScreen] selected battle save failed:', error);
+    });
+  }, [
+    user?.id,
+    selectionOwnerId,
+    localLoading,
+    loadFailed,
+    selectedBattleId,
+    displayedBattle?.id,
+    activeBattleIdsKey,
+  ]);
+
+  // 「他のチャレンジ」セクションには、上の切替UIにある参加中チャレンジを再掲しない
   const activeBattleIdSet = new Set(activeBattles.map((b) => b.id));
   const otherPublicBattles = publicBattles.filter((b) => !activeBattleIdSet.has(b.id));
   const otherPrivateBattles = privateBattles.filter((b) => (
     !activeBattleIdSet.has(b.id)
     && (b.createdBy === user?.id || !b.createdBy || !blockedUserIds.has(b.createdBy))
   ));
-  const primaryMembership = primaryBattle
-    ? myMemberships.find((m) => m.battleId === primaryBattle.id)
+  const displayedMembership = displayedBattle
+    ? myMemberships.find((m) => m.battleId === displayedBattle.id)
     : null;
-  const primaryCategoryId = primaryMembership?.categoryId ?? null;
-  const allDeclarations = primaryBattle ? (declarationsByBattle[primaryBattle.id] ?? []) : [];
+  const displayedCategoryId = displayedMembership?.categoryId ?? null;
+  const allDeclarations = displayedBattle ? (declarationsByBattle[displayedBattle.id] ?? []) : [];
   const ownDeclaration = allDeclarations.find((item) => item.uid === user?.id);
   const declarations = allDeclarations.filter((item) => item.uid === user?.id || !blockedUserIds.has(item.uid));
-  const { presences, cheer: cheerPresence } = useBattlePresence(primaryBattle?.id, user?.id);
+  const { presences, cheer: cheerPresence } = useBattlePresence(displayedBattle?.id, user?.id);
   const visiblePresences = presences.filter((item) => item.uid === user?.id || !blockedUserIds.has(item.uid));
 
   function openSafety(target: ReportTarget, displayName: string) {
@@ -202,18 +265,18 @@ export default function BattleScreen() {
   }
 
   useEffect(() => {
-    if (!primaryBattle || !user) return;
-    return subscribeDeclarations(primaryBattle.id, user.id);
-  }, [primaryBattle?.id, user?.id]);
+    if (!displayedBattle || !user) return;
+    return subscribeDeclarations(displayedBattle.id, user.id);
+  }, [displayedBattle?.id, user?.id]);
 
   // 自分の陣営内での立ち位置（ヒーローのフッターとチーム内ランキングで共用）
-  const teamRanking = useTeamRanking(primaryBattle?.id, primaryCategoryId, user?.id);
-  const processContributions = useBattleProcessContributions(primaryBattle?.id);
+  const teamRanking = useTeamRanking(displayedBattle?.id, displayedCategoryId, user?.id);
+  const processContributions = useBattleProcessContributions(displayedBattle?.id);
 
   async function handleDeclareRun(plannedAt: Date, note: string) {
-    if (!primaryBattle || !user) return;
+    if (!displayedBattle || !user) return;
     try {
-      await declareRun(primaryBattle.id, user.id, plannedAt, note);
+      await declareRun(displayedBattle.id, user.id, plannedAt, note);
     } catch (error) {
       Alert.alert('宣言できませんでした', error instanceof Error ? error.message : '通信状態を確認して、もう一度お試しください。');
       throw error;
@@ -221,9 +284,9 @@ export default function BattleScreen() {
   }
 
   async function handleCheerDeclaration(declarationId: string) {
-    if (!primaryBattle || !user) return;
+    if (!displayedBattle || !user) return;
     try {
-      await cheerDeclaration(primaryBattle.id, declarationId, user.id);
+      await cheerDeclaration(displayedBattle.id, declarationId, user.id);
     } catch {
       Alert.alert('応援を送れませんでした', '通信状態を確認して、もう一度お試しください。');
     }
@@ -238,23 +301,6 @@ export default function BattleScreen() {
     }
   }
 
-  // Day-0アクティベーション: 未参加ユーザーに開催中のパブリックランを1件だけ強く提示する
-  const recommendedBattle = publicBattles
-    .filter((battle) => (
-      battle.status === 'active' && !myMemberships.some((membership) => membership.battleId === battle.id)
-    ))
-    .sort((a, b) => (
-      new Date(a.endAt).getTime() - new Date(b.endAt).getTime() || a.id.localeCompare(b.id)
-    ))[0] ?? null;
-  const recommendedStats = recommendedBattle ? (categoryStatsMap[recommendedBattle.id] ?? []) : [];
-  const recommendedShortageCategory = recommendedBattle
-    ? recommendedBattle.categories.reduce<Category | null>((min, cat) => {
-        const count = recommendedStats.find((s) => s.categoryId === cat.id)?.participantCount ?? 0;
-        const minCount = min ? (recommendedStats.find((s) => s.categoryId === min.id)?.participantCount ?? 0) : Infinity;
-        return count < minCount ? cat : min;
-      }, null)
-    : null;
-
   // ── 自分の参加者個人距離を取得 ────────────────────────────
   useEffect(() => {
     if (!user || activeBattles.length === 0) return;
@@ -267,7 +313,7 @@ export default function BattleScreen() {
     )
       .then((entries) => setMyDistancePerBattle(Object.fromEntries(entries)))
       .catch(() => {});
-  }, [user?.id, myMemberships.length, publicBattles.length, privateBattles.length]);
+  }, [user?.id, activeBattleIdsKey]);
 
   // ── ヘルパー ──────────────────────────────────────────────
   function myMembershipFor(battleId: string) {
@@ -416,7 +462,13 @@ export default function BattleScreen() {
         expanded={expandedBattles.has(battle.id)}
         onToggleExpand={() => toggleExpanded(battle.id)}
         onPress={() => router.push(`/battle/${battle.id}` as any)}
-        onPressJoin={() => setCategoryModalBattle(battle)}
+        onPressJoin={() => {
+          if (activeBattles.length >= 2) {
+            Alert.alert('参加上限です', '同時に参加できるチャレンジは2件までです。');
+            return;
+          }
+          setCategoryModalBattle(battle);
+        }}
       />
     );
   };
@@ -519,7 +571,7 @@ export default function BattleScreen() {
 
   function renderRunNowButton() {
     const label = activeBattles.length === 1
-      ? `今回の走行距離は「${primaryBattle?.title}」に加算されます`
+      ? `今回の走行距離は「${displayedBattle?.title}」に加算されます`
       : activeBattles.length > 1
         ? `今回の走行距離は参加中の${activeBattles.length}件のチャレンジに加算されます`
         : 'チャレンジに参加すると今回の距離が加算されます';
@@ -542,12 +594,23 @@ export default function BattleScreen() {
   function renderParticipatingView() {
     return (
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        {primaryBattle && (
+        {sortedActiveBattles.length > 1 && (
+          <ActiveBattleSwitcher
+            items={sortedActiveBattles.map((battle) => ({
+              battle,
+              stats: categoryStatsMap[battle.id] ?? [],
+              myCategoryId: myMembershipFor(battle.id)?.categoryId,
+            }))}
+            selectedBattleId={displayedBattle?.id ?? null}
+            onSelect={setSelectedBattleId}
+          />
+        )}
+        {displayedBattle && (
           <ActiveBattleHero
-            battle={primaryBattle}
-            stats={categoryStatsMap[primaryBattle.id] ?? []}
-            myCategoryId={primaryCategoryId}
-            myDist={teamRanking.teamSize > 0 ? teamRanking.myKm : (myDistancePerBattle[primaryBattle.id] ?? 0)}
+            battle={displayedBattle}
+            stats={categoryStatsMap[displayedBattle.id] ?? []}
+            myCategoryId={displayedCategoryId}
+            myDist={teamRanking.teamSize > 0 ? teamRanking.myKm : (myDistancePerBattle[displayedBattle.id] ?? 0)}
             teamRank={
               teamRanking.myRank > 0
                 ? {
@@ -558,21 +621,21 @@ export default function BattleScreen() {
                 : undefined
             }
             activeBattleCount={activeBattles.length}
-            onPress={() => router.push(`/battle/${primaryBattle.id}` as any)}
+            onPress={() => router.push(`/battle/${displayedBattle.id}` as any)}
           />
         )}
-        {primaryBattle && (
+        {displayedBattle && (
           <DeclarationCard
             declaration={ownDeclaration}
-            battleTitle={primaryBattle.title}
+            battleTitle={displayedBattle.title}
             onDeclare={handleDeclareRun}
           />
         )}
-        {primaryBattle && user && (
+        {displayedBattle && user && (
           <RunningPresenceCard
             presences={visiblePresences}
             currentUserId={user.id}
-            battleId={primaryBattle.id}
+            battleId={displayedBattle.id}
             onCheer={handleCheerPresence}
             onOpenSafety={openSafety}
           />
@@ -580,7 +643,7 @@ export default function BattleScreen() {
         {renderWeeklyCard()}
 
         {/* チーム内ランキング（自分の陣営の中での順位） */}
-        {primaryBattle && teamRanking.top.length > 0 && (
+        {displayedBattle && teamRanking.top.length > 0 && (
           <View>
             <Text style={styles.sectionTitle}>チーム内ランキング</Text>
             <TeamRankingCard
@@ -588,12 +651,12 @@ export default function BattleScreen() {
               contributions={processContributions}
               currentUserId={user?.id}
               blockedUserIds={blockedUserIds}
-              onPressMore={() => router.push(`/battle/${primaryBattle.id}` as any)}
+              onPressMore={() => router.push(`/battle/${displayedBattle.id}` as any)}
             />
           </View>
         )}
 
-        {primaryBattle && declarations.length > 0 && user && (
+        {displayedBattle && declarations.length > 0 && user && (
           <DeclarationList
             declarations={declarations}
             currentUserId={user.id}
@@ -678,28 +741,30 @@ export default function BattleScreen() {
 
   // ── State B: 未参加レイアウト ──────────────────────────────
   function renderNotParticipatingView() {
+    const choices = publicBattles.slice(0, 3);
+    const remainingChoices = publicBattles.slice(3);
     return (
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        {recommendedBattle ? (
-          <JoinRecommendationCard
-            battle={recommendedBattle}
-            stats={recommendedStats}
-            shortageCategory={recommendedShortageCategory}
-            onPress={() => setCategoryModalBattle(recommendedBattle)}
-          />
-        ) : (
+        {choices.length === 0 ? (
           <View style={styles.emptyStateCard}>
             <Ionicons name="trophy-outline" size={40} color={Colors.textTertiary} />
             <Text style={styles.emptyStateTitle}>参加中のチャレンジはありません</Text>
-            <Text style={styles.emptyStateHint}>下のチャレンジに参加して距離を競おう！</Text>
+            <Text style={styles.emptyStateHint}>開催中の公開チャレンジが追加されるまでお待ちください</Text>
           </View>
+        ) : (
+          <>
+            <View>
+              <Text style={styles.sectionTitle}>参加するチャレンジを選ぶ</Text>
+              <Text style={styles.choiceHint}>開催中のチャレンジから最大2件まで参加できます</Text>
+            </View>
+            {choices.map(publicCard)}
+          </>
         )}
 
-        {/* パブリックバトル一覧 */}
-        {publicBattles.length > 0 && (
+        {remainingChoices.length > 0 && (
           <>
-            <Text style={styles.sectionTitle}>公開チャレンジ</Text>
-            {publicBattles.map(publicCard)}
+            <Text style={styles.sectionTitle}>その他の公開チャレンジ</Text>
+            {remainingChoices.map(publicCard)}
           </>
         )}
 
@@ -747,9 +812,9 @@ export default function BattleScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <View>
+        <View style={styles.headerCopy}>
           <Text style={styles.headerEyebrow}>ZELIO</Text>
-          <Text style={styles.headerTitle}>チャレンジ</Text>
+          <Text style={styles.headerTitle} maxFontSizeMultiplier={1.5}>チャレンジ</Text>
         </View>
         <TouchableOpacity
           onPress={() => router.push('/notifications' as any)}
@@ -840,6 +905,7 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.md,
     backgroundColor: Colors.background,
   },
+  headerCopy: { flex: 1, minWidth: 0, paddingRight: Spacing.md },
   headerEyebrow: {
     fontSize: 10,
     fontWeight: Typography.fontWeight.bold,
@@ -889,6 +955,7 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     marginBottom: Spacing.md,
   },
+  choiceHint: { marginTop: -Spacing.sm, fontSize: Typography.fontSize.sm, color: Colors.textSecondary },
 
   // 今週の走り
   weekHead: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },

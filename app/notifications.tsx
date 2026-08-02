@@ -188,7 +188,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
-  unreadBadgeText: { fontSize: 11, color: Colors.textOnPrimary, fontWeight: '700' },
+  unreadBadgeText: { fontSize: 11, color: Colors.textOnAccent, fontWeight: '700' },
 
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
 

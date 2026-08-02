@@ -30,9 +30,11 @@ export function PublicBattleCard({
   const myRank = mine && !allZero
     ? 1 + sorted.filter((item) => statValue(item, battle.rankingType) > statValue(mine, battle.rankingType)).length
     : 0;
+  const participantCount = stats.reduce((sum, item) => sum + Math.max(0, item.participantCount), 0);
 
   const meta = [
     remaining !== null ? `残り ${remaining}` : null,
+    `${participantCount}人参加`,
     joined && myRank > 0 ? `${myRank}位 / ${sorted.length}チーム` : null,
     seasonTitle ?? null,
   ].filter(Boolean).join('　・　');

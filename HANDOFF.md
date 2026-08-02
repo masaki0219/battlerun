@@ -1,6 +1,6 @@
 # HANDOFF
 
-最終更新: 2026-07-31
+最終更新: 2026-08-02
 
 ## プロジェクトの目的
 
@@ -12,7 +12,7 @@
 
 **Firebase は新プロジェクト `zelio-run` へ移行済み**（2026-07-19 に再度方針転換し移行を実施。`.env` / `eas.json` 3プロファイル / `.firebaserc` / `lib/legal.ts` を zelio-run へ更新し、ルール・インデックス・Hosting・Functions 全14関数・シークレット・Authユーザー2件を zelio-run へデプロイ/移行した）。旧 `battlerun-75eb6` は Firestore テストデータのコピー完了を確認するまで残しておくこと。残作業は「未解決・要確認」を参照。
 
-**RevenueCat はダッシュボード設定が正**。コードを以下の既存設定へ合わせた: Entitlement `Zelio Pro` / Offering `default` / Package `$rc_monthly`・`$rc_annual` / Product `monthly`・`yearly`。APIキーは `.env` / `eas.json`（3プロファイル）とも設定済み。
+**RevenueCat はダッシュボード設定が正**。Entitlement は `Zelio Pro`、Offering は `default`。リリース初期は月額だけを販売する方針へ変更し、アプリは Package `$rc_monthly` / Product `monthly` だけを表示・購入する。年額商品 `yearly` は将来用に残してよいが、初期リリースでは審査提出・販売対象およびRevenueCatのCurrent Offeringから外す。APIキーは `.env` / `eas.json`（3プロファイル）とも設定済み。
 
 Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*` 等）は従来値を維持している。
 
@@ -23,6 +23,65 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 ※ 同フォルダの `BattleRunホーム画面作成 (コピー).zip` は旧版。パレット（`theme.css`）は同一だが、ヒーローが2陣営のVSゲージで、チーム内ランキングが無い。**最終版はこちら（コピーでない方）**。
 
 ## 最後に完了したこと
+
+### 2026-08-02 写真アップロードを廃止し、内蔵アバターへ統一
+
+- プロフィールの写真選択・権限要求・Blob変換・Firebase Storageアップロード・写真表示を削除し、プロフィールカードと設定行から24種類の内蔵動物アイコン選択を直接開くようにした。写真URLが旧データに残っていてもUIでは使用しない。
+- `expo-image-picker`、クライアントのFirebase Storage初期化、Storage bucket環境変数、`User.avatarUrl`を削除した。生成済みiOSプロジェクトもImagePicker Podとカメラ・マイク・写真ライブラリ権限文言を除去した。
+- 新規ユーザーは`avatarUrl`を保存しない。既存ユーザーはログイン時とアイコン変更時に`users` / `publicProfiles`の旧`avatarUrl`を`deleteField()`で除去する。Firestoreルールは写真URLと内蔵24種以外のアイコンを拒否し、Storageルールはクライアントの全ファイル読み書きを拒否する。
+- アプリ内・Firebase Hostingの利用規約／プライバシーポリシー、App Store提出資料、リリース確認項目を内蔵アバター仕様へ同期した。App Store Connect参照先のPublicリポジトリ `masaki0219/app-support` もPR [#2](https://github.com/masaki0219/app-support/pull/2)、main commit `a071f195417bc9bdce47656d4fbb328082968ccc` で更新し、GitHub PagesのSupport / Privacy / Termsすべてで旧「プロフィール画像」表記が消えたことと新本文を公開確認した。
+- Admin SDKで本番プロジェクト `zelio-run`、Storage bucket `zelio-run.firebasestorage.app` の `avatars/` を走査した結果、既存オブジェクトは0件・0 bytesで削除対象はなかった。旧クライアント由来データへの安全策として、`onUserDeleted`の旧画像清掃は当面維持する。
+- 確認成功: `npm run typecheck`、全unit、Functions build、Firestore Rules全件、iOS Expo export、CocoaPods再生成、`git diff --check`。`zelio-run`へ旧アプリ互換を含むFirestore ruleset `projects/zelio-run/rulesets/85fbf497-3ebb-4940-a31f-28372fbfe216`、Storage ruleset `projects/zelio-run/rulesets/b356d2ef-a45e-4af5-b884-16b7c22b55b4`、Hosting version `5b82c51bce9175fb`をデプロイし、Firebase Hostingの法務ページ本文も公開確認した。FunctionsとGPS関連はデプロイしていない。
+
+### 2026-08-02 GPS距離の系統的な水増しを抑制
+
+- 実コードを再調査し、Expo SDKはインストール済み54.0.36、`expo-location` 19.0.8、foreground/backgroundとも `BestForNavigation`、従来は採用可能な全点間のHaversineを逐次加算、水平精度80m、速度25km/hまで許可していたことを確認した。サーバーの `submitActivity` が再計算した距離が活動・個人記録・チャレンジの正式値、送信ルートはクライアント採用済み点だけである。
+- `functions/src/gpsProcessing.ts` をReact Native/Firebase非依存の共通純粋関数とし、アプリは `utils/gpsProcessing.ts` から同じ実装を使う。基本値検証→水平精度35m→GPS空白15秒→点間速度7.0m/s→commitAnchorから3mの順で処理し、低品質点・ワープ・3m未満ジッターは正式基準点を更新しない。GPS空白、手動/自動停止再開、セッション復旧、ウォッチドッグ復帰は `seg` 境界に統一した。
+- 記録画面は表示時から本番と同じ `BestForNavigation` / `distanceInterval: 0` で連続ウォームアップし、35m以内の新鮮な点でacceptable、25m以内3点連続でreadyとする。開始点は5秒以内だけ引き継ぎ、通常監視の同一timestampは重複除外する。Androidはforeground permissionの `fine` を必須にし、概算位置と位置情報サービスOFFには別メッセージと設定導線を出す。`expo-location` 19.0.8のiOS公開型にfull/reduced accuracy判定項目が無いため、iOSは型キャストを使わず実測accuracyで開始を守る。
+- foreground/backgroundは `BestForNavigation` / `distanceInterval: 0`、backgroundは追加で `ActivityType.Fitness` / `pausesUpdatesAutomatically: false`、Androidだけ `timeInterval: 1000`。オートポーズOFFでも距離フィルタは常時有効である。自動再開は1点でなく、1.2m/s超が3点連続し、候補窓の変位が3m以上の場合だけにした。
+- Functionsはクライアント採用済みcommit点を共通関数で再生し、明示済み `seg` を空白/停止境界とする。中間のMICRO_JITTERは送信されないため、Functionsは疎なcommit timestampからGPS空白を再推定しない。サーバー応答の正式距離を完了画面に使う既存経路は維持した。旧オフラインキューはversion 1互換処理で保存可能。過去活動の再計算は行わない。
+- 座標を含まない活動単位品質集計を `gpsQuality` として保存する。全生点は既定OFFの `EXPO_PUBLIC_GPS_DEBUG_EXPORT=1` 時だけ端末内の最新1活動とMetroログへJSON出力し、サーバーへは送らない。`npm run gps:replay -- <log> [config]` で同じ純粋関数を再生できる。詳細とトラック/建物沿い/静止/background/停止の実走手順は `docs/GPS_DISTANCE_VALIDATION.md`。
+- 新規GPSfixtureは1km直線、小刻みジッター、100m/1秒ワープ、80m精度、20秒空白、timestamp逆転、重複、手動停止再開、自動停止中ジャンプ、0.8m/s歩行、クライアント/Functions整合、3m未満終了端数、長時間統計上限を含む。確認成功: `npm run lint`、`npm run typecheck`、全unit、Functions build、Firestore Rules全件、JSON replay、iOS Expo export、`git diff --check`。実走・EAS development buildでのbackground追跡は未実施。
+- **本番デプロイ未実施**: `submitActivity` / `aggregateActivity` の `zelio-run` への限定デプロイは、共有本番環境の距離計算を変える明示承認が必要と安全審査で判定され、実行されなかった。クライアントv2を配布する前に、ユーザーの明示承認後にこの2関数をデプロイする。
+
+### 2026-08-01 メタレビュー必須項目を実装
+
+- 初回リリースからチャレンジテーマを完全撤去し、Pro訴求・画面ルート・型・保存権限・未使用実装を削除した。軍事系のユーザー文言も「ラン宣言」「はじめの一歩」「朝活ランナー」「ウォークマスター」へ統一した。
+- 月間統計は、認証ユーザーの保存済み活動を東京時間基準で一度だけ全件バックフィルする `backfillMonthlyStats` と、以後のサーバー増減集計を共通の正とした。上段「今月」と月別内訳は同じ `monthlyStats` を読む。
+- オレンジCTAを濃色文字へ統一し、記録中のタブバー非表示、最大文字サイズで消えていた通知・残り日数/順位・前回ラン情報、共有形式のユーザー別端末保存、共有画像からのGitHubドメイン削除を実装した。
+- 同時参加は最大2件とし、`joinBattle` / `leaveBattle` Callableのトランザクション、`users.battleIds`とparticipantsの直接更新禁止、記録加算先の2件制限を追加した。距離・活動回数・歩数加算が0の間だけ退出でき、旧データの3件目以降は「他のチャレンジ」へ残す。
+- チーム色を`categoryId`基準で決定し、3チーム以上は自チームと近い順位を先に全件横スクロール表示、距離バーは首位100%の実比率へ変更した。Day-0は単一推薦を廃止し、公開チャレンジ2〜3件を並列表示する。
+- Firebase AuthセッションとFirestoreプロフィール取得エラーを分離し、一時障害でログイン画面へ落とさず、原因別メッセージと再試行を表示する。App CheckはネイティブSDK組み込み・debug token・正規リクエスト率監視が先に必要なため、直前のenforcementは見送った。
+- `npm audit fix`（`--force`なし）で安全に更新できる推移依存を更新。確認成功: `npm run typecheck`、全unit、Functions build、Firestore Rules全件、Expo Doctor 18/18、iOS Expo export、`git diff --check`。2026-08-01にユーザー指示を受け、`joinBattle` / `leaveBattle` / `backfillMonthlyStats` と関連Functions 4件（`submitActivity` / `deleteActivity` / `awardBadgesOnActivityAggregated` / `syncMyBadges`）を `zelio-run` へデプロイ（7件成功、エラー0件）。Firestore Rulesも ruleset `projects/zelio-run/rulesets/6e98658c-a883-47f6-bd12-69b55f49257d` として公開済み。EAS/TestFlight配布は未実施。
+
+### ラン結果のSNS共有導線を拡張（2026-08-01）
+
+- 記録直後のサマリーにあった共有カードを、距離・時間・平均ペース・チャレンジ貢献を含むSNS向け縦長カードへ刷新した。Freeの透かしとProの透かしなし仕様は維持し、発見用URLは画像ではなく共有文面だけに含める。
+- 自分の過去アクティビティ詳細にも同じ共有プレビューと共有ボタンを追加し、ヘッダーからも即座に共有シートを開けるようにした。他ユーザーの活動には共有導線を出さない。
+- GPSルートは共有プレビュー上で表示/非表示を切り替え可能にし、自宅付近などが映り得ることを共有前に明示した。iOSでは画像と文面、Androidでは画像をOS共有シートへ渡し、画像共有が使えない環境ではURL付きテキスト共有へフォールバックする。
+- 共有文面生成を純関数化し、距離・時間・平均ペース・貢献・`#ZELIO`・Marketing URLの出力と異常値フォールバックを単体テストへ追加。`npm run typecheck`、`npm run test:unit`、iOS Expo export、`git diff --check` が成功。実際のSNSアプリを使った画像/文面の受け渡しと共有カードの実機目視は未実施。
+
+### 参加中チャレンジの閲覧切替（2026-08-01）
+
+- チャレンジ画面で参加中が2件以上の場合、大きな濃緑ヒーローカードの上に横スクロール可能なコンパクト切替カードを追加した。選択中はミント枠・淡背景・「表示中」ラベルで示し、長いタイトルは2行で省略する。
+- 閲覧中IDをユーザー別のAsyncStorageキー `@zelio_selected_battle_id:{uid}` に保存する。参加中チャレンジは終了日時が近い順（同時刻・不明時は既存順）に安定表示し、保存IDが終了・退出等で無効なら先頭へ自動フォールバックする。
+- ヒーロー、ラン宣言、走行中メンバー、チーム内ランキング、過程データ、詳細遷移をすべて閲覧中チャレンジへ連動した。切替直後に前のチャレンジの購読結果が一瞬残らないよう、関連フックもデータのチャレンジIDを照合する。
+- ヒーロー内の「他N件にも参加中」は「ランの距離は参加中のN件すべてに反映されます」へ変更した。その後のメタレビュー対応で参加・距離加算とも最大2件をサーバー保証した。
+- 0件・1件・2件・3件および保存ID無効時のソート/選択を単体テストへ追加。`npm run typecheck`、`npm run test:unit`、iOS Expo export、`git diff --check` が成功。実データを使った通常/最大文字サイズでの画面目視は未実施。
+
+### Proプランを月額のみに限定（2026-07-31）
+
+- リリース初期の運用リスクを避けるため、プロフィールのPro購入UIから年額の表示・選択を削除した。ストア取得価格は月額1件だけを表示する。
+- RevenueCatラッパーは `$rc_monthly` だけを明示取得・購入するAPIへ変更した。Current Offeringに `$rc_annual` が残っていても、アプリから新規購入されない。既存購入の復元と `Zelio Pro` entitlement判定は周期を問わず維持する。
+- `APP_STORE_SUBMISSION.md` の審査ノートと提出チェックを月額のみの構成へ同期した。年額商品は将来用に保持してよいが、初期リリースではApp Store Connectの審査・販売対象およびRevenueCatのCurrent Offeringから外す運用とする。
+- `npm run typecheck`、`npm run test:unit`、iOS Expo export、`git diff --check` が成功。RevenueCat / App Store Connectの外部設定変更とSandbox購入・復元は未実施。
+
+### 画面OFF記録の設定フロー明確化（2026-07-31）
+
+- GPS開始時の「設定する」が権限結果を確認しないままカウントダウンへ進んでいた問題を修正した。「設定する」は位置情報の設定だけを行い、成功・未完了を明示して開始前画面に留まる。記録は利用者が状態を確認してSTARTをもう一度押したときだけ始まる。
+- ランタブのSTART下に「画面OFFの位置情報：許可済み／未設定」を常時表示し、未設定時は同じ場所から設定できるようにした。端末設定からアプリへ戻った際も権限状態を再取得する。記録開始後は、バックグラウンドGPSが実際に稼働した場合だけ「画面OFFでも記録できます」と表示する。
+- OSの権限制約上「常に許可」は利用者による初回設定が必要だが、許可済みなら以後のSTARTでは案内を出さない。未設定のまま使う場合の選択肢も「あとで」ではなく「画面を開いたまま開始」と実際の制約が分かる文言へ変更した。
+- `npm run typecheck`、`npm run test:unit`、`git diff --check` が成功。バックグラウンドGPSの実動作確認はEAS development buildの実機で行う必要がある。
 
 ### App Store Review Guideline 1.2 対応（2026-07-31）
 
@@ -312,11 +371,12 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 
 ## 次にやること
 
-1. **2つのTestFlight/実機アカウントで `RELEASE_TEST_CHECKLIST.md` のシナリオ9を通し確認する。** 特に通報作成→管理者キューでのステータス更新、ブロック後の双方の表示・応援/リアクション・通知遮断、解除後の復帰を確認する。App Review用デモアカウントには、別ユーザーの宣言・ライブ参加・アクティビティが見える開催中チャレンジを用意する。
+1. **App Store ConnectのApp Privacyで「Photos or Videos」を非収集へ変更する。** その後、EAS/TestFlightの新規ビルドで写真権限が表示されず、内蔵アバター選択だけが動くことを実機確認する。GitHub PagesのPrivacy / Terms / Support更新は完了済み。
 
 ## その次の候補
+- シミュレータまたは実機で参加中チャレンジ切替（0〜3件、長いタイトル、最大文字サイズ、再起動、終了時フォールバック）を目視確認する
+- RevenueCatのCurrent Offeringから年額を外し、App Store Connectでyearlyを審査・販売対象外にしたうえで、月額だけのSandbox購入・復元をTestFlightで確認する
 - 現行差分からEAS preview buildを作成し、物理端末でホーム画面アイコン、iOS full-screen splash、Android adaptive icon/Android 12 splashを確認する
-- 残るP0のProテーマを完成させるか、審査提出版から一時的に導線を外す
 - 実機でオフライン停止→端末キュー保存→オンライン復帰後30秒以内の再送と、サマリー集計の15秒フォールバックを確認する
 - 実機で新機能を目視確認する: 一時停止/再開、カウントダウン、目標バー、1kmラップ、記録削除、開始前GPSチップ
 - `RELEASE_TEST_CHECKLIST.md` の通し確認（Day-0、GPS保存、再送、ランキング反映、アカウント削除を2アカウントの実機で）を行う
@@ -325,18 +385,20 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 - masaki0219/app-support（GitHub Pages）の docs/battlerun/ 配下サポートページをZelio表記へ同期する
 - `feat/ui-consolidation` を `main` へマージするか判断する（origin へは push 済み）
 - 使われていないブランチ `feat/ui-refresh` / `feat/ui-redesign` を整理する
-- `package.json` に `lint` スクリプトを追加する（`typecheck` / `test` は追加済み）
 - バックグラウンドGPS を EAS development build で確認する（Expo Go ではフォアグラウンドのみ）
 - 機能ギャップ Phase 3 の T-20「インターバルワークアウト」を実装する
 
 ## 未解決・要確認
 
+- ~~外部法務ページの同期が必要~~ **GitHub Pagesは解決済み（2026-08-02）**: `masaki0219/app-support` のPrivacy / Terms / Supportを内蔵アバター仕様へ更新し、Pagesデプロイ成功と公開本文を確認した。App Store ConnectのApp Privacy変更だけは人手で必要。
+- ~~旧Storage画像の確認・削除が必要~~ **解決済み（2026-08-02）**: 本番bucketの `avatars/` は0件・0 bytesで、削除対象はなかった。新規アクセスはStorageルールで全面拒否済み。
 - ~~UGCの通報・ブロックが未実装~~ **解決済み（2026-07-31）**: 投稿前フィルター、投稿別の通報、ユーザーブロック、相互インタラクション/通知遮断、管理者通報キュー、公開連絡先、運用手順まで実装・デプロイ済み。実際に原則24時間以内の一次対応を継続する運用と、提出前の2アカウント実機確認は人手で必要。
-- ~~「陣営」と「チーム」の統一先が未決定~~ **解決済み（2026-07-29 ユーザー決裁）**: ユーザー向け表示は「チーム」へ統一済み（Functions 通知文言含む、デプロイ済み）。軍事フレーバーはPro「陣取り合戦風」テーマとバッジ名へ退避。「出撃宣言」は世界観として存続。
+- ~~軍事系ユーザー文言が残る~~ **解決済み（2026-08-01）**: テーマ撤去と同時に、出撃・初陣・兵・隊長・歩兵・援軍に当たる表示、通知、バッジ、fixtureを中立表現へ変更した。
+- **GPS距離フィルタv2の物理端末検証が未実施（2026-08-02）**: 既知距離の誤差/再現性、10分静止の増加、iOS/Androidの権限表示、画面OFF・OS強制停止・ウォッチドッグ復帰、オートポーズの停止/低速歩行はEAS development buildの実機で確認する。しきい値は暫定で、この確認前に「解決」と断定しない。
 - **ネイティブ dev build がローカルで通らない（2026-07-29）**: `npx expo run:ios` が `cannot link directly with 'SwiftUICore'` で失敗する（`useFrameworks: static` 環境）。EASビルドで再現するかは未確認。ローカルで実機確認する場合はここが先に必要。
 
 - **ランニング基本機能・Sprint 1〜4（T-11まで）の実機確認が未実施（2026-07-20）**: 記録系Functions、自己ベスト・月次統計集計、出撃宣言・ライブ応援Functions、関連ルールは `zelio-run` へデプロイ済み。実機/シミュレータでの目視（一時停止HUD・オートポーズ・音声コーチ・週間目標・自己ベスト祝福/一覧・月間/年間統計・出撃宣言・通知タップ・宣言/ライブ応援プッシュ・ライブプレゼンス3分失効・HUD触覚/音声・宣言達成・過負荷カード・オフライン再送・カウントダウン・目標バー・ラップ表示・削除フロー）は未実施。新規活動の月次加算と削除時の減算も実データでは未確認。バックグラウンドのオートポーズは EAS development build が必要。
-- Functionsのランタイム指定はNode.js 22へ更新してビルド済みだが、`zelio-run` への再デプロイは未実施。歩数チャレンジ上限のFunctionsとSupport/Invite/PrivacyのHostingも同じくローカルのみ。
+- 今回の新規3件と関連4件（`submitActivity` を含む）はNode.js 22で `zelio-run` へデプロイ済み。Support / Invite / Privacy のHosting変更は今回の対象外で、引き続きローカルのみ。
 - 一時停止まわりの設計メモ: 終了済みバトルの集計は削除時に減算しない（結果確定のため）。バッジは削除しても剥奪しない。セッション復旧時（アプリ再起動）は `segmentPending: true` でギャップ距離を数えない仕様に変えた。
 - `EXPO_PUBLIC_REVENUECAT_API_KEY` は `appl_RRF…`（.env側の値）が正と確認され、`eas.json` 3プロファイルを統一済み（2026-07-19）。
 - 修正済み `revenuecatWebhook` のデプロイと zelio-run 残作業（Auth メール/パスワード有効化、Firestore データコピー、RevenueCat Webhook URL 変更）はユーザー報告により完了（2026-07-19）。
@@ -347,15 +409,15 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 - サポート窓口は `https://github.com/masaki0219/app-support/issues` を使用し、ZELIO Hostingの `/support.html` から案内する。個人情報を含む問い合わせを公開Issueへ書かせない注意文を表示済み。非公開窓口として2026-07-21にSupabase評価・ご要望フォームをヘルプへ併設した（返信不可のため、返信が必要な報告はGitHub Issueを継続使用）。
 - Supabase評価・ご要望フォームの実機/Expo Goでの目視（ヘルプ最上部のフォーム表示・星タップ・キーボードと送信ボタンの重なり・送信後のお礼表示・未設定時の非表示）は未実施。Hosting `/support.html` からのフォーム案内追記も未実施。
 - Expo依存は `expo ~54.0.35`、`expo-font ~14.0.12`、`expo-router ~6.0.24` へ更新済み。Expo Doctorは18/18合格。
-- `npm audit fix`（`--force`なし）適用後、rootの `npm audit --omit=dev` は critical 0 / high 1 / moderate 34。残るhighの`undici`はFirebase 12系が必要。functionsはhigh 0 / moderate 9で、残りはfirebase-admin配下の`uuid`系。いずれも破壊的な `--force` は未適用。
-- Firestoreルールテストはローカルの Java（openjdk 26）でエミュレータ実行できる。2026-07-20 時点で全72件成功。
-- `submitActivity` はサーバーで距離を再計算するが、Firebase App Checkのネイティブ導入は未実施。改造クライアント対策として導入を検討する。
+- `npm audit fix`（`--force`なし）適用後、rootの `npm audit --omit=dev` は critical 0 / high 2 / moderate 33。highはExpo配下の`postcss`とFirebase配下の`undici`で、解消候補はExpo/Firebaseのメジャー更新。functionsはhigh 0 / moderate 9で、残りはfirebase-admin配下の`uuid`系。互換性を壊す強制更新は未適用。
+- Firestore Rulesテストは一時Temurin 21 JREとローカルエミュレータで2026-08-01に全件成功。JREは`/tmp`だけに配置し、システムへインストールしていない。
+- `submitActivity` はサーバーで距離を再計算するが、Firebase App Checkのネイティブ導入は未実施。Firebase Apple/Android SDKの導入、App Attest/DeviceCheck・Play Integrity登録、debug token整備、メトリクス監視後に距離送信系から段階的にenforcementする。
 - クラッシュ監視・分析イベントはSDK/送信先・プライバシー申告を決める外部設定が必要なため未導入。App CheckもApple App Attest / DeviceCheck、Android Play Integrity、Firebase Console設定とdevelopment buildでの確認が必要。
 - リリース対象（iOS先行 / Android同時）はプロダクト判断のため未決定。公式チャレンジの実データ作成、テストユーザー配置、App Store Connectへの回答転記も人手の運用作業として残る。
-- `FactionColumns` のバー高さは **0起点ではなく「最下位〜首位」で正規化**している（僅差だと全部同じ高さに潰れて順位が読めないため。最下位でも 32% は残す）。各バーの上に実数値 km を出して誤読を防いでいるが、スケールの妥当性は要レビュー。
+- `FactionColumns` のバー高さは首位100%の実距離比。正の小値だけ15%の最低表示、0kmは基線のみとし、各バー上に実数値を表示する。
 - `useTeamRanking` は participants サブコレクションを全件読む（既存の `useBattleParticipants` と同じ方式）。大規模バトルでは読み取り件数が増える。上位3名の users 読みは3件に固定。
 - ダーク面（記録中HUD・結果画面）がパイン系に変わったため、`battle/result/[id].tsx` など今回レイアウトを触っていないダーク画面の見え方は要確認。
-- `app/battle/theme.tsx` の `sports` テーマだけ新ブランド色に合わせた。他テーマ（RPG / ホラー等）の hex は意図的にそのまま。
+- チャレンジテーマ画面・定義・導線は初回リリースから完全撤去済み。
 - `feat/ui-consolidation` を `main` へマージする予定かどうかは不明。`10079b2` まではoriginへpush済みで、リリースレビュー対応差分は未コミット・未push。
 - `firestore-debug.log` がリポジトリ直下にあるが gitignore 済み。
 
@@ -384,7 +446,7 @@ npx expo export --platform ios  # Metro でバンドルが通るかの確認（�
 npm run test:rules              # Firestore ルールのテスト（Firebase エミュレータ必要）
 ```
 
-2026-07-31 時点: `npm run typecheck`、`npm run test:unit`、Functions build、Firestore Rulesテスト、`npx expo export --platform ios`、`git diff --check` がすべて成功。
+2026-08-02 時点: `npm run lint`、`npm run typecheck`、`npm run test:unit`、Functions build、Firestore Rulesテスト、`npx expo export --platform ios`、`git diff --check` がすべて成功。
 
 ## 重要なファイル
 

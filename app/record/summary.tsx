@@ -1,30 +1,25 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Share,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { collection, doc, getDocs, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
-import { captureRef } from 'react-native-view-shot';
-import * as Sharing from 'expo-sharing';
-import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import { isPro } from '../../lib/pro';
-import { Colors, DarkColors, RoutePaceColors, BorderRadius, TextStyles } from '../../design_tokens';
+import { Colors, DarkColors, BorderRadius, TextStyles } from '../../design_tokens';
 import { MonoLabel } from '../../components/ui/MonoLabel';
 import { KmSplitsCard } from '../../components/run/KmSplitsCard';
+import { RunShareCard } from '../../components/run/RunShareCard';
 import { estimatedCalories, type KmSplit } from '../../utils/displayStats';
-import { buildRouteVisualization, type RoutePaceBand } from '../../utils/routeSplits';
+import { buildRouteVisualization } from '../../utils/routeSplits';
+import { buildRunShareMessage, formatShareDuration } from '../../utils/runShare';
 import type { PersonalRecordKey, RoutePoint } from '../../types';
 import { decorLabel } from '../../lib/locale';
-
-const ROUTE_PACE_COLOR: Record<RoutePaceBand, string> = {
-  fast: RoutePaceColors.fast,
-  steady: RoutePaceColors.steady,
-  slow: RoutePaceColors.slow,
-};
+import { shareRunResult } from '../../lib/runSharing';
+import { useRunSharePreference } from '../../hooks/useRunSharePreference';
 
 function formatTime(sec: number): string {
   const h = Math.floor(sec / 3600);
@@ -95,6 +90,12 @@ export default function RecordingSummaryScreen() {
   const [impactTimedOut, setImpactTimedOut] = useState(false);
   const [newRecords, setNewRecords] = useState<PersonalRecordKey[]>([]);
   const [activityRoute, setActivityRoute] = useState<RoutePoint[]>([]);
+  const [sharing, setSharing] = useState(false);
+  const {
+    includeRouteInShare,
+    preferenceLoaded: sharePreferenceLoaded,
+    setIncludeRouteInShare,
+  } = useRunSharePreference(user?.id);
   const shareCardRef = useRef<View>(null);
 
   useEffect(() => {
@@ -192,23 +193,25 @@ export default function RecordingSummaryScreen() {
   const hasMultipleImpacts = impacts.length > 1;
 
   async function handleShareRun() {
-    const message = primaryImpact
-      ? `今日のラン: ${distanceKm.toFixed(1)}km\n「${primaryImpact.battleTitle}」チームが${primaryImpact.rankBefore}位→${primaryImpact.rankAfter}位\n#ZELIO`
-      : `今日のラン: ${distanceKm.toFixed(1)}km\n#ZELIO`;
-
+    if (sharing || !sharePreferenceLoaded) return;
+    const impactLabel = primaryImpact
+      ? `「${primaryImpact.battleTitle}」チーム ${primaryImpact.rankBefore}位→${primaryImpact.rankAfter}位`
+      : null;
+    const message = buildRunShareMessage({
+      distanceKm,
+      durationSeconds,
+      pace,
+      impactLabel,
+    });
+    setSharing(true);
     try {
-      if (shareCardRef.current && (await Sharing.isAvailableAsync())) {
-        const uri = await captureRef(shareCardRef, { format: 'png', quality: 0.92 });
-        await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: '今日のランをシェア' });
-        return;
-      }
-    } catch (e) {
-      console.warn('[RecordingSummary] image share failed, falling back to text share:', e);
+      await shareRunResult(shareCardRef.current, message, '今日のランをシェア');
+    } catch (error) {
+      console.warn('[RecordingSummary] share failed:', error);
+      Alert.alert('共有できませんでした', '時間をおいてもう一度お試しください。');
+    } finally {
+      setSharing(false);
     }
-
-    try {
-      await Share.share({ message });
-    } catch {}
   }
 
   return (
@@ -379,56 +382,56 @@ export default function RecordingSummaryScreen() {
         {/* ── Share ─────────────────────────────────────── */}
         <View style={s.section}>
           <Text style={TextStyles.sectionTitle}>今日のランをシェア</Text>
-          <View ref={shareCardRef} collapsable={false} style={s.shareCard}>
-            {mapRegion && (
-              <MapView
-                style={s.shareMap}
-                provider={PROVIDER_DEFAULT}
-                initialRegion={mapRegion}
-                scrollEnabled={false}
-                zoomEnabled={false}
-                rotateEnabled={false}
-                pitchEnabled={false}
-                pointerEvents="none"
-              >
-                {routeVisualization.segments.map((segment) => (
-                  <Polyline
-                    key={segment.id}
-                    coordinates={segment.coordinates}
-                    strokeColor={ROUTE_PACE_COLOR[segment.band]}
-                    strokeWidth={4}
-                  />
-                ))}
-                {routeVisualization.kmMarkers.map((marker) => (
-                  <Marker
-                    key={`summary-km-${marker.km}`}
-                    coordinate={marker}
-                    anchor={{ x: 0.5, y: 0.5 }}
-                    tracksViewChanges={false}
-                  >
-                    <View style={s.kmMarker}><Text style={s.kmMarkerText}>{marker.km}</Text></View>
-                  </Marker>
-                ))}
-              </MapView>
-            )}
-            <View style={s.shareCardContent}>
-              <Text style={s.shareCardKm}>{distanceKm.toFixed(1)}<Text style={s.shareCardKmUnit}> km</Text></Text>
-              {primaryImpact ? (
-                <Text style={s.shareCardImpact}>
-                  「{primaryImpact.battleTitle}」チーム {primaryImpact.rankBefore}位→{primaryImpact.rankAfter}位
+          <RunShareCard
+            ref={shareCardRef}
+            distanceKm={distanceKm}
+            durationLabel={formatShareDuration(durationSeconds)}
+            paceLabel={pace.includes('--') ? null : pace}
+            dateLabel="TODAY"
+            impactLabel={primaryImpact
+              ? `「${primaryImpact.battleTitle}」チーム ${primaryImpact.rankBefore}位→${primaryImpact.rankAfter}位`
+              : null}
+            mapRegion={includeRouteInShare ? mapRegion : null}
+            routeVisualization={routeVisualization}
+            showWatermark={!userIsPro}
+          />
+          {!!mapRegion && (
+            <TouchableOpacity
+              style={s.routeShareToggle}
+              onPress={() => setIncludeRouteInShare((current) => !current)}
+              disabled={!sharePreferenceLoaded}
+              activeOpacity={0.75}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: includeRouteInShare, disabled: !sharePreferenceLoaded }}
+              accessibilityLabel="共有画像にGPSルートを表示"
+            >
+              <Ionicons
+                name={includeRouteInShare ? 'map' : 'map-outline'}
+                size={16}
+                color={includeRouteInShare ? Colors.primaryDark : Colors.textSecondary}
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={s.routeShareToggleTitle}>
+                  {includeRouteInShare ? '共有画像にルートを表示中' : '共有画像のルートは非表示'}
                 </Text>
-              ) : null}
-              <Text style={s.shareCardTag}>#ZELIO</Text>
-            </View>
-            {!userIsPro && (
-              <View style={s.shareWatermarkBadge}>
-                <Text style={s.shareWatermarkText}>ZELIO</Text>
+                <Text style={s.routeShareToggleHint}>自宅付近などが映っていないか、プレビューを確認してください</Text>
               </View>
-            )}
-          </View>
-          <TouchableOpacity style={s.shareBtn} onPress={handleShareRun} activeOpacity={0.85}>
-            <Ionicons name="share-outline" size={18} color={Colors.textOnPrimary} />
-            <Text style={s.shareBtnText}>今日のランをシェア</Text>
+              <Ionicons name="swap-horizontal" size={16} color={Colors.textTertiary} />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={[s.shareBtn, (sharing || !sharePreferenceLoaded) && s.shareBtnDisabled]}
+            onPress={handleShareRun}
+            activeOpacity={0.85}
+            disabled={sharing || !sharePreferenceLoaded}
+            accessibilityRole="button"
+            accessibilityLabel="今日のラン結果をSNSに共有"
+            accessibilityState={{ busy: sharing, disabled: sharing || !sharePreferenceLoaded }}
+          >
+            {sharing
+              ? <ActivityIndicator size="small" color={Colors.textOnPrimary} />
+              : <Ionicons name="share-social-outline" size={18} color={Colors.textOnPrimary} />}
+            <Text style={s.shareBtnText}>{sharing ? '共有画像を準備中…' : 'SNSにシェア'}</Text>
           </TouchableOpacity>
         </View>
 
@@ -567,32 +570,18 @@ const s = StyleSheet.create({
   badgeNew: { fontSize: 11, color: Colors.accentYellow, fontWeight: '800' },
 
   // Share
-  shareCard: {
-    marginTop: 8, borderRadius: BorderRadius.md,
-    backgroundColor: DarkColors.background, overflow: 'hidden', position: 'relative',
+  routeShareToggle: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    marginTop: 10, padding: 11, borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
   },
-  shareMap: { height: 190, width: '100%' },
-  shareCardContent: { gap: 4, padding: 16 },
-  kmMarker: {
-    width: 22, height: 22, borderRadius: 11,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: DarkColors.background, borderWidth: 2, borderColor: DarkColors.primary,
-  },
-  kmMarkerText: { fontSize: 9, fontWeight: '900', color: DarkColors.textPrimary },
-  shareCardKm: { fontSize: 32, fontWeight: '900', color: Colors.textOnPrimary, letterSpacing: -1, fontVariant: ['tabular-nums'] },
-  shareCardKmUnit: { fontSize: 14, fontWeight: '700', color: DarkColors.textTertiary },
-  shareCardImpact: { fontSize: 13, color: DarkColors.textSecondary, fontWeight: '700' },
-  shareCardTag: { fontSize: 12, color: DarkColors.primary, fontWeight: '700', marginTop: 2 },
-  shareWatermarkBadge: {
-    position: 'absolute', bottom: 10, right: 10,
-    backgroundColor: DarkColors.lineStrong, borderRadius: BorderRadius.sm,
-    paddingHorizontal: 8, paddingVertical: 3,
-  },
-  shareWatermarkText: { fontSize: 10, color: DarkColors.textTertiary, fontWeight: '700' },
+  routeShareToggleTitle: { fontSize: 12, fontWeight: '800', color: Colors.textPrimary },
+  routeShareToggleHint: { marginTop: 2, fontSize: 9, lineHeight: 13, color: Colors.textSecondary },
   shareBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     backgroundColor: DarkColors.background, borderRadius: BorderRadius.md, paddingVertical: 14, marginTop: 12,
   },
+  shareBtnDisabled: { opacity: 0.65 },
   shareBtnText: { fontSize: 14, fontWeight: '800', color: Colors.textOnPrimary },
 
   ctaSection: { paddingHorizontal: 16, marginTop: 16, gap: 10 },

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import {
   collection, query, where, getDocs, getDoc,
-  doc, serverTimestamp, Timestamp, arrayUnion, runTransaction, writeBatch,
+  doc, Timestamp, writeBatch,
 } from 'firebase/firestore';
 import { db, functions } from '../lib/firebase';
 import { httpsCallable } from 'firebase/functions';
@@ -44,6 +44,7 @@ interface BattleStore {
   fetchMyPrivateBattles: (userId: string) => Promise<void>;
   fetchSeason: (seasonId: string) => Promise<void>;
   joinBattle: (battleId: string, categoryId: string | null, userId: string) => Promise<void>;
+  leaveBattle: (battleId: string, userId: string) => Promise<void>;
   createBattle: (params: CreateBattleParams) => Promise<string>;
   findBattleByInviteCode: (inviteCode: string) => Promise<Battle>;
   getActiveBattleIds: () => string[];
@@ -191,41 +192,9 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
   },
 
   joinBattle: async (battleId, categoryId, userId) => {
-    const participantRef = doc(db, 'battles', battleId, 'participants', userId);
-    const userRef = doc(db, 'users', userId);
-
-    await runTransaction(db, async (transaction) => {
-      const participantSnap = await transaction.get(participantRef);
-      const isNew = !participantSnap.exists();
-      const categoryChanged =
-        !isNew && (participantSnap.data()['categoryId'] as string | null) !== categoryId;
-
-      // 参加者ドキュメントを作成、またはカテゴリのみ更新（既存距離はリセットしない）
-      // userId はアカウント削除時に collectionGroup('participants') で
-      // 該当ユーザーの参加データを横断検索するために保存する（onUserDeleted 参照）
-      if (isNew) {
-        transaction.set(participantRef, {
-          userId,
-          categoryId: categoryId ?? null,
-          totalDistanceKm: 0,
-          joinedAt: serverTimestamp(),
-        });
-      } else if (categoryChanged) {
-        const currentDistance = (participantSnap.data()['totalDistanceKm'] as number | undefined) ?? 0;
-        const currentActivities = (participantSnap.data()['activityCount'] as number | undefined) ?? 0;
-        if (currentDistance > 0 || currentActivities > 0) {
-          throw new Error('一度記録した後はチームを変更できません。');
-        }
-        transaction.update(participantRef, { categoryId: categoryId ?? null });
-      }
-
-      // category_stats.participantCount / avgDistanceKm は Cloud Functions
-      // (participantCounter) が participants ドキュメントの書き込みをトリガーに
-      // サーバー側で再計算する。クライアントからは一切更新しない。
-
-      // arrayUnion は Firestore が重複を自動除外するため再参加時も安全
-      transaction.update(userRef, { battleIds: arrayUnion(battleId) });
-    });
+    if (!categoryId) throw new Error('チームを選択してください。');
+    const callable = httpsCallable(functions, 'joinBattle');
+    await callable({ battleId, categoryId });
 
     useAuthStore.setState((s) => ({
       user: s.user?.id === userId
@@ -238,6 +207,19 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
         ...state.myMemberships.filter((m) => m.battleId !== battleId),
         { battleId, categoryId },
       ],
+    }));
+  },
+
+  leaveBattle: async (battleId, userId) => {
+    const callable = httpsCallable(functions, 'leaveBattle');
+    await callable({ battleId });
+    useAuthStore.setState((state) => ({
+      user: state.user?.id === userId
+        ? { ...state.user, battleIds: (state.user.battleIds ?? []).filter((id) => id !== battleId) }
+        : state.user,
+    }));
+    set((state) => ({
+      myMemberships: state.myMemberships.filter((membership) => membership.battleId !== battleId),
     }));
   },
 
@@ -322,7 +304,8 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
     );
     return get().myMemberships
       .map((m) => m.battleId)
-      .filter((id) => activeBattleIds.has(id));
+      .filter((id) => activeBattleIds.has(id))
+      .slice(0, 2);
   },
 
   subscribeDeclarations: (battleId, userId) => subscribeTodayDeclarations(

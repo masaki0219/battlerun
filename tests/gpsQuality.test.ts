@@ -11,12 +11,13 @@ function point(patch: Partial<RoutePoint> = {}): RoutePoint {
   return { lat: 37.9, lng: 140.1, timestamp: 1_000, ...patch };
 }
 
-assert.equal(hasUsableDistanceAccuracy(point({ accuracy: 80 })), true);
-assert.equal(hasUsableDistanceAccuracy(point({ accuracy: 81 })), false);
-assert.equal(hasUsableDistanceAccuracy(point()), true, '旧データのaccuracy欠損は互換性のため許可する');
+assert.equal(hasUsableDistanceAccuracy(point({ accuracy: 35 })), true);
+assert.equal(hasUsableDistanceAccuracy(point({ accuracy: 36 })), false);
+assert.equal(hasUsableDistanceAccuracy(point()), false, '精度不明の点は正式距離へ使わない');
+assert.equal(hasUsableDistanceAccuracy(point({ accuracy: 0 })), false);
 
-assert.equal(hasStableStartAccuracy(point({ accuracy: 50 })), true);
-assert.equal(hasStableStartAccuracy(point({ accuracy: 51 })), false);
+assert.equal(hasStableStartAccuracy(point({ accuracy: 35 })), true);
+assert.equal(hasStableStartAccuracy(point({ accuracy: 36 })), false);
 
 assert.equal(hasUsableAutoPauseAccuracy(point({ accuracy: 35 })), true);
 assert.equal(hasUsableAutoPauseAccuracy(point({ accuracy: 36 })), false);

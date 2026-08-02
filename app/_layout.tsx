@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
@@ -8,21 +9,28 @@ import { initAuthListener, useAuthStore } from '../stores/authStore';
 import { initRevenueCat, checkProEntitlement } from '../lib/revenuecat';
 import { registerPushToken } from '../lib/notifications';
 import { ONBOARDING_KEY } from './onboarding';
+import { BorderRadius, Colors, Spacing, Typography } from '../design_tokens';
 
 const SEEN_RESULTS_KEY = 'battlerun_seen_results';
 
 export default function RootLayout() {
-  const { user, isLoading } = useAuthStore();
+  const { user, isLoading, authSessionActive, profileError } = useAuthStore();
   const segments = useSegments();
   const router = useRouter();
   const [onboardingChecked, setOnboardingChecked] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [resultCheckedUserId, setResultCheckedUserId] = useState<string | null>(null);
+  const [authRetryKey, setAuthRetryKey] = useState(0);
+
+  const retryProfileLoad = () => {
+    useAuthStore.setState({ isLoading: true, profileError: null });
+    setAuthRetryKey((value) => value + 1);
+  };
 
   useEffect(() => {
     const unsubscribe = initAuthListener();
     return unsubscribe;
-  }, []);
+  }, [authRetryKey]);
 
   useEffect(() => {
     AsyncStorage.getItem(ONBOARDING_KEY).then((v) => {
@@ -84,6 +92,9 @@ export default function RootLayout() {
     const inOnboarding = segments[0] === 'onboarding';
     const inPublicInfo = segments[0] === 'legal' || segments[0] === 'help' || segments[0] === 'invite';
 
+    // Firestoreだけ失敗した認証済みユーザーをログイン画面へ送らない。
+    if (authSessionActive && profileError) return;
+
     if (!user) {
       if (!inAuth && !inOnboarding && !inPublicInfo) {
         if (showOnboarding) {
@@ -95,7 +106,26 @@ export default function RootLayout() {
     } else if (user && (inAuth || inOnboarding)) {
       router.replace('/(tabs)');
     }
-  }, [user, isLoading, segments, onboardingChecked, showOnboarding]);
+  }, [user, isLoading, authSessionActive, profileError, segments, onboardingChecked, showOnboarding]);
+
+  const inPublicInfo = segments[0] === 'legal' || segments[0] === 'help' || segments[0] === 'invite';
+  if (!isLoading && authSessionActive && profileError && !user && !inPublicInfo) {
+    return (
+      <SafeAreaView style={styles.recoveryScreen}>
+        <StatusBar style="dark" />
+        <Text style={styles.recoveryTitle}>接続できませんでした</Text>
+        <Text style={styles.recoveryBody}>{profileError}</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="プロフィール情報の読み込みを再試行"
+          style={({ pressed }) => [styles.retryButton, pressed && styles.retryButtonPressed]}
+          onPress={retryProfileLoad}
+        >
+          <Text style={styles.retryButtonText}>再試行</Text>
+        </Pressable>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <>
@@ -107,7 +137,6 @@ export default function RootLayout() {
         <Stack.Screen name="auth/signup" />
         <Stack.Screen name="battle/[id]" />
         <Stack.Screen name="battle/result/[id]" />
-        <Stack.Screen name="battle/theme" />
         <Stack.Screen name="record/summary" />
         <Stack.Screen name="notifications" />
         <Stack.Screen name="badges" />
@@ -119,9 +148,99 @@ export default function RootLayout() {
         <Stack.Screen name="help" />
         <Stack.Screen name="invite" />
       </Stack>
+      {!!user && authSessionActive && !!profileError && (
+        <View style={styles.connectionBanner} accessibilityRole="alert">
+          <Text style={styles.connectionBannerText}>{profileError}</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="プロフィール情報の読み込みを再試行"
+            style={({ pressed }) => [styles.bannerRetry, pressed && styles.bannerRetryPressed]}
+            onPress={retryProfileLoad}
+          >
+            <Text style={styles.bannerRetryText}>再試行</Text>
+          </Pressable>
+        </View>
+      )}
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  recoveryScreen: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.xl,
+    backgroundColor: Colors.background,
+  },
+  recoveryTitle: {
+    fontSize: Typography.fontSize.xl,
+    fontWeight: Typography.fontWeight.bold,
+    lineHeight: Typography.fontSize.xl * Typography.lineHeight.tight,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  recoveryBody: {
+    fontSize: Typography.fontSize.md,
+    lineHeight: Typography.fontSize.md * Typography.lineHeight.normal,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginTop: Spacing.sm,
+    maxWidth: 360,
+  },
+  retryButton: {
+    marginTop: Spacing.lg,
+    minHeight: 48,
+    paddingHorizontal: Spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.accent,
+  },
+  retryButtonPressed: {
+    backgroundColor: Colors.accentDark,
+  },
+  retryButtonText: {
+    fontSize: Typography.fontSize.lg,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.textOnAccent,
+  },
+  connectionBanner: {
+    position: 'absolute',
+    left: Spacing.lg,
+    right: Spacing.lg,
+    bottom: 88,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.error,
+    backgroundColor: Colors.surface,
+  },
+  connectionBannerText: {
+    flex: 1,
+    fontSize: Typography.fontSize.sm,
+    lineHeight: Typography.fontSize.sm * Typography.lineHeight.normal,
+    color: Colors.textPrimary,
+  },
+  bannerRetry: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.accent,
+  },
+  bannerRetryPressed: {
+    backgroundColor: Colors.accentDark,
+  },
+  bannerRetryText: {
+    fontSize: Typography.fontSize.sm,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.textOnAccent,
+  },
+});
 
 /**
  * ログイン後に終了済みバトルをチェック → 未閲覧の結果画面へ誘導
