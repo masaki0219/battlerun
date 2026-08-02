@@ -22,3 +22,7 @@ export { awardBadgesOnActivityAggregated, syncMyBadges } from './badges';
 export { lookupBattleByInviteCode } from './lookupBattle';
 export { joinBattle, leaveBattle } from './battleParticipation';
 export { backfillMonthlyStats } from './monthlyStatsBackfill';
+export {
+  completeDeclarationOnActivityCreated,
+  completeRunDeclarationsForActivity,
+} from './declarationCompletion';

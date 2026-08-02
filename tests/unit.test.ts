@@ -13,5 +13,6 @@ import './moderation.test';
 import './battleSelection.test';
 import './runShare.test';
 import './battleParticipation.test';
+import './declarations.test';
 
 console.log('all unit tests passed');

@@ -18,6 +18,7 @@ import {
   type AutoPauseDetectorState,
 } from '../utils/autoPause';
 import { completeDeclarationsForActivity } from '../lib/declarations';
+import { deviceTimeZone } from '../utils/declarations';
 import {
   DEFAULT_GPS_PROCESSING_CONFIG,
   DISTANCE_MAX_ACCURACY_M,
@@ -57,6 +58,8 @@ export type LocationMode = 'background' | 'foreground' | 'denied' | 'idle';
 
 interface RecordState extends RecordStore {
   startedAt: string | null;
+  /** 記録開始時点の端末IANAタイムゾーン。終了時に端末設定が変わっても開始日判定へ使う。 */
+  recordingTimezone: string;
   locationMode: LocationMode;
   // GPSウォッチドッグが「静かな停止」を検知している間 true。位置更新が再開すると false に戻る
   gpsWarning: boolean;
@@ -151,6 +154,7 @@ export const useRecordStore = create<RecordState>((set, get) => ({
   route: [],
   goal: null,
   startedAt: null,
+  recordingTimezone: deviceTimeZone(),
   locationMode: 'idle',
   gpsWarning: false,
   pausedAt: null,
@@ -200,6 +204,7 @@ export const useRecordStore = create<RecordState>((set, get) => ({
       route,
       goal,
       startedAt: new Date(nowMs).toISOString(),
+      recordingTimezone: deviceTimeZone(),
       locationMode: 'idle',
       gpsWarning: false,
       pausedAt: null,
@@ -370,6 +375,7 @@ export const useRecordStore = create<RecordState>((set, get) => ({
       route: validRoute,
       startedAt: state.startedAt ?? endedAt,
       endedAt,
+      timezone: state.recordingTimezone,
       pausedMs,
       ...(state.measurementType === 'gps' ? {
         gpsProcessingVersion: GPS_PROCESSING_VERSION,
@@ -414,6 +420,7 @@ export const useRecordStore = create<RecordState>((set, get) => ({
       route: [],
       goal: null,
       startedAt: null,
+      recordingTimezone: deviceTimeZone(),
       locationMode: 'idle',
       gpsWarning: false,
       pausedAt: null,
@@ -431,7 +438,7 @@ export const useRecordStore = create<RecordState>((set, get) => ({
 type PersistedSession = Pick<RecordState,
   'isRecording' | 'isPaused' | 'pauseKind' | 'measurementType' | 'distanceKm' | 'steps' | 'durationSeconds' |
   'route' | 'goal' | 'startedAt' | 'locationMode' | 'gpsWarning' | 'pausedAt' | 'pausedTotalMs' |
-  'gpsProcessingState' | 'gpsRuntimeQuality'> & { gpsDebugSamples?: GpsDebugSample[] };
+  'gpsProcessingState' | 'gpsRuntimeQuality' | 'recordingTimezone'> & { gpsDebugSamples?: GpsDebugSample[] };
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 let hydrating = false;
@@ -457,6 +464,7 @@ function persistRecordingSoon() {
       route: latest.route,
       goal: latest.goal,
       startedAt: latest.startedAt,
+      recordingTimezone: latest.recordingTimezone,
       locationMode: 'idle',
       gpsWarning: false,
       pausedAt: latest.pausedAt,
@@ -502,6 +510,9 @@ export async function hydrateRecordingSession(): Promise<void> {
       route: saved.route,
       goal: saved.goal ?? null,
       startedAt: saved.startedAt,
+      recordingTimezone: typeof saved.recordingTimezone === 'string'
+        ? saved.recordingTimezone
+        : deviceTimeZone(),
       locationMode: 'idle',
       gpsWarning: false,
       pausedAt: isPaused ? saved.pausedAt ?? null : null,
@@ -642,6 +653,7 @@ async function submitPending(item: PendingActivity): Promise<SubmittedActivityRe
     route: item.activity.route ?? [],
     gpsProcessingVersion: item.activity.gpsProcessingVersion,
     gpsQuality: item.activity.gpsQuality,
+    timezone: item.activity.timezone ?? deviceTimeZone(),
   });
   const submitted = result.data as {
     activityId: string;
@@ -652,16 +664,31 @@ async function submitPending(item: PendingActivity): Promise<SubmittedActivityRe
   };
   const battleIds = Array.isArray(submitted.battleIds) ? submitted.battleIds : [];
   let declarationAchieved = false;
+  let completionHandledByServer = false;
+  try {
+    const completeOnServer = httpsCallable(functions, 'completeRunDeclarationsForActivity');
+    const completion = await completeOnServer({
+      activityId: submitted.activityId,
+      timezone: item.activity.timezone ?? deviceTimeZone(),
+    });
+    declarationAchieved = (completion.data as { declarationAchieved?: boolean }).declarationAchieved === true;
+    completionHandledByServer = true;
+  } catch (error) {
+    // 新Functionの未デプロイ・一時障害時も、旧クライアント互換の本人更新で補完する。
+    console.warn('[recordStore] server declaration completion failed:', error);
+  }
   const userId = auth.currentUser?.uid;
-  if (userId && battleIds.length > 0) {
-    declarationAchieved = await completeDeclarationsForActivity({
+  if (!completionHandledByServer && userId && battleIds.length > 0) {
+    const completedByClient = await completeDeclarationsForActivity({
       battleIds,
       userId,
-      endedAt: item.activity.endedAt,
+      startedAt: item.activity.startedAt,
+      timezone: item.activity.timezone ?? deviceTimeZone(),
     }).catch((error) => {
       console.warn('[recordStore] declaration completion failed:', error);
       return false;
     });
+    declarationAchieved = declarationAchieved || completedByClient;
   }
   return { ...submitted, battleIds, declarationAchieved };
 }

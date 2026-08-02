@@ -80,6 +80,7 @@ export const onDeclarationCheerCreated = onDocumentCreated(
     const db = getFirestore();
     const declarationSnap = await db.doc(`battles/${battleId}/declarations/${declarationId}`).get();
     if (!declarationSnap.exists) return;
+    if (!['planned', 'done'].includes(declarationSnap.data()?.['status'] as string)) return;
     const ownerId = declarationSnap.data()?.['uid'] as string | undefined;
     if (!ownerId || ownerId === fromUid) return;
     if (await hasBlockBetween(ownerId, fromUid)) {

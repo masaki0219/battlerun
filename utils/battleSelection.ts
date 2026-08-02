@@ -1,5 +1,11 @@
 import type { Battle } from '../types';
 
+const SELECTED_BATTLE_STORAGE_KEY = '@zelio_selected_battle_id';
+
+export function selectedBattleStorageKey(userId: string): string {
+  return `${SELECTED_BATTLE_STORAGE_KEY}:${userId}`;
+}
+
 /**
  * 参加中チャレンジを終了日時が近い順に並べる。
  * 終了日時が同じ、または比較できない場合は元の順序を維持する。

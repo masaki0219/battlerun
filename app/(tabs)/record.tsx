@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Alert, ActivityIndicator, Modal, Pressable, Switch, Animated, Easing, AppState, Linking,
@@ -10,7 +10,8 @@ import { Pedometer } from 'expo-sensors';
 import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
-import { router } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import {
   ActivitySaveError,
@@ -49,6 +50,12 @@ import {
 } from '../../utils/gpsProcessing';
 import { STEP_BATTLE_DAILY_CAP_KM } from '../../lib/constants';
 import { decorLabel } from '../../lib/locale';
+import {
+  resolveDisplayedBattle,
+  selectedBattleStorageKey,
+  sortActiveBattlesForDisplay,
+} from '../../utils/battleSelection';
+import { declarationTimeLabel } from '../../utils/declarations';
 
 function useElapsedTime(): number {
   const isRecording = useRecordStore((s) => s.isRecording);
@@ -112,6 +119,7 @@ export default function RecordScreen() {
   const {
     publicBattles, privateBattles, myMemberships,
     getActiveBattleIds, fetchMyMemberships, fetchMyPrivateBattles, fetchPublicBattles,
+    declarationsByBattle, subscribeDeclarations,
   } = useBattleStore();
   const {
     isRecording, isPaused, pauseKind, autoPauseEnabled, measurementType, distanceKm, steps, route, locationMode, gpsWarning, goal, startedAt,
@@ -136,7 +144,34 @@ export default function RecordScreen() {
   const currentActiveBattles = activeBattleIds
     .map((id) => allBattles.find((b) => b.id === id))
     .filter(Boolean) as typeof allBattles;
+  const [selectedDeclarationBattleId, setSelectedDeclarationBattleId] = useState<string | null>(null);
+  const declarationBattle = resolveDisplayedBattle(
+    sortActiveBattlesForDisplay(currentActiveBattles),
+    selectedDeclarationBattleId,
+  );
+  const ownDeclaration = declarationBattle && user
+    ? (declarationsByBattle[declarationBattle.id] ?? []).find((item) => item.uid === user.id)
+    : undefined;
   const primaryPresenceBattleId = allBattles.find((battle) => activeBattleIds.includes(battle.id))?.id;
+
+  useFocusEffect(useCallback(() => {
+    let cancelled = false;
+    if (!user?.id) {
+      setSelectedDeclarationBattleId(null);
+      return () => { cancelled = true; };
+    }
+    void AsyncStorage.getItem(selectedBattleStorageKey(user.id))
+      .then((battleId) => {
+        if (!cancelled) setSelectedDeclarationBattleId(battleId);
+      })
+      .catch((error) => console.warn('[RecordScreen] selected battle restore failed:', error));
+    return () => { cancelled = true; };
+  }, [user?.id]));
+
+  useEffect(() => {
+    if (!declarationBattle || !user) return;
+    return subscribeDeclarations(declarationBattle.id, user.id);
+  }, [declarationBattle?.id, user?.id]);
 
   // 開始前の下段データ（前回のラン・週間ミニバー・ストリーク）
   const { activities: recentActivities, loading: recentLoading } = useRecentActivities(20);
@@ -849,6 +884,31 @@ export default function RecordScreen() {
 
           {/* START button */}
           <View style={s.startArea}>
+            {declarationBattle && (
+              <TouchableOpacity
+                style={s.declarationGuide}
+                onPress={() => router.push('/(tabs)/battle' as any)}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="今日のラン宣言を開く"
+              >
+                <View style={s.declarationGuideIcon}>
+                  <Ionicons name={ownDeclaration?.status === 'done' ? 'checkmark' : 'flag-outline'} size={16} color={Colors.accentDark} />
+                </View>
+                <View style={s.declarationGuideCopy}>
+                  <Text style={s.declarationGuideTitle} numberOfLines={1}>
+                    {ownDeclaration?.status === 'done'
+                      ? '今日のラン宣言を達成しました'
+                      : ownDeclaration
+                        ? `今日の予定：${declarationTimeLabel(ownDeclaration.plannedAt, ownDeclaration.timezone)}`
+                        : '今日、走る予定はありますか？'}
+                  </Text>
+                  <Text style={s.declarationGuideBattle} numberOfLines={1}>{declarationBattle.title}</Text>
+                </View>
+                <Text style={s.declarationGuideAction}>{ownDeclaration?.status === 'planned' ? '変更' : ownDeclaration ? '確認' : '宣言する'}</Text>
+                <Ionicons name="chevron-forward" size={15} color={Colors.textTertiary} />
+              </TouchableOpacity>
+            )}
             <View style={s.startStack}>
               <Animated.View style={[s.startRing, { transform: [{ rotate: ringRotate }] }]} />
               <TouchableOpacity
@@ -1403,6 +1463,21 @@ const s = StyleSheet.create({
   },
 
   startArea: { alignItems: 'center', justifyContent: 'center', gap: 16, paddingVertical: 36 },
+  declarationGuide: {
+    width: '88%', maxWidth: 360, minHeight: 48,
+    flexDirection: 'row', alignItems: 'center', gap: 9,
+    paddingHorizontal: 12, paddingVertical: 8,
+    borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  declarationGuideIcon: {
+    width: 30, height: 30, borderRadius: BorderRadius.full,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.accentLight,
+  },
+  declarationGuideCopy: { flex: 1, minWidth: 0 },
+  declarationGuideTitle: { fontSize: 11, fontWeight: '800', color: Colors.textPrimary },
+  declarationGuideBattle: { marginTop: 2, fontSize: 9, color: Colors.textSecondary },
+  declarationGuideAction: { fontSize: 10, fontWeight: '800', color: Colors.primaryDark },
   startStack: { width: 180, height: 180, alignItems: 'center', justifyContent: 'center' },
   startRing: {
     position: 'absolute',

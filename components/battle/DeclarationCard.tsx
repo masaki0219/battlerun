@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator,
+  View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '../ui/Avatar';
@@ -14,6 +14,8 @@ interface OwnDeclarationProps {
   declaration?: RunDeclaration;
   battleTitle: string;
   onDeclare: (plannedAt: Date, note: string) => Promise<void>;
+  onUpdate: (plannedAt: Date, note: string) => Promise<void>;
+  onCancel: () => Promise<void>;
 }
 
 type TimeOption = { key: string; label: string; date: Date; disabled: boolean };
@@ -33,14 +35,53 @@ function buildTimeOptions(now: Date): TimeOption[] {
   return [{ key: 'soon', label: 'まもなく', date: soon, disabled: soon <= now }, ...fixed];
 }
 
-export function DeclarationCard({ declaration, battleTitle, onDeclare }: OwnDeclarationProps) {
+export function DeclarationCard({
+  declaration, battleTitle, onDeclare, onUpdate, onCancel,
+}: OwnDeclarationProps) {
   const options = buildTimeOptions(new Date());
   const [selectedKey, setSelectedKey] = useState('soon');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [validationMessage, setValidationMessage] = useState('');
+  const currentOption: TimeOption | null = declaration && editing
+    ? {
+        key: 'current',
+        label: `現在 ${declarationTimeLabel(declaration.plannedAt, declaration.timezone)}`,
+        date: new Date(declaration.plannedAt),
+        disabled: false,
+      }
+    : null;
+  const formOptions = currentOption ? [currentOption, ...options] : options;
 
-  if (declaration) {
+  function beginEditing() {
+    if (!declaration || declaration.status !== 'planned') return;
+    setSelectedKey('current');
+    setNote(declaration.note ?? '');
+    setValidationMessage('');
+    setEditing(true);
+  }
+
+  function confirmCancellation() {
+    Alert.alert(
+      '今日のラン予定を取り消しますか？',
+      '取り消してもチームには通知されません。',
+      [
+        { text: 'やめる', style: 'cancel' },
+        {
+          text: '取り消す',
+          style: 'destructive',
+          onPress: () => {
+            setCancelling(true);
+            void onCancel().catch(() => {}).finally(() => setCancelling(false));
+          },
+        },
+      ],
+    );
+  }
+
+  if (declaration && !editing) {
     const done = declaration.status === 'done';
     return (
       <View style={[styles.card, done ? styles.doneCard : styles.plannedCard]}>
@@ -50,16 +91,43 @@ export function DeclarationCard({ declaration, battleTitle, onDeclare }: OwnDecl
         <View style={styles.copy}>
           <Text style={[styles.kicker, done && styles.doneKicker]}>{done ? '宣言達成！' : '今日のラン宣言'}</Text>
           <Text style={styles.currentTitle}>
-            {done ? '自分で決めたランを完了しました' : declarationTimeLabel(declaration.plannedAt)}
+            {done ? '自分で決めたランを完了しました' : declarationTimeLabel(declaration.plannedAt, declaration.timezone)}
           </Text>
           {declaration.note && <Text style={styles.currentNote}>「{declaration.note}」</Text>}
+          {declaration.cheerCount > 0 && (
+            <Text style={styles.currentCheers}>🔥 {declaration.cheerCount}人が応援</Text>
+          )}
           {!done && <Text style={styles.currentHint}>準備ができたタイミングで始めましょう</Text>}
+          {!done && (
+            <View style={styles.ownActions}>
+              <TouchableOpacity
+                style={styles.ownActionButton}
+                onPress={beginEditing}
+                disabled={cancelling}
+                accessibilityRole="button"
+                accessibilityLabel="今日のラン宣言を変更"
+              >
+                <Text style={styles.ownActionText}>変更</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.ownActionButton}
+                onPress={confirmCancellation}
+                disabled={cancelling}
+                accessibilityRole="button"
+                accessibilityLabel="今日のラン宣言を取り消す"
+              >
+                {cancelling
+                  ? <ActivityIndicator size="small" color={Colors.textSecondary} />
+                  : <Text style={styles.cancelActionText}>取り消す</Text>}
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </View>
     );
   }
 
-  const selected = options.find((item) => item.key === selectedKey) ?? options[0];
+  const selected = formOptions.find((item) => item.key === selectedKey) ?? formOptions[0];
 
   async function submit() {
     const validation = validateDeclarationNote(note);
@@ -71,7 +139,12 @@ export function DeclarationCard({ declaration, battleTitle, onDeclare }: OwnDecl
     setSaving(true);
     setValidationMessage('');
     try {
-      await onDeclare(selected.date, note);
+      if (declaration) {
+        await onUpdate(selected.date, note);
+        setEditing(false);
+      } else {
+        await onDeclare(selected.date, note);
+      }
     } catch {
       // 呼び出し側がエラーを表示する。フォームは入力を保ったまま再試行できる。
     } finally {
@@ -87,13 +160,13 @@ export function DeclarationCard({ declaration, battleTitle, onDeclare }: OwnDecl
         </View>
         <View style={styles.copy}>
           <Text style={styles.kicker}>今日のラン宣言</Text>
-          <Text style={styles.formTitle}>走り始める時間を自分で決める</Text>
+          <Text style={styles.formTitle}>{declaration ? '今日の予定を変更する' : '走り始める時間を自分で決める'}</Text>
           <Text style={styles.formBattle} numberOfLines={1}>{battleTitle}</Text>
         </View>
       </View>
 
       <View style={styles.timeOptions}>
-        {options.map((option) => {
+        {formOptions.map((option) => {
           const active = option.key === selectedKey;
           return (
             <TouchableOpacity
@@ -132,10 +205,20 @@ export function DeclarationCard({ declaration, battleTitle, onDeclare }: OwnDecl
         ) : (
           <>
             <Ionicons name="flag" size={17} color={Colors.textOnAccent} />
-            <Text style={styles.declareText}>この時間に走ると宣言</Text>
+            <Text style={styles.declareText}>{declaration ? '変更を保存' : 'この時間に走ると宣言'}</Text>
           </>
         )}
       </TouchableOpacity>
+      {declaration && (
+        <TouchableOpacity
+          style={styles.stopEditingButton}
+          onPress={() => setEditing(false)}
+          disabled={saving}
+          accessibilityRole="button"
+        >
+          <Text style={styles.stopEditingText}>編集をやめる</Text>
+        </TouchableOpacity>
+      )}
       <Text style={styles.reminderHint}>リマインドは1回だけ。あとから急かす通知はありません。</Text>
     </View>
   );
@@ -174,7 +257,7 @@ export function DeclarationList({
               <View style={styles.copy}>
                 <Text style={styles.memberName} numberOfLines={1}>{own ? 'あなた' : item.displayName}</Text>
                 <Text style={[styles.memberPlan, done && styles.memberDone]}>
-                  {done ? 'ラン完了' : declarationTimeLabel(item.plannedAt)}
+                  {done ? 'ラン完了' : declarationTimeLabel(item.plannedAt, item.timezone)}
                   {item.note ? `・${item.note}` : ''}
                 </Text>
               </View>
@@ -189,7 +272,15 @@ export function DeclarationList({
                   >
                     {sendingId === item.id
                       ? <ActivityIndicator size="small" color={Colors.accentDark} />
-                      : <Text style={styles.cheerText}>{item.cheeredByMe ? '応援済み' : '🔥 応援'}</Text>}
+                      : (
+                        <Text style={styles.cheerText}>
+                          {item.cheeredByMe
+                            ? `🔥 応援済み${item.cheerCount > 1 ? ` · ${item.cheerCount}人` : ''}`
+                            : item.cheerCount > 0
+                              ? `🔥 ${item.cheerCount}人が応援`
+                              : '応援する'}
+                        </Text>
+                      )}
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.safetyButton}
@@ -232,7 +323,12 @@ const styles = StyleSheet.create({
   formBattle: { fontSize: 10, color: Colors.textSecondary, marginTop: 2 },
   currentTitle: { fontSize: 16, fontWeight: Typography.fontWeight.extrabold, color: Colors.textPrimary, marginTop: 2 },
   currentNote: { fontSize: 11, color: Colors.textSecondary, marginTop: 3 },
+  currentCheers: { fontSize: 10, color: Colors.accentDark, fontWeight: Typography.fontWeight.bold, marginTop: 4 },
   currentHint: { fontSize: 10, color: Colors.textSecondary, marginTop: 3 },
+  ownActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.sm },
+  ownActionButton: { minHeight: 32, paddingHorizontal: Spacing.md, borderRadius: BorderRadius.full, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center' },
+  ownActionText: { fontSize: 10, color: Colors.primaryDark, fontWeight: Typography.fontWeight.bold },
+  cancelActionText: { fontSize: 10, color: Colors.error, fontWeight: Typography.fontWeight.bold },
   timeOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginTop: Spacing.lg },
   timeChip: { paddingHorizontal: 11, paddingVertical: 8, borderRadius: BorderRadius.full, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border },
   timeChipActive: { backgroundColor: Colors.accent, borderColor: Colors.accent },
@@ -246,6 +342,8 @@ const styles = StyleSheet.create({
   validation: { fontSize: 10, color: Colors.error, marginTop: Spacing.xs },
   declareButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, minHeight: 46, backgroundColor: Colors.accent, borderRadius: BorderRadius.md, marginTop: Spacing.md },
   declareText: { color: Colors.textOnAccent, fontSize: 13, fontWeight: Typography.fontWeight.extrabold },
+  stopEditingButton: { minHeight: 38, alignItems: 'center', justifyContent: 'center', marginTop: Spacing.xs },
+  stopEditingText: { fontSize: 11, color: Colors.textSecondary, fontWeight: Typography.fontWeight.bold },
   reminderHint: { fontSize: 9, color: Colors.textSecondary, textAlign: 'center', marginTop: Spacing.sm },
   listSectionTitle: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.md },
   listCard: { backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: Spacing.md, ...Shadow.sm },
@@ -254,7 +352,7 @@ const styles = StyleSheet.create({
   memberName: { fontSize: 13, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
   memberPlan: { fontSize: 10, color: Colors.textSecondary, marginTop: 2 },
   memberDone: { color: Colors.primaryDark, fontWeight: Typography.fontWeight.bold },
-  cheerButton: { minWidth: 76, minHeight: 34, paddingHorizontal: 10, borderRadius: BorderRadius.full, backgroundColor: Colors.accentLight, alignItems: 'center', justifyContent: 'center' },
+  cheerButton: { minWidth: 76, maxWidth: 126, minHeight: 34, paddingHorizontal: 10, borderRadius: BorderRadius.full, backgroundColor: Colors.accentLight, alignItems: 'center', justifyContent: 'center' },
   cheeredButton: { backgroundColor: Colors.surfaceGray },
   cheerText: { fontSize: 10, fontWeight: Typography.fontWeight.bold, color: Colors.accentDark },
   rowActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },

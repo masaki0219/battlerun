@@ -143,6 +143,10 @@ async function declarationReminderMap(): Promise<Record<string, string>> {
   }
 }
 
+async function saveDeclarationReminderMap(reminders: Record<string, string>): Promise<void> {
+  await AsyncStorage.setItem(DECLARATION_REMINDERS_KEY, JSON.stringify(reminders));
+}
+
 /** ラン宣言時刻のリマインド。宣言ごとに一度だけ、静音時間外に限り登録する。 */
 export async function scheduleDeclarationReminder(params: {
   declarationId: string;
@@ -173,12 +177,38 @@ export async function scheduleDeclarationReminder(params: {
       },
     });
     reminders[reminderKey] = id;
-    await AsyncStorage.setItem(DECLARATION_REMINDERS_KEY, JSON.stringify(reminders));
+    await saveDeclarationReminderMap(reminders);
     return id;
   } catch (error) {
     console.warn('[Notifications] 宣言リマインドの登録に失敗:', error);
     return null;
   }
+}
+
+/** 宣言の変更・取り消し時に、以前のリマインドだけを解除する。 */
+export async function cancelDeclarationReminder(params: {
+  declarationId: string;
+  battleId: string;
+}): Promise<void> {
+  const reminders = await declarationReminderMap();
+  const reminderKey = `${params.battleId}/${params.declarationId}`;
+  const notificationId = reminders[reminderKey];
+  if (notificationId) {
+    await Notifications.cancelScheduledNotificationAsync(notificationId).catch(() => {});
+    delete reminders[reminderKey];
+    await saveDeclarationReminderMap(reminders).catch((error) => {
+      console.warn('[Notifications] 宣言リマインド情報の削除に失敗:', error);
+    });
+  }
+}
+
+export async function rescheduleDeclarationReminder(params: {
+  declarationId: string;
+  battleId: string;
+  plannedAt: Date;
+}): Promise<string | null> {
+  await cancelDeclarationReminder(params);
+  return scheduleDeclarationReminder(params);
 }
 
 /** スケジュール済みの通知をキャンセルする */

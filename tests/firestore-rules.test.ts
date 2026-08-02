@@ -115,6 +115,11 @@ async function seed() {
       lastBeatAt: Timestamp.fromMillis(Date.now() - 4 * 60_000),
       visible: true,
     });
+    await setDoc(doc(db, 'battles/battle1/declarations/alice_20990106'), {
+      uid: 'alice', dateKey: '20990106',
+      plannedAt: Timestamp.fromMillis(Date.now() - 3_600_000),
+      note: '過ぎた予定', status: 'planned', createdAt: Timestamp.now(),
+    });
   });
 }
 
@@ -368,10 +373,17 @@ async function run() {
   // ── declarations / cheers ───────────────────────────────────────
   const declarationPath = 'battles/battle1/declarations/alice_20990101';
   await check(
+    'declarations: 宣言時刻を過ぎたplanned宣言でも本人はひとことを変更できる',
+    updateDoc(doc(aliceDb, 'battles/battle1/declarations/alice_20990106'), {
+      note: 'あとで走る',
+    }),
+    'succeed',
+  );
+  await check(
     'declarations: 参加者本人は当日IDで宣言を作成できる',
     setDoc(doc(aliceDb, declarationPath), {
       uid: 'alice', dateKey: '20990101', plannedAt: Timestamp.fromMillis(Date.now() + 3_600_000),
-      note: 'ゆっくり走る', status: 'planned', createdAt: Timestamp.now(),
+      timezone: 'Asia/Tokyo', note: 'ゆっくり走る', status: 'planned', createdAt: Timestamp.now(),
     }),
     'succeed',
   );
@@ -409,6 +421,13 @@ async function run() {
     'succeed',
   );
   await check(
+    'declaration cheers: 同じ宣言への重複応援は拒否',
+    setDoc(doc(carolDb, `${declarationPath}/cheers/carol`), {
+      fromUid: 'carol', createdAt: Timestamp.now(),
+    }),
+    'fail',
+  );
+  await check(
     'declaration cheers: 非参加者のなりすまし応援は拒否',
     setDoc(doc(bobDb, `${declarationPath}/cheers/carol_spoof`), {
       fromUid: 'carol', createdAt: Timestamp.now(),
@@ -430,6 +449,92 @@ async function run() {
   await check(
     'declarations: 本人はplannedをdoneへ更新できる',
     updateDoc(doc(aliceDb, declarationPath), { status: 'done' }),
+    'succeed',
+  );
+  await check(
+    'declarations: done宣言の時刻変更は拒否',
+    updateDoc(doc(aliceDb, declarationPath), {
+      plannedAt: Timestamp.fromMillis(Date.now() + 7_200_000),
+    }),
+    'fail',
+  );
+  await check(
+    'declarations: done宣言の取り消しは拒否',
+    updateDoc(doc(aliceDb, declarationPath), { status: 'cancelled' }),
+    'fail',
+  );
+
+  const editableDeclarationPath = 'battles/battle1/declarations/alice_20990103';
+  await check(
+    'declarations: 編集テスト用planned宣言を作成できる',
+    setDoc(doc(aliceDb, editableDeclarationPath), {
+      uid: 'alice', dateKey: '20990103', timezone: 'Asia/Tokyo',
+      plannedAt: Timestamp.fromMillis(Date.now() + 3_600_000),
+      note: '最初の予定', status: 'planned', createdAt: Timestamp.now(),
+    }),
+    'succeed',
+  );
+  await check(
+    'declarations: 本人はplanned宣言の時刻とひとことを変更できる',
+    updateDoc(doc(aliceDb, editableDeclarationPath), {
+      plannedAt: Timestamp.fromMillis(Date.now() + 7_200_000),
+      note: '変更後の予定',
+    }),
+    'succeed',
+  );
+  await check(
+    'declarations: 他の参加者はplanned宣言を編集できない',
+    updateDoc(doc(carolDb, editableDeclarationPath), { note: '他人の変更' }),
+    'fail',
+  );
+  await check(
+    'declarations: 許可していないフィールドの変更は拒否',
+    updateDoc(doc(aliceDb, editableDeclarationPath), { cheerCount: 999 }),
+    'fail',
+  );
+  await check(
+    'declaration cheers: 取り消し前の宣言へ応援できる',
+    setDoc(doc(carolDb, `${editableDeclarationPath}/cheers/carol`), {
+      fromUid: 'carol', createdAt: Timestamp.now(),
+    }),
+    'succeed',
+  );
+  await check(
+    'declarations: 本人はplanned宣言を取り消せる',
+    updateDoc(doc(aliceDb, editableDeclarationPath), { status: 'cancelled' }),
+    'succeed',
+  );
+  await check(
+    'declarations: cancelled宣言をdoneへ変更できない',
+    updateDoc(doc(aliceDb, editableDeclarationPath), { status: 'done' }),
+    'fail',
+  );
+  await check(
+    'declaration cheers: cancelled宣言への応援は拒否',
+    setDoc(doc(carolDb, `${editableDeclarationPath}/cheers/carol`), {
+      fromUid: 'carol', createdAt: Timestamp.now(),
+    }),
+    'fail',
+  );
+  await check(
+    'declaration cheers: 取り消した宣言の所有者は再宣言前に旧応援を削除できる',
+    deleteDoc(doc(aliceDb, `${editableDeclarationPath}/cheers/carol`)),
+    'succeed',
+  );
+  await check(
+    'declarations: 取り消し後も同日中に新しい予定として再宣言できる',
+    setDoc(doc(aliceDb, editableDeclarationPath), {
+      uid: 'alice', dateKey: '20990103', timezone: 'Asia/Tokyo',
+      plannedAt: Timestamp.fromMillis(Date.now() + 5_400_000),
+      note: '再宣言', status: 'planned', createdAt: Timestamp.now(),
+    }),
+    'succeed',
+  );
+  await check(
+    'declaration cheers: 再宣言後は同じメンバーが改めて応援できる',
+    setDoc(doc(carolDb, `${editableDeclarationPath}/cheers/carol`), {
+      fromUid: 'carol', createdAt: Timestamp.now(),
+    }),
     'succeed',
   );
 

@@ -24,6 +24,18 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 
 ## 最後に完了したこと
 
+### 2026-08-02 「今日のラン宣言」の編集・取り消し・日付整合性・応援数を改善
+
+- 当日かつ`planned`の自分の宣言へ「変更」「取り消す」を追加した。変更は予定時刻と20字以内のひとこと、取り消しは確認ダイアログ付き。取り消しは`cancelled`へ更新して当日一覧から隠し、チーム通知・ペナルティは発生しない。同日中の再宣言時は旧cheersを本人権限で清掃してから同じ日次ドキュメントを再利用する。
+- 宣言へ作成時のIANA `timezone`と`dateKey`を保存する。活動側は記録開始時の端末timezoneをセッション復旧対象として保持し、達成判定は終了日時でなく活動開始日時を使う。保存timezone付き宣言とtimezoneなし旧宣言の両方に対応し、23時台開始・翌日終了でも開始日側を達成する。
+- 達成確定は新規Callable `completeRunDeclarationsForActivity` と活動作成トリガー `completeDeclarationOnActivityCreated` の共通トランザクションへ分離した。活動ドキュメントから本人・開始時刻・反映先をサーバー確定し、`planned`だけを`done`にする。活動へ`declarationAchieved`を残して再送・Callable/トリガー競合を冪等化し、クライアントの既存更新は新Function未到達時の後方互換フォールバックとして維持した。未承認のGPS距離処理を含む`submitActivity`自体には差分を残していない。
+- 応援数は既存`declarations/{id}/cheers/{uid}`をFirestore集約countで取得し、全cheerドキュメントの通常読み込みや親ドキュメントへの非正規化を増やさない。応援成功時はローカル件数も1増やし、重複作成はUID固定ID＋ルールで拒否する。取消済みへの応援と通知も拒否する。
+- ランタブのSTARTより上へ、選択中チャレンジに連動する高さ48ptの小型宣言導線を追加した。未宣言・予定あり・達成済みを短く表示し、既存のチャレンジタブ宣言作成/編集UIへ移動する。複数参加時はユーザー別に保存された閲覧中チャレンジだけを対象にする。
+- Firebase Analytics等の分析SDK/基盤はプロジェクトに存在しないことを確認した。新しい外部分析サービスや名目だけのイベント送信は追加していない。将来SDK導入時は作成/変更/取消/達成/応援、リマインド登録/開封/記録開始の各確定箇所へ自由入力を含まないイベントを接続する。
+- Firestoreルールは本人のplanned編集/取消、他人・done・許可外フィールドの変更拒否、取消済み応援拒否、再宣言前の旧応援清掃だけを許可する。ルールテストへ時刻経過後のひとこと編集、重複応援、取消・再宣言まで追加した。
+- 確認成功: `npm run typecheck`、`npm run lint`、`npm run test:unit`、Functions build、Firestore Rules全件、iOS Expo export、`git diff --check`。日付テストは予定時刻前後、23時台開始、翌日開始、旧timezoneなし、cancelled/done、応援件数の重複抑止を含む。実機での編集フォーム、確認ダイアログ、通知再登録、ランタブ導線、2アカウント応援表示は未確認。
+- **本番デプロイ済み（2026-08-02）**: ユーザーの明示指示を受け、`zelio-run`へ`completeDeclarationOnActivityCreated`（asia-northeast1、新規・retry有効）/ `completeRunDeclarationsForActivity`（us-central1、新規）/ `onDeclarationCheerCreated`（asia-northeast1、更新）とFirestore Rulesだけを限定デプロイした。Functionsは3件成功・エラー0件で、デプロイ後の一覧でも3件すべてACTIVE。Firestore rulesetは`projects/zelio-run/rulesets/cd35b9f2-3fa7-497e-8a69-4259b667b5dd`。未承認のGPS距離処理を含む`submitActivity`はデプロイしていない。
+
 ### 2026-08-02 写真アップロードを廃止し、内蔵アバターへ統一
 
 - プロフィールの写真選択・権限要求・Blob変換・Firebase Storageアップロード・写真表示を削除し、プロフィールカードと設定行から24種類の内蔵動物アイコン選択を直接開くようにした。写真URLが旧データに残っていてもUIでは使用しない。
@@ -371,7 +383,7 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 
 ## 次にやること
 
-1. **App Store ConnectのApp Privacyで「Photos or Videos」を非収集へ変更する。** その後、EAS/TestFlightの新規ビルドで写真権限が表示されず、内蔵アバター選択だけが動くことを実機確認する。GitHub PagesのPrivacy / Terms / Support更新は完了済み。
+1. **2アカウントの実機またはTestFlightで、宣言作成→変更→応援→取消→再宣言→活動達成と通知を一連で確認する。**
 
 ## その次の候補
 - シミュレータまたは実機で参加中チャレンジ切替（0〜3件、長いタイトル、最大文字サイズ、再起動、終了時フォールバック）を目視確認する

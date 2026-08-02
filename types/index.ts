@@ -39,13 +39,14 @@ export interface MonthlyStat {
   elevationM: number;
 }
 
-export type DeclarationStatus = 'planned' | 'done' | 'expired';
+export type DeclarationStatus = 'planned' | 'done' | 'cancelled' | 'expired';
 
 export interface RunDeclaration {
   id: string;
   battleId: string;
   uid: string;
   dateKey: string;
+  timezone?: string;
   plannedAt: string;
   note?: string;
   status: DeclarationStatus;
@@ -53,6 +54,7 @@ export interface RunDeclaration {
   displayName: string;
   avatarEmoji?: string;
   cheeredByMe?: boolean;
+  cheerCount: number;
 }
 
 export interface RunningPresence {
@@ -145,6 +147,8 @@ export interface Activity {
   route?: RoutePoint[];
   startedAt: string;
   endedAt: string;
+  /** 活動開始時の端末IANAタイムゾーン。旧キューでは未設定の場合がある。 */
+  timezone?: string;
   /** 一時停止していた合計時間（ms）。durationSeconds には含まれない */
   pausedMs?: number;
   /** GPS距離処理方式。未設定は旧方式のオフライン記録としてサーバー互換処理を行う。 */

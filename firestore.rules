@@ -303,12 +303,14 @@ service cloud.firestore {
         allow create: if isBattleParticipant(battleId)
           && get(/databases/$(database)/documents/battles/$(battleId)).data.status == 'active'
           && request.resource.data.keys().hasOnly([
-            'uid', 'dateKey', 'plannedAt', 'note', 'status', 'createdAt'
+            'uid', 'dateKey', 'timezone', 'plannedAt', 'note', 'status', 'createdAt'
           ])
           && request.resource.data.uid == request.auth.uid
           && request.resource.data.dateKey is string
           && request.resource.data.dateKey.matches('^[0-9]{8}$')
           && declarationId == request.auth.uid + '_' + request.resource.data.dateKey
+          && request.resource.data.get('timezone', '') is string
+          && request.resource.data.get('timezone', '').size() <= 64
           && request.resource.data.plannedAt is timestamp
           && request.resource.data.plannedAt >= request.time - duration.value(5, 'm')
           && request.resource.data.plannedAt <= request.time + duration.value(24, 'h')
@@ -320,9 +322,52 @@ service cloud.firestore {
         allow update: if isBattleParticipant(battleId)
           && get(/databases/$(database)/documents/battles/$(battleId)).data.status == 'active'
           && resource.data.uid == request.auth.uid
-          && resource.data.status == 'planned'
-          && request.resource.data.status == 'done'
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+          && (
+            (
+              resource.data.status == 'planned'
+              && request.resource.data.status == 'done'
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+            )
+            || (
+              resource.data.status == 'planned'
+              && request.resource.data.status == 'cancelled'
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+            )
+            || (
+              resource.data.status == 'planned'
+              && request.resource.data.status == 'planned'
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['plannedAt', 'note'])
+              && request.resource.data.plannedAt is timestamp
+              && (
+                !request.resource.data.diff(resource.data).affectedKeys().hasAny(['plannedAt'])
+                || (
+                  request.resource.data.plannedAt >= request.time - duration.value(5, 'm')
+                  && request.resource.data.plannedAt <= request.time + duration.value(24, 'h')
+                )
+              )
+              && request.resource.data.get('note', '') is string
+              && request.resource.data.get('note', '').size() <= 20
+              && safeUserText(request.resource.data.get('note', ''))
+            )
+            || (
+              resource.data.status == 'cancelled'
+              && request.resource.data.status == 'planned'
+              && request.resource.data.keys().hasOnly([
+                'uid', 'dateKey', 'timezone', 'plannedAt', 'note', 'status', 'createdAt'
+              ])
+              && request.resource.data.uid == request.auth.uid
+              && request.resource.data.dateKey == resource.data.dateKey
+              && request.resource.data.get('timezone', '') is string
+              && request.resource.data.get('timezone', '').size() <= 64
+              && request.resource.data.plannedAt is timestamp
+              && request.resource.data.plannedAt >= request.time - duration.value(5, 'm')
+              && request.resource.data.plannedAt <= request.time + duration.value(24, 'h')
+              && request.resource.data.get('note', '') is string
+              && request.resource.data.get('note', '').size() <= 20
+              && safeUserText(request.resource.data.get('note', ''))
+              && request.resource.data.createdAt is timestamp
+            )
+          );
         allow delete: if false;
 
         match /cheers/{fromUid} {
@@ -333,11 +378,15 @@ service cloud.firestore {
             && request.resource.data.fromUid == request.auth.uid
             && request.resource.data.createdAt is timestamp
             && get(/databases/$(database)/documents/battles/$(battleId)/declarations/$(declarationId)).data.uid != request.auth.uid
+            && get(/databases/$(database)/documents/battles/$(battleId)/declarations/$(declarationId)).data.status in ['planned', 'done']
             && !hasBlockBetween(
               request.auth.uid,
               get(/databases/$(database)/documents/battles/$(battleId)/declarations/$(declarationId)).data.uid
             );
-          allow update, delete: if false;
+          allow update: if false;
+          allow delete: if isBattleParticipant(battleId)
+            && get(/databases/$(database)/documents/battles/$(battleId)/declarations/$(declarationId)).data.uid == request.auth.uid
+            && get(/databases/$(database)/documents/battles/$(battleId)/declarations/$(declarationId)).data.status == 'cancelled';
         }
       }
     }

@@ -13,10 +13,13 @@ import {
   validateBattleTitle,
 } from '../lib/validation/battleTitle';
 import {
+  cancelDeclaration as cancelRunDeclaration,
   cheerDeclaration as createDeclarationCheer,
   createDeclaration as createRunDeclaration,
   subscribeTodayDeclarations,
+  updateDeclaration as updateRunDeclaration,
 } from '../lib/declarations';
+import { cheerCountAfterCreate } from '../utils/declarations';
 import type { Battle, CategoryStats, Season, Category, BattleParticipation, RunDeclaration } from '../types';
 
 interface CreateBattleParams {
@@ -50,6 +53,8 @@ interface BattleStore {
   getActiveBattleIds: () => string[];
   subscribeDeclarations: (battleId: string, userId: string) => () => void;
   declareRun: (battleId: string, userId: string, plannedAt: Date, note: string) => Promise<void>;
+  updateDeclaration: (battleId: string, declaration: RunDeclaration, plannedAt: Date, note: string) => Promise<void>;
+  cancelDeclaration: (battleId: string, declarationId: string) => Promise<void>;
   cheerDeclaration: (battleId: string, declarationId: string, fromUid: string) => Promise<boolean>;
 }
 
@@ -320,6 +325,14 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
     await createRunDeclaration({ battleId, userId, plannedAt, note });
   },
 
+  updateDeclaration: async (battleId, declaration, plannedAt, note) => {
+    await updateRunDeclaration({ battleId, declaration, plannedAt, note });
+  },
+
+  cancelDeclaration: async (battleId, declarationId) => {
+    await cancelRunDeclaration({ battleId, declarationId });
+  },
+
   cheerDeclaration: async (battleId, declarationId, fromUid) => {
     const created = await createDeclarationCheer({ battleId, declarationId, fromUid });
     if (created) {
@@ -327,7 +340,13 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
         declarationsByBattle: {
           ...state.declarationsByBattle,
           [battleId]: (state.declarationsByBattle[battleId] ?? []).map((item) => (
-            item.id === declarationId ? { ...item, cheeredByMe: true } : item
+            item.id === declarationId
+              ? {
+                  ...item,
+                  cheeredByMe: true,
+                  cheerCount: cheerCountAfterCreate(item.cheerCount, true),
+                }
+              : item
           )),
         },
       }));

@@ -39,7 +39,11 @@ import { useBattleProcessContributions } from '../../hooks/useBattleProcessContr
 import { useBattlePresence } from '../../hooks/useBattlePresence';
 import { useBlockedUsers } from '../../hooks/useBlockedUsers';
 import { weeklyBuckets, streakDays, weekOverWeek, weekStartLabel } from '../../utils/displayStats';
-import { resolveDisplayedBattle, sortActiveBattlesForDisplay } from '../../utils/battleSelection';
+import {
+  resolveDisplayedBattle,
+  selectedBattleStorageKey,
+  sortActiveBattlesForDisplay,
+} from '../../utils/battleSelection';
 import { Colors, Typography, Spacing, BorderRadius, Shadow } from '../../design_tokens';
 import type { Battle, Category, CategoryStats, RunningPresence } from '../../types';
 import type { ReportTarget } from '../../lib/moderation';
@@ -47,8 +51,6 @@ import { inviteWebUrl, normalizeInviteCode, PENDING_INVITE_CODE_KEY } from '../.
 
 type Tab = 'public' | 'private';
 type PrivateView = 'list' | 'create' | 'join_code' | 'join_select';
-
-const SELECTED_BATTLE_STORAGE_KEY = '@zelio_selected_battle_id';
 
 // ────────────────────────────────────────────────────────────────
 // メイン画面（state・購読・handler を集約。表示は components/battle/* に委譲）
@@ -62,7 +64,7 @@ export default function BattleScreen() {
     publicBattles, privateBattles, myMemberships, seasons, isLoading,
     fetchPublicBattles, fetchMyMemberships, fetchMyPrivateBattles, fetchSeason,
     joinBattle, createBattle, findBattleByInviteCode, declarationsByBattle,
-    subscribeDeclarations, declareRun, cheerDeclaration,
+    subscribeDeclarations, declareRun, updateDeclaration, cancelDeclaration, cheerDeclaration,
   } = useBattleStore();
 
   const [activeTab, setActiveTab] = useState<Tab>('public');
@@ -120,7 +122,7 @@ export default function BattleScreen() {
     void (async () => {
       let savedBattleId: string | null = null;
       try {
-        savedBattleId = await AsyncStorage.getItem(`${SELECTED_BATTLE_STORAGE_KEY}:${userId}`);
+        savedBattleId = await AsyncStorage.getItem(selectedBattleStorageKey(userId));
       } catch (error) {
         console.warn('[BattleScreen] selected battle restore failed:', error);
       }
@@ -225,7 +227,7 @@ export default function BattleScreen() {
       setSelectedBattleId(normalizedBattleId);
     }
 
-    const storageKey = `${SELECTED_BATTLE_STORAGE_KEY}:${user.id}`;
+    const storageKey = selectedBattleStorageKey(user.id);
     const persistence = normalizedBattleId
       ? AsyncStorage.setItem(storageKey, normalizedBattleId)
       : AsyncStorage.removeItem(storageKey);
@@ -279,6 +281,26 @@ export default function BattleScreen() {
       await declareRun(displayedBattle.id, user.id, plannedAt, note);
     } catch (error) {
       Alert.alert('宣言できませんでした', error instanceof Error ? error.message : '通信状態を確認して、もう一度お試しください。');
+      throw error;
+    }
+  }
+
+  async function handleUpdateDeclaration(plannedAt: Date, note: string) {
+    if (!displayedBattle || !ownDeclaration) return;
+    try {
+      await updateDeclaration(displayedBattle.id, ownDeclaration, plannedAt, note);
+    } catch (error) {
+      Alert.alert('宣言を変更できませんでした', error instanceof Error ? error.message : '通信状態を確認して、もう一度お試しください。');
+      throw error;
+    }
+  }
+
+  async function handleCancelDeclaration() {
+    if (!displayedBattle || !ownDeclaration) return;
+    try {
+      await cancelDeclaration(displayedBattle.id, ownDeclaration.id);
+    } catch (error) {
+      Alert.alert('宣言を取り消せませんでした', error instanceof Error ? error.message : '通信状態を確認して、もう一度お試しください。');
       throw error;
     }
   }
@@ -629,6 +651,8 @@ export default function BattleScreen() {
             declaration={ownDeclaration}
             battleTitle={displayedBattle.title}
             onDeclare={handleDeclareRun}
+            onUpdate={handleUpdateDeclaration}
+            onCancel={handleCancelDeclaration}
           />
         )}
         {displayedBattle && user && (
