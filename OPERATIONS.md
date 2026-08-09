@@ -18,7 +18,7 @@ App Store Connectへ入力するSupport URL、App Privacy回答案、審査ノ�
 # Firestore セキュリティルール
 firebase deploy --only firestore:rules
 
-# Firestore インデックス（category_stats.participantCount の collectionGroup 検索用など）
+# Firestore インデックス（活動履歴・滞留集計の回収クエリなど）
 firebase deploy --only firestore:indexes
 
 # Cloud Functions（ビルドしてからデプロイ）
@@ -160,6 +160,25 @@ Firebaseコンソールで突き合わせ、Functionsログ（`firebase function
 `participantCounter` のエラー（category_stats not found 等）が出ていないか確認する。
 手動修正が必要な場合は Firebase Console から `category_stats` を直接書き換えるのではなく、
 原因（大抵は category_stats の未初期化、または上記1-3のバトル作成経路違反）を先に特定すること。
+
+### 4-4. 活動集計が止まった場合
+
+`aggregateActivity` はイベント再試行を有効にしており、さらに15分ごとの
+`recoverStaleActivityAggregations` が「`aggregated == false` かつ保存から30分以上」の活動を
+最大50件ずつ再処理する。どちらも `aggregatedBattleIds` / `userStatsAggregated` を使う同じ冪等な
+集計本体を呼ぶため、同時実行しても二重加算しない。
+
+障害時は次の順で復旧する。
+
+1. Functionsログで構造化メッセージ `activity_aggregation_failed` とerror codeを確認する。
+2. クエリに必要なインデックスが原因なら、`firestore.indexes.json`を修正・デプロイし、Firebaseコンソールで「有効」になるまで待つ。
+3. `role: admin` の認証済みアカウントから `retryPendingActivityAggregations({ limit: 100 })` を呼び、`mayHaveMore: false`になるまで繰り返す。
+4. 復旧処理に続くv2の`backfillMonthlyStats`再構築が成功したことをログで確認する。失敗時は対象ユーザーで記録タブを開いて再実行する。
+5. 活動の`aggregated` / `userStatsAggregated`、ユーザー累計・回数・自己ベスト、月次、バトル参加者・区分合計を突き合わせる。
+
+失敗時は活動に座標や例外本文を含まない `aggregationError`、試行回数、最終試行時刻が残る。
+Cloud Monitoringでは `activity_aggregation_failed` が1件以上、または
+`recoverStaleActivityAggregations` の実行失敗が1件以上で通知するログベースのアラートを設定する。
 
 ---
 

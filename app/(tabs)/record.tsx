@@ -32,7 +32,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { ProgressBar } from '../../components/ui/ProgressBar';
 import { WeeklyBarChart } from '../../components/viz/WeeklyBarChart';
 import { StreakChip } from '../../components/viz/StreakChip';
-import { weeklyBuckets, streakDays, lastRun, relativeDay, kmSplits, elevationGainM } from '../../utils/displayStats';
+import { weeklyBuckets, streakDays, lastRun, relativeDay, kmSplits } from '../../utils/displayStats';
 import { loadVoiceCoachSettings, saveVoiceCoachSettings } from '../../lib/voiceCoach';
 import { useRunCheers } from '../../hooks/useRunCheers';
 import {
@@ -113,6 +113,15 @@ function formatPace(distKm: number, sec: number): string {
   return `${m}'${String(s).padStart(2,'0')}"`;
 }
 
+function displayRouteSegments(points: RoutePoint[]): RoutePoint[][] {
+  const segments: RoutePoint[][] = [];
+  for (const point of points) {
+    if (segments.length === 0 || point.seg === true) segments.push([point]);
+    else segments[segments.length - 1].push(point);
+  }
+  return segments.filter((segment) => segment.length > 1);
+}
+
 export default function RecordScreen() {
   const { fontScale } = useWindowDimensions();
   const { user } = useAuthStore();
@@ -122,7 +131,7 @@ export default function RecordScreen() {
     declarationsByBattle, subscribeDeclarations,
   } = useBattleStore();
   const {
-    isRecording, isPaused, pauseKind, autoPauseEnabled, measurementType, distanceKm, steps, route, locationMode, gpsWarning, goal, startedAt,
+    isRecording, isPaused, pauseKind, autoPauseEnabled, measurementType, distanceKm, steps, displayRoute, locationMode, gpsWarning, goal, startedAt,
     startRecording, pauseRecording, resumeRecording, stopRecording, reset, setAutoPauseEnabled,
   } = useRecordStore();
   const elapsed = useElapsedTime();
@@ -528,7 +537,7 @@ export default function RecordScreen() {
     }
 
     // expo-location 19.0.8 の公開型は iOS に scope だけを持ち、full/reduced accuracyを公開しない。
-    // any/castで推測せず、iOSはウォームアップ点の実accuracy (35m以内) で開始可否を守る。
+    // any/castで推測せず、iOSはウォームアップ点の実accuracy (25m以内) で開始可否を守る。
 
     return true;
   }
@@ -675,7 +684,6 @@ export default function RecordScreen() {
             const savedDistanceKm = submitted.distanceKm;
             const savedDurationSeconds = submitted.durationSeconds;
             const splits = activity.measurementType === 'gps' ? kmSplits(activity.route ?? []) : [];
-            const elevation = elevationGainM(activity.route ?? []);
             reset();
             // Navigate to summary
             router.push({
@@ -687,7 +695,6 @@ export default function RecordScreen() {
                 steps: String(submitted.steps ?? activity.steps ?? 0),
                 pace: formatPace(savedDistanceKm, savedDurationSeconds),
                 splits: JSON.stringify(splits),
-                elevationGain: elevation != null ? String(elevation) : '',
                 declarationAchieved: submitted.declarationAchieved ? '1' : '',
               },
             });
@@ -760,7 +767,8 @@ export default function RecordScreen() {
     ]);
   }
 
-  const lastPoint = route[route.length - 1];
+  const lastPoint = displayRoute[displayRoute.length - 1];
+  const liveDisplaySegments = displayRouteSegments(displayRoute);
 
   // ─── PRE-RECORDING ────────────────────────────────────────
   if (!isRecording) {
@@ -1241,13 +1249,14 @@ export default function RecordScreen() {
               latitudeDelta: 0.005, longitudeDelta: 0.005,
             }}
           >
-            {route.length > 1 && (
+            {liveDisplaySegments.map((segment, index) => (
               <Polyline
-                coordinates={route.map((p) => ({ latitude: p.lat, longitude: p.lng }))}
+                key={`live-route-${index}`}
+                coordinates={segment.map((p) => ({ latitude: p.lat, longitude: p.lng }))}
                 strokeColor={DarkColors.primary}
                 strokeWidth={3}
               />
-            )}
+            ))}
           </MapView>
         ) : (
           <View style={[s.hudMap, s.hudMapPlaceholder]}>

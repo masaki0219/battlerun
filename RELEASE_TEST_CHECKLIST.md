@@ -7,8 +7,8 @@ TestFlight ビルドでの通し検証用チェックリスト。サーバー集
 
 ## デプロイ順序（必須）
 
-1. Functions（`submitActivity` / `aggregateActivity` / `joinBattle` / `leaveBattle` / `backfillMonthlyStats` / badges）
-2. Firestore indexes
+1. Firestore indexesをデプロイし、Firebaseコンソールで対象が「有効」になるまで待つ
+2. Functions（`submitActivity` / `aggregateActivity` / `recoverStaleActivityAggregations` / `joinBattle` / `leaveBattle` / `backfillMonthlyStats` / badges）
 3. Firestore / Storage rules
 4. Hosting（利用規約・プライバシーポリシー・サポート・招待ページ）
 5. 上記の動作確認後にアプリを配布
@@ -21,6 +21,8 @@ TestFlight ビルドでの通し検証用チェックリスト。サーバー集
 - [ ] 本人の活動詳細ではGPSルートが表示される
 - [ ] 記録停止時に通信を切り、再起動・再接続後に1回だけ保存・集計される
 - [ ] Functionsを同じイベントで再試行しても距離が二重加算されない
+- [ ] 30分以上前の`aggregated === false`活動が定期復旧で集計され、失敗時は`aggregationError`が残る
+- [ ] バッジ同期と活動集計を並行実行しても`users.totalDistanceKm` / `activityCount`が減らない
 - [ ] 全陣営0kmでは順位が表示されず、同距離では同順位になる
 - [ ] ラン直後にホームの週間距離、自分の距離、陣営内順位が更新される
 - [ ] 開催中チャレンジでは最終結果画面を表示できない
@@ -50,7 +52,7 @@ TestFlight ビルドでの通し検証用チェックリスト。サーバー集
 | 1-4 | `battles/{id}/participants/{uid}` を確認 | `userId`・`categoryId`・`totalDistanceKm: 0` が作成されている | Firebaseコンソール（Firestore） |
 | 1-5 | `battles/{id}/category_stats/{categoryId}` を確認 | `participantCount` が参加前より+1されている（クライアントからの直接更新ではなく `participantCounter` 経由） | Firebaseコンソール（Firestore） |
 | 1-6 | GPSモードで初回ランを記録・終了 | summary画面に遷移し、順位変動（変化なしなら「初回記録」等の表示）が出る | アプリ（record/summary） |
-| 1-7 | 数秒〜数十秒待って activity を確認 | `activities/{id}.aggregated === true` になる。`participants.totalDistanceKm` と `category_stats.totalDistanceKm` に加算されている | Firebaseコンソール（Firestore） |
+| 1-7 | 数秒〜数十秒待って activity を確認 | `activities/{id}.aggregated === true`、`userStatsAggregated === true` になる。`users`の累計・回数・自己ベスト、`monthlyStats`、`participants`、`category_stats`へ1回だけ反映されている | Firebaseコンソール（Firestore） |
 | 1-8 | 距離0の別チャレンジへ参加してから退出する | 2件目へ参加でき、退出後はparticipantsと`users/{uid}.battleIds`の両方から消え、参加人数も減る | アプリ / Firestore |
 | 1-9 | 開催中チャレンジ2件へ参加した状態で3件目へ参加する | Callable Functionが拒否し、participantsと`battleIds`のどちらにも中途半端なデータが残らない | アプリ / Firestore |
 | 1-10 | 1件へ距離を加算した後に退出を試す | 退出操作が利用不可になり、APIを直接呼んでもサーバーが拒否する | アプリ / Functionsログ |
@@ -157,9 +159,9 @@ TestFlight ビルドでの通し検証用チェックリスト。サーバー集
 | 8-1 | 初回インストールでオンボーディングを最後まで進める | 旧ブランド表記がなく、主CTAは新規登録、副CTAはログインへ進む | アプリ |
 | 8-2 | GPSモードの開始前設定を見る | オートポーズは初期OFFで「試験的」と注意文が表示される | アプリ |
 | 8-3 | 短い記録を開始し、停止→破棄→再確認する | 記録が活動履歴・再送キュー・チャレンジ集計のいずれにも残らない | アプリ / Firestore |
-| 8-4 | 水平精度が悪い場所から開けた場所へ移動して開始する | 50m超では「精度が安定するまで」と表示され、安定後の点から距離が始まる | アプリ / 保存ルート |
+| 8-4 | 水平精度が悪い場所から開けた場所へ移動して開始する | 25m超では「精度が安定するまで」と表示され、15m以内が3点続くとreadyになる。15m超25m以内はacceptableとして軌跡整合性を確認してから距離へ反映される | アプリ / 保存ルート |
 | 8-5 | GPS活動を保存する | RoutePointにaccuracy / altitudeAccuracyが取得可能な範囲で保存され、サマリーの共有カードにルート地図が表示される | Firestore / アプリ |
-| 8-6 | 平坦なコースを記録する | 「推定獲得標高」と表示され、単発の高度スパイクが過大加算されない | アプリ |
+| 8-6 | 新規・既存の活動について、記録結果・活動詳細・統計・共有画像を確認する | 獲得標高・高低差がユーザー向け画面に表示されない。既存活動はエラーなく開け、保存済み標高フィールドも失われない | アプリ / Firestore |
 | 8-7 | 歩数モードで同日に合計5km超を2回以上保存する | 個人履歴には全距離が残り、各チャレンジの合計加算はその日5kmまでになる | アプリ / Firestore |
 | 8-8 | 友達チャレンジの「招待」を共有し、受信側でリンクを開く | Hostingページ→ZELIO起動→登録/ログイン後に6桁コードが自動入力される | Safari / アプリ |
 | 8-9 | ログアウト状態でSupport / Privacy / Termsを開く | 3ページが表示され、サポート窓口へ遷移できる | Safari |

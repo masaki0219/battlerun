@@ -284,7 +284,10 @@ export interface RecordStore {
   distanceKm: number;
   steps: number;
   durationSeconds: number;
+  /** 正式距離計算と送信に使うcommit済み点。 */
   route: RoutePoint[];
+  /** 記録中の地図だけに使う点。保留中の正常候補を含み、正式距離には使わない。 */
+  displayRoute: RoutePoint[];
   goal: RunGoal | null;
   startRecording: (type: MeasurementType, goal?: RunGoal | null, warmupSeed?: GpsWarmupSeed | null) => void;
   pauseRecording: () => void;

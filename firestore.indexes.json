@@ -44,6 +44,14 @@
       "collectionGroup": "activities",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "aggregated", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "activities",
+      "queryScope": "COLLECTION",
+      "fields": [
         { "fieldPath": "battleIds", "arrayConfig": "CONTAINS" },
         { "fieldPath": "visibility", "order": "ASCENDING" },
         { "fieldPath": "startedAt", "order": "DESCENDING" }

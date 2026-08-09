@@ -12,6 +12,7 @@ import {
 import { tokyoMonthKey, type MonthlyStatsImpact } from './monthlyStats';
 import { creditedBattleDistanceKm, tokyoDayKey } from './battleCredit';
 import { MAX_RUNNING_SPEED_MPS } from './gpsProcessing';
+import { shouldIncrementMonthlyStats } from './activityAggregationPolicy';
 
 const MAX_SPEED_KMH = MAX_RUNNING_SPEED_MPS * 3.6;
 const TOKYO_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -71,6 +72,9 @@ async function monthDistanceKm(
     .where('userId', '==', userId)
     .where('startedAt', '>=', bounds.from)
     .where('startedAt', '<', bounds.to)
+    // 本番にある userId ASC + startedAt DESC を明示的に使う。
+    // orderBy なしだと範囲フィールドが暗黙 ASC になり、別の複合インデックスを要求する。
+    .orderBy('startedAt', 'desc')
     .select('distanceKm', 'flagged')
     .get();
   return snapshot.docs.reduce((sum, doc) => {
@@ -95,16 +99,11 @@ function rankFor(
   return 1 + sorted.filter((item) => value(item) > value(target)).length;
 }
 
-/**
- * submitActivity が作成した activities/{activityId} をバトル集計へ反映する。
- * aggregatedBattleIds を各バトルトランザクション内で更新し、途中失敗からの再試行でも二重加算しない。
- */
-export const aggregateActivity = onDocumentCreated(
-  'activities/{activityId}',
-  async (event) => {
-    const snapshot = event.data;
-    if (!snapshot) return;
-
+/** submitActivity と復旧処理から共用する、1活動分の冪等な集計本体。 */
+export async function aggregateActivityDocument(
+  snapshot: FirebaseFirestore.QueryDocumentSnapshot,
+  activityId: string,
+): Promise<void> {
     const db = getFirestore();
     const activityRef = snapshot.ref;
     const initial = snapshot.data();
@@ -125,7 +124,7 @@ export const aggregateActivity = onDocumentCreated(
       distanceKm / (durationSeconds / 3600) > MAX_SPEED_KMH;
 
     if (invalid) {
-      logger.warn('aggregateActivity: invalid activity', { id: event.params['activityId'] });
+      logger.warn('aggregateActivity: invalid activity', { activityId });
       await activityRef.update({
         aggregated: true,
         aggregatedAt: FieldValue.serverTimestamp(),
@@ -236,7 +235,7 @@ export const aggregateActivity = onDocumentCreated(
 
     const [route, currentMonthKm] = await Promise.all([
       measurementType === 'gps'
-        ? activityRoute(db, userId as string, event.params['activityId'])
+        ? activityRoute(db, userId as string, activityId)
         : Promise.resolve([]),
       monthDistanceKm(db, userId as string, startedAt as Timestamp),
     ]);
@@ -273,8 +272,9 @@ export const aggregateActivity = onDocumentCreated(
         return;
       }
       if (userSnap.exists) {
+        const user = userSnap.data()!;
         const mergedRecords = mergePersonalRecords(
-          userSnap.data()?.['personalRecords'] as Record<string, unknown> | undefined,
+          user['personalRecords'] as Record<string, unknown> | undefined,
           recordCandidates,
         );
         tx.update(userSnap.ref, {
@@ -282,16 +282,30 @@ export const aggregateActivity = onDocumentCreated(
           activityCount: FieldValue.increment(1),
           personalRecords: mergedRecords.records,
         });
-        tx.set(
-          db.doc(`users/${userId}/monthlyStats/${monthlyStatsImpact.monthKey}`),
-          {
-            km: FieldValue.increment(monthlyStatsImpact.km),
-            count: FieldValue.increment(monthlyStatsImpact.count),
-            durationSec: FieldValue.increment(monthlyStatsImpact.durationSec),
-            elevationM: FieldValue.increment(monthlyStatsImpact.elevationM),
-          },
-          { merge: true },
-        );
+        const submittedAt = activity['submittedAt'];
+        const backfilledAt = user['monthlyStatsBackfilledAt'];
+        const incrementMonthly = shouldIncrementMonthlyStats({
+          hasMonthlyStatsImpact: activity['monthlyStatsImpact'] != null,
+          submittedAtMs: submittedAt instanceof Timestamp ? submittedAt.toMillis() : null,
+          startedAtMs: startedAt instanceof Timestamp ? startedAt.toMillis() : null,
+        }, {
+          version: typeof user['monthlyStatsBackfillVersion'] === 'number'
+            ? user['monthlyStatsBackfillVersion']
+            : 0,
+          completedAtMs: backfilledAt instanceof Timestamp ? backfilledAt.toMillis() : null,
+        });
+        if (incrementMonthly) {
+          tx.set(
+            db.doc(`users/${userId}/monthlyStats/${monthlyStatsImpact.monthKey}`),
+            {
+              km: FieldValue.increment(monthlyStatsImpact.km),
+              count: FieldValue.increment(monthlyStatsImpact.count),
+              durationSec: FieldValue.increment(monthlyStatsImpact.durationSec),
+              elevationM: FieldValue.increment(monthlyStatsImpact.elevationM),
+            },
+            { merge: true },
+          );
+        }
         tx.update(activityRef, {
           newRecords: mergedRecords.newRecords,
           monthlyStatsImpact,
@@ -305,5 +319,64 @@ export const aggregateActivity = onDocumentCreated(
         aggregatedAt: FieldValue.serverTimestamp(),
       });
     });
+}
+
+function aggregationErrorCode(error: unknown): string {
+  if (error && typeof error === 'object' && 'code' in error) {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === 'string' || typeof code === 'number') return String(code).slice(0, 80);
+  }
+  return 'internal';
+}
+
+/** 失敗を活動にも残し、トリガーとスケジューラの双方から同じ本体を安全に再実行する。 */
+export async function runActivityAggregationWithDiagnostics(
+  snapshot: FirebaseFirestore.QueryDocumentSnapshot,
+  source: 'trigger' | 'scheduler' | 'admin',
+): Promise<void> {
+  const activityId = snapshot.id;
+  try {
+    await snapshot.ref.update({
+      aggregationAttemptCount: FieldValue.increment(1),
+      lastAggregationAttemptAt: FieldValue.serverTimestamp(),
+    });
+    await aggregateActivityDocument(snapshot, activityId);
+    await snapshot.ref.update({ aggregationError: FieldValue.delete() });
+  } catch (error) {
+    logger.error('activity_aggregation_failed', {
+      activityId,
+      source,
+      errorCode: aggregationErrorCode(error),
+      error,
+    });
+    try {
+      await snapshot.ref.update({
+        aggregationError: {
+          code: aggregationErrorCode(error),
+          failedAt: FieldValue.serverTimestamp(),
+          source,
+        },
+      });
+    } catch (diagnosticError) {
+      logger.error('activity_aggregation_diagnostic_write_failed', {
+        activityId,
+        source,
+        error: diagnosticError,
+      });
+    }
+    throw error;
+  }
+}
+
+/**
+ * submitActivity が作成した activities/{activityId} を全集計へ反映する。
+ * battle/user 単位の完了フラグで、イベント再配信時も二重加算しない。
+ */
+export const aggregateActivity = onDocumentCreated(
+  { document: 'activities/{activityId}', retry: true },
+  async (event) => {
+    const snapshot = event.data;
+    if (!snapshot) return;
+    await runActivityAggregationWithDiagnostics(snapshot, 'trigger');
   },
 );

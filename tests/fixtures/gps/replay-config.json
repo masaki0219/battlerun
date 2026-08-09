@@ -1,6 +1,12 @@
 {
-  "distanceMaxAccuracyM": 35,
+  "highConfidenceAccuracyM": 15,
+  "conditionalAccuracyM": 25,
+  "maxAccuracyM": 25,
   "maxRunningSpeedMps": 7,
-  "gapSegmentMs": 15000,
-  "minCommitDistanceM": 3
+  "minCommitDistanceM": 3,
+  "gpsGapSegmentMs": 15000,
+  "spikeMaxWindowMs": 4000,
+  "spikeMinCrossTrackM": 8,
+  "spikeMinDetourM": 10,
+  "spikeAccuracyDifferenceM": 5
 }

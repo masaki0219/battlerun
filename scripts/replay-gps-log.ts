@@ -47,7 +47,7 @@ function readJson(path: string): unknown {
 
 const inputPath = process.argv[2];
 if (!inputPath) {
-  console.error('Usage: npm run gps:replay -- <gps-log.json> [gps-config.json]');
+  console.error('Usage: npm run gps:replay -- <gps-log.json> [gps-config.json] [--compare-v2]');
   process.exitCode = 1;
 } else {
   const input = readJson(inputPath);
@@ -58,19 +58,50 @@ if (!inputPath) {
       : [];
   if (rawPoints.length === 0) throw new Error('GPS点の配列、または samples 配列が必要です。');
 
-  const configInput = process.argv[3] ? readJson(process.argv[3]) : null;
+  const configPath = process.argv.slice(3).find((value) => value !== '--compare-v2');
+  const configInput = configPath ? readJson(configPath) : null;
+  const configNumber = (
+    data: JsonObject,
+    key: keyof GpsProcessingConfig,
+    fallback: number,
+    legacyKey?: string,
+  ): number => (
+    Number(data[key] ?? (legacyKey ? data[legacyKey] : undefined) ?? fallback)
+  );
   const config: Readonly<GpsProcessingConfig> = isObject(configInput)
     ? {
-        distanceMaxAccuracyM: Number(configInput.distanceMaxAccuracyM),
-        maxRunningSpeedMps: Number(configInput.maxRunningSpeedMps),
-        gapSegmentMs: Number(configInput.gapSegmentMs),
-        minCommitDistanceM: Number(configInput.minCommitDistanceM),
+        highConfidenceAccuracyM: configNumber(configInput, 'highConfidenceAccuracyM', DEFAULT_GPS_PROCESSING_CONFIG.highConfidenceAccuracyM),
+        conditionalAccuracyM: configNumber(configInput, 'conditionalAccuracyM', DEFAULT_GPS_PROCESSING_CONFIG.conditionalAccuracyM),
+        maxAccuracyM: configNumber(configInput, 'maxAccuracyM', DEFAULT_GPS_PROCESSING_CONFIG.maxAccuracyM, 'distanceMaxAccuracyM'),
+        maxRunningSpeedMps: configNumber(configInput, 'maxRunningSpeedMps', DEFAULT_GPS_PROCESSING_CONFIG.maxRunningSpeedMps),
+        minCommitDistanceM: configNumber(configInput, 'minCommitDistanceM', DEFAULT_GPS_PROCESSING_CONFIG.minCommitDistanceM),
+        gpsGapSegmentMs: configNumber(configInput, 'gpsGapSegmentMs', DEFAULT_GPS_PROCESSING_CONFIG.gpsGapSegmentMs, 'gapSegmentMs'),
+        spikeMaxWindowMs: configNumber(configInput, 'spikeMaxWindowMs', DEFAULT_GPS_PROCESSING_CONFIG.spikeMaxWindowMs),
+        spikeMinCrossTrackM: configNumber(configInput, 'spikeMinCrossTrackM', DEFAULT_GPS_PROCESSING_CONFIG.spikeMinCrossTrackM),
+        spikeMinDetourM: configNumber(configInput, 'spikeMinDetourM', DEFAULT_GPS_PROCESSING_CONFIG.spikeMinDetourM),
+        spikeAccuracyDifferenceM: configNumber(configInput, 'spikeAccuracyDifferenceM', DEFAULT_GPS_PROCESSING_CONFIG.spikeAccuracyDifferenceM),
       }
     : DEFAULT_GPS_PROCESSING_CONFIG;
   if (Object.values(config).some((value) => !Number.isFinite(value) || value <= 0)) {
     throw new Error('すべてのGPS設定値は0より大きい有限数で指定してください。');
   }
+  if (
+    config.highConfidenceAccuracyM > config.conditionalAccuracyM
+    || config.conditionalAccuracyM > config.maxAccuracyM
+  ) {
+    throw new Error('accuracy設定は highConfidenceAccuracyM <= conditionalAccuracyM <= maxAccuracyM にしてください。');
+  }
 
   const result = replayGpsLog(toInputPoints(rawPoints), config);
-  process.stdout.write(`${JSON.stringify({ config, ...result }, null, 2)}\n`);
+  const compareV2 = process.argv.includes('--compare-v2');
+  process.stdout.write(`${JSON.stringify({
+    config,
+    ...result,
+    ...(compareV2 ? {
+      v2Comparison: {
+        filteredDistanceM: result.v2FilteredDistanceM,
+        differenceFromV2M: result.differenceFromV2M,
+      },
+    } : {}),
+  }, null, 2)}\n`);
 }

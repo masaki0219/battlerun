@@ -1,6 +1,6 @@
 # HANDOFF
 
-最終更新: 2026-08-02
+最終更新: 2026-08-05
 
 ## プロジェクトの目的
 
@@ -23,6 +23,34 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 ※ 同フォルダの `BattleRunホーム画面作成 (コピー).zip` は旧版。パレット（`theme.css`）は同一だが、ヒーローが2陣営のVSゲージで、チーム内ランキングが無い。**最終版はこちら（コピーでない方）**。
 
 ## 最後に完了したこと
+
+### 2026-08-05 活動集計停止の原因修正と自動復旧を実装（Functions反映待ち）
+
+- 本番`zelio-run`のFunctionsログとFirestoreインデックスを読み取り検証した。2026-08-04までの`aggregateActivity`失敗はすべて`FAILED_PRECONDITION`で、`monthDistanceKm`の`userId ==`＋`startedAt`範囲クエリが暗黙ASCを要求する一方、本番・ローカルとも`userId ASC + startedAt DESC`だけが存在していた。未集計は6活動・2ユーザーで、全件バトル反映済み、個人集計・月次impactは未反映だった。保存済み全活動8.331kmに対し`users`累計合計は0.989kmで、該当2ユーザーはサーバー累計が集計済み活動だけに一致していた。
+- 原因分析の主要部分は正しかったが、ASCインデックスを重複追加せず、月距離クエリへ`orderBy('startedAt', 'desc')`を明示して既存本番インデックスを使う方が即時性・保守性とも高い。修正版クエリが本番で成功することも実測した。また「デプロイ手順にインデックスが一度もない」は不正確で、README/OPERATIONSには以前から記載があったが、最近の関連Functions限定デプロイでインデックス依存を同時確認していなかった点が運用上の穴だった。
+- `aggregateActivity`を共通の冪等集計本体へ分離し、作成トリガーの`retry: true`、試行回数・最終試行時刻・サニタイズした`aggregationError`、15分ごとに30分超の未集計を最大50件回収する`recoverStaleActivityAggregations`、admin限定の`retryPendingActivityAggregations`を追加した。バトルは`aggregatedBattleIds`、個人は`userStatsAggregated`で二重加算を防ぐ。
+- 月次バックフィル済みの未集計活動を単純再処理すると月次だけ二重加算になる追加脆弱性を発見した。活動のimpact・保存時刻とユーザーのバックフィル時刻を比較して加算要否を決め、バックフィルをv2へ上げて月次・累計距離・回数を絶対値で再構築する。復旧処理後は対象ユーザーへこの再構築も実行する。
+- バッジ処理から`users.totalDistanceKm` / `activityCount`の絶対値上書きを削除した。統計・プロフィールUIはサーバー値が取得済み活動より小さい矛盾時にローカル確認値を下限とし、月次・年間も直近50件分との最大値で0表示を避ける。最速PRはルートが必要なので推測せず、未集計活動のサーバー再処理で復元する。
+- `firestore.indexes.json`へ滞留回収用`aggregated ASC + submittedAt ASC`を追加し、AGENTS/OPERATIONS/RELEASE_TEST_CHECKLISTへインデックス先行デプロイ、障害復旧、アラート、回帰確認を追記した。確認成功: `npm run typecheck`、全unit、Functions build、全Firestore Rules、集計統合テスト（再実行の二重加算なし・v1月次の二重加算なし・v2絶対値再構築）、テストTS型検査、`git diff --check`。
+- **本番反映は途中**: 2026-08-05に新しいFirestoreインデックスを`zelio-run`へデプロイし、実クエリ成功でREADYを確認済み。Functions限定デプロイは`retry: true`変更に`--force`が必要となり、`--force`付き再申請がCodex実行承認の利用上限で拒否されたため、6 Functionsはいずれも未更新、未集計6件も未変更。別経路の本番データ修正は行っていない。次回は下記コマンドを明示承認のうえ実行し、その後6件を復旧・監査する。
+
+### 2026-08-04 GPS距離処理v3と獲得標高の初期リリース非表示
+
+- GPS処理をv3へ上げ、水平精度を高信頼15m以内・条件付き15m超25m以内・除外25m超へ分類した。正式点A・保留点B・新規点Cによる単発スパイク判定、条件付き点の軌跡整合性判定、活動終了時の純粋なfinalize、各種セグメント境界での保留点・速度履歴リセットを共通純粋関数へ追加した。しきい値は `GpsProcessingConfig` に集約し、JSON replayで上書き可能。
+- 距離用の正式`route`とライブ地図用`displayRoute`を分離した。Functionsへ送る座標は従来どおりクライアント採用済みcommit点だけで、フィールドも拡張していない。Functionsはv3を正式点として検証し、旧v2は従来の35mしきい値で受理し、versionなし/その他はv1互換を維持する。過去活動は再計算しない。
+- `gpsQuality`へ高信頼・条件付き・条件付き採否・3点スパイク・終了時破棄の集計を追加した。replayは処理version、採否理由、精度統計、距離、設定値に加え、`--compare-v2`で同一ログのv2との差を出す。テストは直線、曲線、90度、Uターン、折り返し、低速方向転換、静止ドリフト、横飛び、終了時ノイズ、各境界、クライアント/Functions一致、v2互換を含む。
+- Expo SDKはインストール済み54.0.36、`expo-location`は19.0.8。後者の公開型とネイティブ応答はiOSのfull/reduced accuracyを公開していないため、unsafe castは追加せず、iOSは実測accuracyによる開始判定を維持した。Androidのfine/approximate判定と設定導線は維持。
+- 獲得標高・高低差は記録結果、活動詳細、統計、自己ベスト表示から外した。共有カードには元から表示がなかった。Firestoreフィールド、既存活動の読み込み、型、受信altitude、サーバー集計は互換性のため維持する。
+- 検証手順と暫定合格基準を `docs/GPS_DISTANCE_VALIDATION.md`、リリース確認項目を `RELEASE_TEST_CHECKLIST.md` へ同期した。確認成功: `npm run lint`、`npm run typecheck`、全unit、Functions build、JSON replay（v2比較）、iOS Expo export、`git diff --check`。Firestore Rulesは変更していない。**物理端末でのv3実走と本番Functionsデプロイは未実施**。
+
+### 2026-08-03 旧avatarUrl掃除の失敗でログインが完全にブロックされる問題を修正
+
+- 症状は「プロフィール情報へのアクセス権限を確認できませんでした。」の全画面表示。`initAuthListener` の旧`avatarUrl`削除バッチが`permission-denied`で落ちると`catch`へ入り、`onSnapshot`の購読が張られないまま`profileError`だけが立つ。`app/_layout.tsx:112` は `authSessionActive && profileError && !user` でアプリ本体でなくリカバリ画面を出すため、ログインが通らなくなる。
+- `avatarUrl` は `stores/authStore.ts` と `app/(tabs)/profile.tsx` の削除処理以外どこからも読まれておらず、掃除は純粋なデータ衛生でログインの前提条件ではない。掃除バッチだけを `try/catch` で包み、失敗時は `console.warn` を残してプロフィール購読へ進むようにした。掃除が失敗しても表示は内蔵アイコンのままで、写真が復活することはない。
+- デプロイ済みルールを Rules API で取得して照合済み。`projects/zelio-run/releases/cloud.firestore` は ruleset `cd35b9f2-3fa7-497e-8a69-4259b667b5dd`（2026-08-02T08:36:58Z）で、ローカル `firestore.rules` と**完全一致**。前回の「旧アプリ互換を含む」ruleset `85fbf497-...` との差分は declarations cheers の `allow update/delete` だけで、avatarUrl/アバター関連の互換条項は失われていない。ルール側の退行ではない。
+- Firestoreエミュレータでの実測: 現行コードのログインバッチは、写真URL残存・publicProfiles欠落・Functions集計フィールド持ち・pro・admin のいずれの`users`形状でも成功する。一方、以下の`users`ドキュメントはログインバッチが恒久的に`permission-denied`になり、修正前は該当ユーザーが締め出される — `plan`が`free`/`pro`以外または欠落、`name`が欠落/41文字以上/NGワード、`avatarEmoji`が内蔵24種以外、`weeklyGoal`がキー違いまたは範囲外、`runningPresenceVisible`が非bool。
+- 同エミュレータで、**旧アプリ（写真機能あり版）の書き込みは現行ルールで拒否される**ことも確認した。旧ビルドの新規登録は`users` createの`!('avatarUrl' in ...)`で、旧ビルドのログイン時`publicProfiles`書き戻しは`avatarUrl`フィールドを持たないドキュメントに対して`keepsOrRemovesLegacyAvatarUrl()`で落ちる。旧ビルドが残っている端末は再ビルド配布が必要。
+- 確認成功: `npm run typecheck`、`npm run test:unit`（全件）、`npm run test:rules`（117 PASS / 0 FAIL）。**未確認**: 実機での再現と修正後のログイン成功。本番`users`コレクションの実データ形状監査（どのアカウントが上記の非適合形状かの特定）は未実施で、ユーザー許可が要る。ルール・Functionsのデプロイは行っていない（今回はクライアント修正のみ）。
 
 ### 2026-08-02 「今日のラン宣言」の編集・取り消し・日付整合性・応援数を改善
 
@@ -383,10 +411,12 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 
 ## 次にやること
 
-1. **2アカウントの実機またはTestFlightで、宣言作成→変更→応援→取消→再宣言→活動達成と通知を一連で確認する。**
+1. **`firebase deploy --only functions:aggregateActivity,functions:awardBadgesOnActivityAggregated,functions:syncMyBadges,functions:backfillMonthlyStats,functions:recoverStaleActivityAggregations,functions:retryPendingActivityAggregations --project zelio-run --non-interactive --force`を明示承認のうえ実行し、未集計6件を復旧して匿名集計監査を再実行する。**
 
 ## その次の候補
+- 同一端末・同一コースでGPS v3を最低5回実走し、既知距離の中央値誤差±2%以内・単発±5%以内・10分静止20m未満と、90度/Uターンを削りすぎないことを確認する
 - シミュレータまたは実機で参加中チャレンジ切替（0〜3件、長いタイトル、最大文字サイズ、再起動、終了時フォールバック）を目視確認する
+- 2アカウントの実機またはTestFlightで、宣言作成→変更→応援→取消→再宣言→活動達成と通知を一連で確認する
 - RevenueCatのCurrent Offeringから年額を外し、App Store Connectでyearlyを審査・販売対象外にしたうえで、月額だけのSandbox購入・復元をTestFlightで確認する
 - 現行差分からEAS preview buildを作成し、物理端末でホーム画面アイコン、iOS full-screen splash、Android adaptive icon/Android 12 splashを確認する
 - 実機でオフライン停止→端末キュー保存→オンライン復帰後30秒以内の再送と、サマリー集計の15秒フォールバックを確認する
@@ -406,7 +436,7 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 - ~~旧Storage画像の確認・削除が必要~~ **解決済み（2026-08-02）**: 本番bucketの `avatars/` は0件・0 bytesで、削除対象はなかった。新規アクセスはStorageルールで全面拒否済み。
 - ~~UGCの通報・ブロックが未実装~~ **解決済み（2026-07-31）**: 投稿前フィルター、投稿別の通報、ユーザーブロック、相互インタラクション/通知遮断、管理者通報キュー、公開連絡先、運用手順まで実装・デプロイ済み。実際に原則24時間以内の一次対応を継続する運用と、提出前の2アカウント実機確認は人手で必要。
 - ~~軍事系ユーザー文言が残る~~ **解決済み（2026-08-01）**: テーマ撤去と同時に、出撃・初陣・兵・隊長・歩兵・援軍に当たる表示、通知、バッジ、fixtureを中立表現へ変更した。
-- **GPS距離フィルタv2の物理端末検証が未実施（2026-08-02）**: 既知距離の誤差/再現性、10分静止の増加、iOS/Androidの権限表示、画面OFF・OS強制停止・ウォッチドッグ復帰、オートポーズの停止/低速歩行はEAS development buildの実機で確認する。しきい値は暫定で、この確認前に「解決」と断定しない。
+- **GPS距離フィルタv3の物理端末検証が未実施（2026-08-04）**: 既知距離の誤差/再現性、10分静止の増加、iOS/Androidの権限表示、画面ON/OFF、foreground/background切替、OS強制停止・ウォッチドッグ復帰、オートポーズの停止/低速歩行をEAS development buildの実機で確認する。v2ログとのreplay比較も行う。しきい値は暫定で、この確認前に「解決」と断定しない。
 - **ネイティブ dev build がローカルで通らない（2026-07-29）**: `npx expo run:ios` が `cannot link directly with 'SwiftUICore'` で失敗する（`useFrameworks: static` 環境）。EASビルドで再現するかは未確認。ローカルで実機確認する場合はここが先に必要。
 
 - **ランニング基本機能・Sprint 1〜4（T-11まで）の実機確認が未実施（2026-07-20）**: 記録系Functions、自己ベスト・月次統計集計、出撃宣言・ライブ応援Functions、関連ルールは `zelio-run` へデプロイ済み。実機/シミュレータでの目視（一時停止HUD・オートポーズ・音声コーチ・週間目標・自己ベスト祝福/一覧・月間/年間統計・出撃宣言・通知タップ・宣言/ライブ応援プッシュ・ライブプレゼンス3分失効・HUD触覚/音声・宣言達成・過負荷カード・オフライン再送・カウントダウン・目標バー・ラップ表示・削除フロー）は未実施。新規活動の月次加算と削除時の減算も実データでは未確認。バックグラウンドのオートポーズは EAS development build が必要。

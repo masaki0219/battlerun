@@ -18,7 +18,7 @@ import { KmSplitsCard } from '../../components/run/KmSplitsCard';
 import { RunShareCard } from '../../components/run/RunShareCard';
 import { SafetyActionsModal } from '../../components/moderation/SafetyActionsModal';
 import { useBlockedUsers } from '../../hooks/useBlockedUsers';
-import { kmSplits, elevationGainM, estimatedCalories } from '../../utils/displayStats';
+import { kmSplits, estimatedCalories } from '../../utils/displayStats';
 import { buildRouteVisualization, type RoutePaceBand } from '../../utils/routeSplits';
 import { buildRunShareMessage, formatShareDuration } from '../../utils/runShare';
 import { shareRunResult } from '../../lib/runSharing';
@@ -316,7 +316,6 @@ export default function ActivityDetailScreen() {
   const routeVisualization = hasRoute
     ? buildRouteVisualization(activity.route)
     : { segments: [], kmMarkers: [] };
-  const elevationGain = hasRoute ? elevationGainM(activity.route) : null;
   const calories = estimatedCalories(activity.distanceKm, activity.durationSeconds);
   const sharePace = activity.measurementType === 'gps'
     ? formatPace(activity.distanceKm, activity.durationSeconds)
@@ -421,7 +420,6 @@ export default function ActivityDetailScreen() {
             <Ionicons name="time-outline" size={12} color={Colors.textTertiary} />
             <Text style={s.timeText}>{startTimeStr} 〜 {endTimeStr}</Text>
             {calories != null && <Text style={s.timeText}>・推定 {calories} kcal</Text>}
-            {elevationGain != null && <Text style={s.timeText}>・推定獲得標高 +{elevationGain}m</Text>}
           </View>
         </View>
 

@@ -81,6 +81,10 @@ const ANIMAL_EMOJIS = [
   '🦄','🦔','🦋','🦦','🐙','🦈','🐘','🦒',
 ];
 
+function nonNegativeStat(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
 export default function ProfileScreen() {
   const { user, proEntitlement, signOut, setRunningPresenceVisible } = useAuthStore();
   const [purchasing, setPurchasing] = useState(false);
@@ -94,8 +98,21 @@ export default function ProfileScreen() {
 
   // 自分の戦績（累計距離・ラン回数・ストリーク）
   const { activities } = useRecentActivities(50);
-  const totalKm = serverStats?.totalDistanceKm ?? user?.totalDistanceKm ?? activities.reduce((sum, a) => sum + a.distanceKm, 0);
-  const totalRuns = serverStats?.activityCount ?? user?.activityCount ?? activities.length;
+  const recentTotalKm = activities.reduce(
+    (sum, activity) => sum + nonNegativeStat(activity.distanceKm),
+    0,
+  );
+  // 集計遅延中にサーバーが0でも、取得済み活動と矛盾する0を確定値として表示しない。
+  const totalKm = Math.max(
+    recentTotalKm,
+    nonNegativeStat(user?.totalDistanceKm),
+    nonNegativeStat(serverStats?.totalDistanceKm),
+  );
+  const totalRuns = Math.max(
+    activities.length,
+    Math.floor(nonNegativeStat(user?.activityCount)),
+    Math.floor(nonNegativeStat(serverStats?.activityCount)),
+  );
   const streak = streakDays(activities);
 
   useEffect(() => {

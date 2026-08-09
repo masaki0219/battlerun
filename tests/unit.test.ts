@@ -1,6 +1,7 @@
 import './displayStats.test';
 import './personalRecords.test';
 import './monthlyStats.test';
+import './activityAggregationPolicy.test';
 import './presence.test';
 import './processContributions.test';
 import './routeSplits.test';

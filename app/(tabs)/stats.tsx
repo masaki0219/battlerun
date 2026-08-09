@@ -16,7 +16,7 @@ import { WeeklyGoalSettingsModal } from '../../components/run/WeeklyGoalSettings
 import { MonthlyBarChart } from '../../components/viz/MonthlyBarChart';
 import { useMonthlyStats } from '../../hooks/useMonthlyStats';
 import { monthLabel, recentTokyoMonthKeys, tokyoMonthKey } from '../../utils/monthlyStats';
-import type { MeasurementType } from '../../types';
+import type { MeasurementType, MonthlyStat } from '../../types';
 
 type ActivityFilter = 'all' | 'gps' | 'steps';
 
@@ -26,6 +26,10 @@ function formatTime(seconds: number): string {
   const secs = seconds % 60;
   if (hours > 0) return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   return `${minutes}:${String(secs).padStart(2, '0')}`;
+}
+
+function nonNegativeMetric(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
 }
 
 const DAY_MS = 86_400_000;
@@ -42,11 +46,21 @@ export default function StatsScreen() {
   const [showTrainingLoad, setShowTrainingLoad] = useState(false);
   const [selectedMonthKey, setSelectedMonthKey] = useState(() => tokyoMonthKey(now));
 
-  // 生涯累計はサーバー集計（users.totalDistanceKm）を優先し、無ければ取得済み直近50件で代用
-  const recentKm = activities.reduce((sum, activity) => sum + activity.distanceKm, 0);
-  const lifetimeKm = user?.totalDistanceKm ?? recentKm;
-  const lifetimeNote = user?.totalDistanceKm != null ? '生涯累計' : '直近50件';
-  const longestRun = activities.reduce((max, activity) => Math.max(max, activity.distanceKm), 0);
+  // 取得済み活動よりサーバー累計が小さい矛盾時は、確実に確認できる側を下限として使う。
+  const recentKm = activities.reduce((sum, activity) => sum + nonNegativeMetric(activity.distanceKm), 0);
+  const serverLifetimeKm = typeof user?.totalDistanceKm === 'number'
+    && Number.isFinite(user.totalDistanceKm)
+    && user.totalDistanceKm >= 0
+    ? user.totalDistanceKm
+    : null;
+  const lifetimeKm = Math.max(recentKm, serverLifetimeKm ?? 0);
+  const lifetimeNote = serverLifetimeKm != null && recentKm > serverLifetimeKm + 0.001
+    ? '集計確認中'
+    : serverLifetimeKm != null ? '生涯累計' : '直近50件';
+  const longestRun = activities.reduce(
+    (max, activity) => Math.max(max, nonNegativeMetric(activity.distanceKm)),
+    0,
+  );
   const personalRecords = user?.personalRecords;
   const longestRecordKm = personalRecords?.longestRunKm ?? longestRun;
   const weekBuckets = weeklyBuckets(activities, now);
@@ -62,10 +76,35 @@ export default function StatsScreen() {
   const currentWeekKey = calendarWeekKey(now);
   const recentMonthKeys = recentTokyoMonthKeys(now, 12);
   const monthlyStatsMap = new Map(monthlyStats.map((month) => [month.monthKey, month]));
+  const recentMonthlyStatsMap = new Map<string, MonthlyStat>();
+  for (const activity of activities) {
+    const startedAt = new Date(activity.startedAt);
+    if (Number.isNaN(startedAt.getTime())) continue;
+    const monthKey = tokyoMonthKey(startedAt);
+    const current = recentMonthlyStatsMap.get(monthKey) ?? {
+      monthKey, km: 0, count: 0, durationSec: 0, elevationM: 0,
+    };
+    current.km += nonNegativeMetric(activity.distanceKm);
+    current.count += 1;
+    current.durationSec += nonNegativeMetric(activity.durationSeconds);
+    recentMonthlyStatsMap.set(monthKey, current);
+  }
+  for (const [monthKey, local] of recentMonthlyStatsMap) {
+    const server = monthlyStatsMap.get(monthKey);
+    monthlyStatsMap.set(monthKey, server ? {
+      monthKey,
+      km: Math.max(server.km, local.km),
+      count: Math.max(server.count, local.count),
+      durationSec: Math.max(server.durationSec, local.durationSec),
+      elevationM: Math.max(server.elevationM, local.elevationM),
+    } : local);
+  }
   const currentMonthKey = tokyoMonthKey(now);
   const monthKm = monthlyStatsMap.get(currentMonthKey)?.km ?? 0;
-  const bestMonthRecordKm = personalRecords?.bestMonthKm
-    ?? Math.max(0, ...monthlyStats.map((month) => month.km));
+  const bestMonthRecordKm = Math.max(
+    personalRecords?.bestMonthKm ?? 0,
+    ...[...monthlyStatsMap.values()].map((month) => month.km),
+  );
   const monthlyChart = recentMonthKeys.map((monthKey) => ({
     monthKey,
     label: monthKey.endsWith('-01') ? '1月' : String(Number(monthKey.slice(5, 7))),
@@ -79,7 +118,7 @@ export default function StatsScreen() {
     elevationM: 0,
   };
   const currentYear = tokyoMonthKey(now).slice(0, 4);
-  const annualKm = monthlyStats
+  const annualKm = [...monthlyStatsMap.values()]
     .filter((month) => month.monthKey.startsWith(`${currentYear}-`))
     .reduce((sum, month) => sum + month.km, 0);
 
@@ -188,7 +227,6 @@ export default function StatsScreen() {
                 <MonthDetailCell label="距離" value={`${selectedMonthlyStat.km.toFixed(1)} km`} />
                 <MonthDetailCell label="記録回数" value={`${selectedMonthlyStat.count} 回`} />
                 <MonthDetailCell label="時間" value={formatTime(selectedMonthlyStat.durationSec)} />
-                <MonthDetailCell label="推定獲得標高" value={`${Math.round(selectedMonthlyStat.elevationM)} m`} />
               </View>
               <Text style={styles.monthlyNote}>保存済みのGPS・歩数記録を東京時間の月ごとに集計しています。</Text>
             </View>
@@ -225,10 +263,6 @@ export default function StatsScreen() {
               <View style={styles.personalRecordsDivider} />
               <View style={styles.personalRecordsRow}>
                 <PersonalRecordCell label="最長距離" value={longestRecordKm > 0 ? `${longestRecordKm.toFixed(1)} km` : '—'} />
-                <PersonalRecordCell
-                  label="最高推定獲得標高"
-                  value={personalRecords?.maxElevationGainM != null ? `${Math.round(personalRecords.maxElevationGainM)} m` : '—'}
-                />
                 <PersonalRecordCell label="最高月間" value={bestMonthRecordKm > 0 ? `${bestMonthRecordKm.toFixed(1)} km` : '—'} />
               </View>
             </View>

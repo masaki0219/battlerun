@@ -87,10 +87,8 @@ async function awardBadgesForUser(userId: string): Promise<{ earnedBadgeIds: str
     });
   }
   if (newlyEarned.length > 0) await batch.commit();
-  await db.doc(`users/${userId}`).update({
-    totalDistanceKm: stats.totalDistanceKm,
-    activityCount: stats.activityCount,
-  });
+  // users の累計値は活動集計・削除・復旧の経路だけが更新する。
+  // バッジ再計算が絶対値で上書きすると、並行中の加算消失や未集計活動による0汚染が起きる。
   return { earnedBadgeIds: earned.map((badge) => badge.id), stats };
 }
 

@@ -3,6 +3,10 @@ import { initializeApp } from 'firebase-admin/app';
 initializeApp();
 
 export { aggregateActivity } from './aggregateActivity';
+export {
+  recoverStaleActivityAggregations,
+  retryPendingActivityAggregations,
+} from './activityAggregationRecovery';
 export { participantCounter } from './participantCounter';
 export { revenuecatWebhook } from './revenuecatWebhook';
 export { battleStatusScheduler } from './battleScheduler';

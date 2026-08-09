@@ -38,6 +38,7 @@
 - `npm run test:rules` は Firebase エミュレータが必要。実行できない場合は「未実行」と書く。
 - `service-account.json` / `.env` は gitignore 済み。中身を転記しない。
 - バックグラウンドGPS は Expo Go では動作しない。EAS development build が必要。
+- FunctionsでFirestoreクエリ形状を追加・変更した場合は `firestore.indexes.json` との整合を確認し、必要なインデックスを先にデプロイして「有効」になってからFunctionsをデプロイする。関連変更で `firestore:indexes` を省略しない。
 
 ## 禁止事項
 

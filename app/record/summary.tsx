@@ -38,12 +38,11 @@ interface BattleImpact {
   creditedDistanceKm?: number;
 }
 
-const PERSONAL_RECORD_LABELS: Record<PersonalRecordKey, string> = {
+const PERSONAL_RECORD_LABELS: Partial<Record<PersonalRecordKey, string>> = {
   fastest1kSec: '最速1km',
   fastest5kSec: '最速5km',
   fastest10kSec: '最速10km',
   longestRunKm: '最長距離',
-  maxElevationGainM: '最高推定獲得標高',
   bestMonthKm: '最高月間距離',
 };
 
@@ -62,7 +61,6 @@ export default function RecordingSummaryScreen() {
     steps: string;
     pace: string;
     splits: string;
-    elevationGain: string;
     declarationAchieved: string;
   }>();
 
@@ -79,7 +77,6 @@ export default function RecordingSummaryScreen() {
       return [];
     }
   })();
-  const elevationGain = params.elevationGain ? parseInt(params.elevationGain, 10) : null;
   const calories = estimatedCalories(distanceKm, durationSeconds);
   const declarationAchieved = params.declarationAchieved === '1';
 
@@ -254,14 +251,9 @@ export default function RecordingSummaryScreen() {
             )}
           </View>
 
-          {(calories != null || elevationGain != null) && (
+          {calories != null && (
             <View style={s.heroSubStats}>
-              {calories != null && (
-                <Text style={s.heroSubStatText}>推定 {calories} kcal（体重60kg換算）</Text>
-              )}
-              {elevationGain != null && (
-                <Text style={s.heroSubStatText}>推定獲得標高 +{elevationGain}m</Text>
-              )}
+              <Text style={s.heroSubStatText}>推定 {calories} kcal（体重60kg換算）</Text>
             </View>
           )}
         </View>

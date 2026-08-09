@@ -135,15 +135,21 @@ export function initAuthListener(): () => void {
         const current = (await getDoc(userRef)).data()!;
         if (generation !== authGeneration) return;
         // 旧写真機能のURLはログイン時にプロフィールから除去し、固定アイコンへ統一する。
-        const profileBatch = writeBatch(db);
-        profileBatch.update(userRef, { avatarUrl: deleteField() });
-        profileBatch.set(doc(db, 'publicProfiles', firebaseUser.uid), {
-          name: (current['name'] as string | undefined) ?? 'ユーザー',
-          avatarEmoji: (current['avatarEmoji'] as string | null | undefined) ?? null,
-          avatarUrl: deleteField(),
-          updatedAt: serverTimestamp(),
-        }, { merge: true });
-        await profileBatch.commit();
+        // avatarUrl はどの画面からも読まれないため、この掃除はログインの前提条件ではない。
+        // ルール検証に引っかかる既存ドキュメントでユーザーを締め出さないよう、失敗しても続行する。
+        try {
+          const profileBatch = writeBatch(db);
+          profileBatch.update(userRef, { avatarUrl: deleteField() });
+          profileBatch.set(doc(db, 'publicProfiles', firebaseUser.uid), {
+            name: (current['name'] as string | undefined) ?? 'ユーザー',
+            avatarEmoji: (current['avatarEmoji'] as string | null | undefined) ?? null,
+            avatarUrl: deleteField(),
+            updatedAt: serverTimestamp(),
+          }, { merge: true });
+          await profileBatch.commit();
+        } catch (cleanupError) {
+          console.warn('[Auth] 旧avatarUrlの除去に失敗（ログインは継続）:', cleanupError);
+        }
         if (generation !== authGeneration) return;
 
         // plan・称号・累計値を含むサーバー更新をリアルタイムでUIへ反映する。

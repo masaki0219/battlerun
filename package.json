@@ -11,6 +11,7 @@
     "lint": "tsc --noEmit",
     "test": "npm run test:unit",
     "test:unit": "ts-node --project tests/tsconfig.json tests/unit.test.ts",
+    "test:aggregation": "firebase emulators:exec --only firestore \"ts-node --project tests/tsconfig.json tests/activityAggregation.integration.ts\"",
     "gps:replay": "ts-node scripts/replay-gps-log.ts",
     "test:rules": "firebase emulators:exec --only firestore \"ts-node --project tests/tsconfig.json tests/firestore-rules.test.ts\""
   },

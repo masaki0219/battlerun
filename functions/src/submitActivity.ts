@@ -5,6 +5,7 @@ import {
   GPS_PROCESSING_VERSION,
   MAX_RUNNING_SPEED_MPS,
   replayAcceptedGpsRoute,
+  replayAcceptedGpsRouteV2,
   type GpsInputPoint,
   type GpsQualitySummary,
   type ProcessedGpsPoint,
@@ -153,11 +154,11 @@ function nullableAccuracy(value: unknown): number | null {
 }
 
 /** 品質集計は診断専用。座標を含めず、数値だけを正規化して保存する。 */
-function parseGpsQuality(value: unknown): GpsQualitySummary | null {
+function parseGpsQuality(value: unknown, processingVersion: number): GpsQualitySummary | null {
   if (!value || typeof value !== 'object') return null;
   const data = value as Record<string, unknown>;
   return {
-    processingVersion: GPS_PROCESSING_VERSION,
+    processingVersion,
     receivedPointCount: finiteNonNegative(data['receivedPointCount'], true),
     acceptedPointCount: finiteNonNegative(data['acceptedPointCount'], true),
     rejectedPointCount: finiteNonNegative(data['rejectedPointCount'], true),
@@ -165,6 +166,13 @@ function parseGpsQuality(value: unknown): GpsQualitySummary | null {
     rejectedBySpeedCount: finiteNonNegative(data['rejectedBySpeedCount'], true),
     rejectedByTimestampCount: finiteNonNegative(data['rejectedByTimestampCount'], true),
     microJitterCount: finiteNonNegative(data['microJitterCount'], true),
+    highConfidencePointCount: finiteNonNegative(data['highConfidencePointCount'], true),
+    conditionalPointCount: finiteNonNegative(data['conditionalPointCount'], true),
+    conditionalAcceptedPointCount: finiteNonNegative(data['conditionalAcceptedPointCount'], true),
+    conditionalRejectedPointCount: finiteNonNegative(data['conditionalRejectedPointCount'], true),
+    threePointSpikeCount: finiteNonNegative(data['threePointSpikeCount'], true),
+    endOfActivityDiscardedPointCount: finiteNonNegative(data['endOfActivityDiscardedPointCount'], true),
+    segmentPendingResetCount: finiteNonNegative(data['segmentPendingResetCount'], true),
     segmentBreakCount: finiteNonNegative(data['segmentBreakCount'], true),
     maxGapMs: finiteNonNegative(data['maxGapMs'], true),
     accuracyMedianM: nullableAccuracy(data['accuracyMedianM']),
@@ -244,21 +252,33 @@ export const submitActivity = onCall(
     const steps = typeof data.steps === 'number' && Number.isFinite(data.steps)
       ? Math.max(0, Math.floor(data.steps))
       : 0;
-    const usesSharedGpsProcessing = measurementType === 'gps'
+    const usesV3GpsProcessing = measurementType === 'gps'
       && data.gpsProcessingVersion === GPS_PROCESSING_VERSION;
+    const usesV2GpsProcessing = measurementType === 'gps'
+      && data.gpsProcessingVersion === 2;
     let route: Array<LegacyRoutePoint | ProcessedGpsPoint> = [];
     let distanceKm = measurementType === 'steps' ? steps * STEP_LENGTH_KM : 0;
     let gpsQuality: GpsQualitySummary | null = null;
-    if (measurementType === 'gps' && usesSharedGpsProcessing) {
+    if (measurementType === 'gps' && usesV3GpsProcessing) {
       const replay = replayAcceptedGpsRoute(gpsInputPoints(data.route, startedAtMs, endedAtMs));
       route = replay.processedRoute;
       distanceKm = replay.filteredDistanceM / 1_000;
-      const clientQuality = parseGpsQuality(data.gpsQuality);
+      const clientQuality = parseGpsQuality(data.gpsQuality, GPS_PROCESSING_VERSION);
       gpsQuality = clientQuality
         ? { ...clientQuality, processingVersion: GPS_PROCESSING_VERSION, filteredDistanceM: replay.filteredDistanceM }
         : replay.summary;
+    } else if (measurementType === 'gps' && usesV2GpsProcessing) {
+      // 配布済みv2は35m基準で確定済み点だけを送る。v3の25m/3点判定へ通し直さず、
+      // 当時の共通処理で検証することで、新旧クライアント混在中の距離変化を避ける。
+      const replay = replayAcceptedGpsRouteV2(gpsInputPoints(data.route, startedAtMs, endedAtMs));
+      route = replay.processedRoute;
+      distanceKm = replay.filteredDistanceM / 1_000;
+      const clientQuality = parseGpsQuality(data.gpsQuality, 2);
+      gpsQuality = clientQuality
+        ? { ...clientQuality, processingVersion: 2, filteredDistanceM: replay.filteredDistanceM }
+        : replay.summary;
     } else if (measurementType === 'gps') {
-      // 更新前に端末キューへ保存済みの活動を失わないためだけの旧方式。新規活動は必ずv2を送る。
+      // v2導入前に端末キューへ保存済みの活動を失わないためだけの旧方式。新規活動はv3を送る。
       const legacyRoute = parseLegacyRoute(data.route, startedAtMs, endedAtMs);
       route = legacyRoute;
       distanceKm = legacyRouteDistance(legacyRoute);
@@ -319,7 +339,7 @@ export const submitActivity = onCall(
       pausedMs,
       measurementType,
       gpsProcessingVersion: measurementType === 'gps'
-        ? (usesSharedGpsProcessing ? GPS_PROCESSING_VERSION : 1)
+        ? (usesV3GpsProcessing ? GPS_PROCESSING_VERSION : usesV2GpsProcessing ? 2 : 1)
         : null,
       gpsQuality: measurementType === 'gps' ? gpsQuality : null,
       startedAt: Timestamp.fromMillis(startedAtMs),
