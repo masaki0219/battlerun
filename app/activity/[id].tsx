@@ -419,7 +419,7 @@ export default function ActivityDetailScreen() {
           <View style={s.timeRow}>
             <Ionicons name="time-outline" size={12} color={Colors.textTertiary} />
             <Text style={s.timeText}>{startTimeStr} 〜 {endTimeStr}</Text>
-            {calories != null && <Text style={s.timeText}>・推定 {calories} kcal</Text>}
+            {calories != null && <Text style={s.timeText}>・推定 {calories} kcal（体重60kg換算）</Text>}
           </View>
         </View>
 

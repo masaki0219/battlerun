@@ -770,6 +770,35 @@ export default function RecordScreen() {
   const lastPoint = displayRoute[displayRoute.length - 1];
   const liveDisplaySegments = displayRouteSegments(displayRoute);
 
+  function renderDeclarationGuide() {
+    if (!declarationBattle) return null;
+    return (
+      <TouchableOpacity
+        style={[s.declarationGuide, fontScale >= 1.6 && s.declarationGuideLargeText]}
+        onPress={() => router.push('/(tabs)/battle' as any)}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel="今日のラン宣言を開く"
+      >
+        <View style={s.declarationGuideIcon}>
+          <Ionicons name={ownDeclaration?.status === 'done' ? 'checkmark' : 'flag-outline'} size={16} color={Colors.accentDark} />
+        </View>
+        <View style={[s.declarationGuideCopy, fontScale >= 1.6 && s.declarationGuideCopyLargeText]}>
+          <Text style={s.declarationGuideTitle} numberOfLines={fontScale >= 1.6 ? undefined : 1}>
+            {ownDeclaration?.status === 'done'
+              ? '今日のラン宣言を達成しました'
+              : ownDeclaration
+                ? `今日の予定：${declarationTimeLabel(ownDeclaration.plannedAt, ownDeclaration.timezone)}`
+                : '今日、走る予定はありますか？'}
+          </Text>
+          <Text style={s.declarationGuideBattle} numberOfLines={fontScale >= 1.6 ? undefined : 1}>{declarationBattle.title}</Text>
+        </View>
+        <Text style={s.declarationGuideAction}>{ownDeclaration?.status === 'planned' ? '変更' : ownDeclaration ? '確認' : '宣言する'}</Text>
+        <Ionicons name="chevron-forward" size={15} color={Colors.textTertiary} />
+      </TouchableOpacity>
+    );
+  }
+
   // ─── PRE-RECORDING ────────────────────────────────────────
   if (!isRecording) {
     return (
@@ -841,31 +870,7 @@ export default function RecordScreen() {
 
           {/* START button */}
           <View style={[s.startArea, fontScale >= 1.6 && s.startAreaLargeText]}>
-            {declarationBattle && (
-              <TouchableOpacity
-                style={[s.declarationGuide, fontScale >= 1.6 && s.declarationGuideLargeText]}
-                onPress={() => router.push('/(tabs)/battle' as any)}
-                activeOpacity={0.7}
-                accessibilityRole="button"
-                accessibilityLabel="今日のラン宣言を開く"
-              >
-                <View style={s.declarationGuideIcon}>
-                  <Ionicons name={ownDeclaration?.status === 'done' ? 'checkmark' : 'flag-outline'} size={16} color={Colors.accentDark} />
-                </View>
-                <View style={[s.declarationGuideCopy, fontScale >= 1.6 && s.declarationGuideCopyLargeText]}>
-                  <Text style={s.declarationGuideTitle} numberOfLines={fontScale >= 1.6 ? undefined : 1}>
-                    {ownDeclaration?.status === 'done'
-                      ? '今日のラン宣言を達成しました'
-                      : ownDeclaration
-                        ? `今日の予定：${declarationTimeLabel(ownDeclaration.plannedAt, ownDeclaration.timezone)}`
-                        : '今日、走る予定はありますか？'}
-                  </Text>
-                  <Text style={s.declarationGuideBattle} numberOfLines={fontScale >= 1.6 ? undefined : 1}>{declarationBattle.title}</Text>
-                </View>
-                <Text style={s.declarationGuideAction}>{ownDeclaration?.status === 'planned' ? '変更' : ownDeclaration ? '確認' : '宣言する'}</Text>
-                <Ionicons name="chevron-forward" size={15} color={Colors.textTertiary} />
-              </TouchableOpacity>
-            )}
+            {fontScale < 1.6 && renderDeclarationGuide()}
             <View style={s.startStack}>
               <Animated.View style={[s.startRing, { transform: [{ rotate: ringRotate }] }]} />
               <TouchableOpacity
@@ -881,6 +886,7 @@ export default function RecordScreen() {
               </TouchableOpacity>
             </View>
             <Text style={s.startHint}>タップしてラン開始</Text>
+            {fontScale >= 1.6 && renderDeclarationGuide()}
 
             {/* GPS readiness */}
             {gpsReadiness !== null && (

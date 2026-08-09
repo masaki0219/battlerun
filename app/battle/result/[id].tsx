@@ -51,6 +51,7 @@ export default function BattleResultScreen() {
 
   const [stats, setStats] = useState<CategoryStats[]>([]);
   const [myStats, setMyStats] = useState<{ totalKm: number; actCount: number | null }>({ totalKm: 0, actCount: null });
+  const [participantCategoryId, setParticipantCategoryId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [localBattle, setLocalBattle] = useState<Battle | null>(
     () => [...publicBattles, ...privateBattles].find((b) => b.id === id) ?? null
@@ -61,7 +62,7 @@ export default function BattleResultScreen() {
   const { participants } = useBattleParticipants(id, { enabled: !!localBattle, limit: 20 });
 
   const membership = myMemberships.find((m) => m.battleId === id);
-  const myCatId = membership?.categoryId ?? null;
+  const myCatId = membership?.categoryId ?? participantCategoryId;
 
   // ストアにない場合Firestoreから直接取得
   useEffect(() => {
@@ -70,21 +71,31 @@ export default function BattleResultScreen() {
       setLocalBattle(fromStore);
       return;
     }
-    if (!id) return;
+    // Push直行時は認証復元前に最初のreadが拒否されうる。user確定後に再試行する。
+    if (!id || !user) return;
+    let cancelled = false;
     getDoc(doc(db, 'battles', id)).then((snap) => {
-      if (snap.exists()) {
+      if (!cancelled && snap.exists()) {
         setLocalBattle(mapFirestoreToBattle(snap.id, snap.data() as Record<string, unknown>));
       }
-    }).catch(() => {});
-  }, [id, publicBattles, privateBattles]);
+    }).catch((error) => console.warn('[BattleResult] battle load failed:', error));
+    return () => { cancelled = true; };
+  }, [id, publicBattles, privateBattles, user?.id]);
 
   useEffect(() => {
     if (!id || !localBattle) return;
+    let cancelled = false;
     const load = async () => {
       setLoading(true);
+      setMyStats({ totalKm: 0, actCount: null });
+      setParticipantCategoryId(null);
       try {
-        // category_stats
-        const statsSnap = await getDocs(collection(db, 'battles', id, 'category_stats'));
+        // category_stats と自分の participant を同時に読み、Push直行時もストアに依存しない。
+        const [statsSnap, meSnap] = await Promise.all([
+          getDocs(collection(db, 'battles', id, 'category_stats')),
+          user ? getDoc(doc(db, 'battles', id, 'participants', user.id)) : Promise.resolve(null),
+        ]);
+        if (cancelled) return;
         const s: CategoryStats[] = statsSnap.docs.map((d) => ({
           categoryId: d.id,
           label: localBattle.categories.find((c) => c.id === d.id)?.label ?? d.id,
@@ -97,19 +108,22 @@ export default function BattleResultScreen() {
         // participants（貢献ランキング）は useBattleParticipants フックで取得する
 
         // my stats
-        if (user) {
-          const meSnap = await getDoc(doc(db, 'battles', id, 'participants', user.id));
-          if (meSnap.exists()) {
-            const km = (meSnap.data()['totalDistanceKm'] as number) ?? 0;
-            const actCount = (meSnap.data()['activityCount'] as number | undefined) ?? null;
-            setMyStats({ totalKm: km, actCount });
-          }
+        if (meSnap?.exists()) {
+          const meData = meSnap.data();
+          const km = (meData['totalDistanceKm'] as number) ?? 0;
+          const actCount = (meData['activityCount'] as number | undefined) ?? null;
+          const categoryId = meData['categoryId'];
+          setMyStats({ totalKm: km, actCount });
+          setParticipantCategoryId(typeof categoryId === 'string' ? categoryId : null);
         }
+      } catch (error) {
+        console.warn('[BattleResult] result data load failed:', error);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
-    load();
+    void load();
+    return () => { cancelled = true; };
   }, [id, localBattle, user]);
 
   if (!localBattle) {

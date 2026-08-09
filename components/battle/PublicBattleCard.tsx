@@ -14,6 +14,7 @@ interface Props {
   /** 所属シーズン名（あれば残り日数の後ろに併記） */
   seasonTitle?: string;
   expanded: boolean;
+  prominentJoin?: boolean;
   onToggleExpand: () => void;
   onPress: () => void;
   onPressJoin: () => void;
@@ -21,7 +22,8 @@ interface Props {
 
 /** パブリックランの一覧カード。参加導線はヘッダー右のボタンに集約。表示専用。 */
 export function PublicBattleCard({
-  battle, stats, myCategoryId, joined, seasonTitle, expanded, onToggleExpand, onPress, onPressJoin,
+  battle, stats, myCategoryId, joined, seasonTitle, expanded, prominentJoin = false,
+  onToggleExpand, onPress, onPressJoin,
 }: Props) {
   const remaining = remainingLabel(battle.endAt);
   const sorted = sortedStats(stats, battle.rankingType);
@@ -54,12 +56,12 @@ export function PublicBattleCard({
             </View>
           ) : battle.categories.length > 0 ? (
             <TouchableOpacity
-              style={styles.joinBtn}
+              style={[styles.joinBtn, prominentJoin && styles.joinBtnProminent]}
               onPress={onPressJoin}
               activeOpacity={0.7}
               hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
-              <Text style={styles.joinBtnText}>参加する</Text>
+              <Text style={[styles.joinBtnText, prominentJoin && styles.joinBtnTextProminent]}>参加する</Text>
             </TouchableOpacity>
           ) : null}
         </View>
@@ -110,6 +112,13 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.xs,
     fontWeight: Typography.fontWeight.bold,
     color: Colors.primary,
+  },
+  joinBtnProminent: {
+    borderColor: Colors.accent,
+    backgroundColor: Colors.accent,
+  },
+  joinBtnTextProminent: {
+    color: Colors.textOnAccent,
   },
   joinedChip: {
     borderRadius: BorderRadius.md,

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, Animated, StyleSheet } from 'react-native';
+import { View, Text, Animated, StyleSheet, useWindowDimensions } from 'react-native';
 import { Colors, DarkColors, Spacing, BorderRadius, Animation } from '../../design_tokens';
 
 interface Side {
@@ -27,7 +27,9 @@ interface Props {
  * 比率 = leftKm / (leftKm + rightKm)、両方0なら 0.5。
  */
 export function VersusGauge({ left, right, size = 'md', dark = false, unit = 'km' }: Props) {
+  const { fontScale } = useWindowDimensions();
   const isLg = size === 'lg';
+  const largeText = fontScale >= 1.6;
   const trackHeight = isLg ? 16 : 12;
 
   const total = left.km + right.km;
@@ -57,35 +59,56 @@ export function VersusGauge({ left, right, size = 'md', dark = false, unit = 'km
   const sepColor = dark ? DarkColors.marker : Colors.surface;
   const leftColor = left.color ?? (dark ? DarkColors.primary : Colors.primary);
   const rightColor = right.color ?? (dark ? DarkColors.accent : Colors.accent);
-  const aheadColor = dark ? DarkColors.primary : Colors.primary;
-  const behindColor = dark ? DarkColors.accent : Colors.accent;
 
   return (
     <View>
       {/* 上部ラベル */}
-      <View style={styles.labelRow}>
-        <Text
-          style={[
-            styles.sideLabel,
-            { color: txtPrimary, fontWeight: left.isMine ? '800' : '600' },
-          ]}
-          numberOfLines={1}
-        >
-          {left.label}{' '}
-          <Text style={styles.km}>{left.km.toFixed(1)}{unit}</Text>
-        </Text>
-        <Text
-          style={[
-            styles.sideLabel,
-            styles.rightLabel,
-            { color: txtPrimary, fontWeight: right.isMine ? '800' : '600' },
-          ]}
-          numberOfLines={1}
-        >
-          <Text style={styles.km}>{right.km.toFixed(1)}{unit}</Text>{' '}
-          {right.label}
-        </Text>
-      </View>
+      {largeText ? (
+        <View style={styles.largeLabelColumn}>
+          {[left, right].map((side, index) => (
+            <View
+              key={index === 0 ? 'left' : 'right'}
+              style={styles.largeLabelBlock}
+              accessible
+              accessibilityLabel={`${side.label}、${side.km.toFixed(1)}${unit}${side.isMine ? '、あなたのチーム' : ''}`}
+            >
+              <View style={[styles.teamMarker, { backgroundColor: side.color ?? (side === left ? leftColor : rightColor) }]} />
+              <View style={styles.largeLabelCopy}>
+                <Text style={[styles.largeTeamLabel, { color: txtPrimary, fontWeight: side.isMine ? '800' : '600' }]}>
+                  {side.label}{side.isMine ? '（あなた）' : ''}
+                </Text>
+                <Text style={[styles.largeKm, { color: txtPrimary }]}>
+                  {side.km.toFixed(1)}<Text style={styles.largeUnit}>{unit}</Text>
+                </Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      ) : (
+        <View style={styles.labelRow}>
+          <Text
+            style={[
+              styles.sideLabel,
+              { color: txtPrimary, fontWeight: left.isMine ? '800' : '600' },
+            ]}
+            numberOfLines={1}
+          >
+            {left.label}{' '}
+            <Text style={styles.km}>{left.km.toFixed(1)}{unit}</Text>
+          </Text>
+          <Text
+            style={[
+              styles.sideLabel,
+              styles.rightLabel,
+              { color: txtPrimary, fontWeight: right.isMine ? '800' : '600' },
+            ]}
+            numberOfLines={1}
+          >
+            <Text style={styles.km}>{right.km.toFixed(1)}{unit}</Text>{' '}
+            {right.label}
+          </Text>
+        </View>
+      )}
 
       {/* トラック */}
       <View style={[styles.gaugeWrap, { height: trackHeight }]}>
@@ -98,7 +121,7 @@ export function VersusGauge({ left, right, size = 'md', dark = false, unit = 'km
             style={[styles.separator, { left: sepLeft, backgroundColor: sepColor }]}
           />
         </View>
-        {isLg ? (
+        {isLg && !largeText ? (
           <View
             style={[
               styles.vsBadge,
@@ -118,7 +141,7 @@ export function VersusGauge({ left, right, size = 'md', dark = false, unit = 'km
         <Text
           style={[
             styles.diffText,
-            { color: leading ? aheadColor : behindColor },
+            { color: txtSecondary },
           ]}
         >
           {total <= 0
@@ -148,6 +171,38 @@ const styles = StyleSheet.create({
   km: {
     fontVariant: ['tabular-nums'],
     fontWeight: '700',
+  },
+  largeLabelColumn: {
+    gap: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  largeLabelBlock: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+  },
+  teamMarker: {
+    width: 10,
+    height: 10,
+    borderRadius: BorderRadius.full,
+    marginTop: 7,
+  },
+  largeLabelCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  largeTeamLabel: {
+    fontSize: 14,
+  },
+  largeKm: {
+    marginTop: 2,
+    fontSize: 18,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+  },
+  largeUnit: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   gaugeWrap: {
     justifyContent: 'center',

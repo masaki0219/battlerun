@@ -24,7 +24,21 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 
 ## 最後に完了したこと
 
-### 2026-08-09 総合レビュー／メタレビューの優先指摘を修正（Functions反映待ち）
+### 2026-08-09 v2メタレビューを実コードで再判定し、局所修正を実装・本番Functions/Rulesへ反映
+
+- `VersusGauge` は文字倍率1.6以上で2チームを縦積みし、チーム名と距離の1行省略をやめ、中央のVSバッジを隠す。差分テキストはティール／オレンジの勝敗色をやめて本文の中立色へ統一し、チーム色との意味衝突を解消した。
+- 結果画面は `myMemberships` が未読込でも、同画面が取得する自分の participant から `categoryId` を復元する。Push直行で認証復元前のbattle readが失敗した場合も、ユーザー確定後に再試行するため、ローディングのまま止まらない。
+- ラン開始画面は最大文字サイズ時だけ任意の宣言カードをSTARTの後へ移し、主操作を初期表示内へ戻した。通常文字サイズの並びは維持した。
+- Day-0の公開チャレンジは「参加する」をオレンジの主CTAに変更した。招待コード入力は「招待コードをお持ちですか？」から開くセカンダリ導線へ畳み、「チャレンジに参加せず、まず走る」と友達チャレンジ作成もセカンダリ導線として追加・整理した。
+- チーム色は閲覧者ごとに変えず、現行のcategoryIdベースの安定割当を維持した。「自チームをブランド色へ固定」は同一チャレンジの共通認識を壊すため採用していない。
+- Firestore Rulesは名前欠落時も評価エラーにしない `data.get('name', '')` へ変更し、publicチャレンジ単品取得の回帰テストを追加した。`isAdmin()`の`exists()`案は、論理積・条件式のどちらでも欠落ユーザー時のエミュレータ評価エラーが残ることを実測したため採用せず、認可モデル変更なしでは未解決とした。
+- 活動詳細の推定カロリーへ「体重60kg換算」を明記し、サマリーと表記を揃えた。
+- iPhone 17 Simulator / iOS 26.4 / Expo Go / ローカルFirebase seedで目視確認した。AX5の結果でチーム名・距離が省略されないこと、AX5のラン画面でSTARTが初期表示内にあること、membership空でも優勝・貢献24%・チーム1位が復元されること、通常文字のDay-0でCTA階層が変わったことを確認した。一時的なFirebase接続コードは確認後に完全に戻し、この目視確認から本番への書き込みは行っていない。
+- 確認成功: `npm run typecheck`、全unit、Functions build、Firestore Rules全件、iOS Expo export、`git diff --check`。
+- ユーザーの明示指示を受け、`zelio-run`へ`submitActivity`、`aggregateActivity`、`recoverStaleActivityAggregations`、`retryPendingActivityAggregations`、`backfillMonthlyStats`、`awardBadgesOnActivityAggregated`、`syncMyBadges`とFirestore Rulesを限定デプロイした。Functionsは7件成功・0エラー。Rulesはruleset `projects/zelio-run/rulesets/ee197915-2848-40d3-9431-769085826115`として公開した。
+- デプロイ後の`functions:list`で7件すべて`ACTIVE`、同一hash `62ac8531c9ebbded61c4d7e347a8b4dd12f26ab9`を確認した。新規2件は`recoverStaleActivityAggregations`が`asia-northeast1`、`retryPendingActivityAggregations`が`us-central1`。既存データへの手動復旧Callable実行と、新規実走による`battleCreditStatus`の実通信確認は行っていない。今回のクライアントUI差分もEAS/TestFlightへは配布していない。
+
+### 2026-08-09 総合レビュー／メタレビューの優先指摘を修正（Functionsは同日反映済み）
 
 - 追加メタレビューを実コードへ照合し、バッジの「次に取れそう／未獲得」二重表示、不完全な招待リンクのログイン済み遷移、端数ラップの最速判定、距離表示の小数1桁統一、順位据え置き時の`3→3`表示、称号名の不一致を修正した。
 - 逆転目安は切り上げ日数で割るのをやめ、実残り時間から24時間あたりを算出する。ホーム／詳細とも「チーム全体であとXkm・1日Ykmが目安」と主語と総量を明記した。
@@ -40,9 +54,9 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 - ホーム／チャレンジ詳細のチーム成績とチーム内ランキングで、Firestore購読失敗を0km・空ランキングとして表示せず、「取得できませんでした／再試行」へ分離した。上位プロフィール取得は5分TTL・200件上限・同時要求共有の共通キャッシュにし、プレゼンスのプロフィール／応援キャッシュも無期限から5分TTL・上限付きへ変更した。
 - 最大文字サイズへの対応は文字倍率を制限せず、ラン画面を「モード → 目標 → START → 音声コーチ／オートポーズ」の順に変更した。共有画像のルートは新規既定OFF、ダーク面の最弱チーム色は背景とのコントラスト3:1超へ変更し、自チームへ色以外の「あなた」表示を追加した。
 - 確認成功: `npm run typecheck`、テストTS型検査、全unit、Functions build、iOS Expo export、Expo Doctor 18/18、`git diff --check`。`npm audit --omit=dev`はroot 37件（high 14 / moderate 23）、Functions 9件（high 1 / moderate 8）。強制更新は未適用。
-- 本番`zelio-run`への限定デプロイ（`submitActivity`＋2026-08-05から未反映の集計復旧6 Functions）を申請したが、「今回のユーザー依頼に本番デプロイの明示承認がない」と実行承認側に拒否された。回避実行はしておらず、**本番変更は0件**。クライアント変更・Functions変更ともローカル未コミットで、本番反映待ち。
+- 当初は本番`zelio-run`への限定デプロイが明示承認不足で拒否されたが、同日のユーザー明示指示後に`submitActivity`＋集計復旧6 FunctionsとFirestore Rulesの反映を完了した。結果は上記セクションを参照。
 
-### 2026-08-05 活動集計停止の原因修正と自動復旧を実装（Functions反映待ち）
+### 2026-08-05 活動集計停止の原因修正と自動復旧を実装（2026-08-09 Functions反映済み）
 
 - 本番`zelio-run`のFunctionsログとFirestoreインデックスを読み取り検証した。2026-08-04までの`aggregateActivity`失敗はすべて`FAILED_PRECONDITION`で、`monthDistanceKm`の`userId ==`＋`startedAt`範囲クエリが暗黙ASCを要求する一方、本番・ローカルとも`userId ASC + startedAt DESC`だけが存在していた。未集計は6活動・2ユーザーで、全件バトル反映済み、個人集計・月次impactは未反映だった。保存済み全活動8.331kmに対し`users`累計合計は0.989kmで、該当2ユーザーはサーバー累計が集計済み活動だけに一致していた。
 - 原因分析の主要部分は正しかったが、ASCインデックスを重複追加せず、月距離クエリへ`orderBy('startedAt', 'desc')`を明示して既存本番インデックスを使う方が即時性・保守性とも高い。修正版クエリが本番で成功することも実測した。また「デプロイ手順にインデックスが一度もない」は不正確で、README/OPERATIONSには以前から記載があったが、最近の関連Functions限定デプロイでインデックス依存を同時確認していなかった点が運用上の穴だった。
@@ -50,7 +64,7 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 - 月次バックフィル済みの未集計活動を単純再処理すると月次だけ二重加算になる追加脆弱性を発見した。活動のimpact・保存時刻とユーザーのバックフィル時刻を比較して加算要否を決め、バックフィルをv2へ上げて月次・累計距離・回数を絶対値で再構築する。復旧処理後は対象ユーザーへこの再構築も実行する。
 - バッジ処理から`users.totalDistanceKm` / `activityCount`の絶対値上書きを削除した。統計・プロフィールUIはサーバー値が取得済み活動より小さい矛盾時にローカル確認値を下限とし、月次・年間も直近50件分との最大値で0表示を避ける。最速PRはルートが必要なので推測せず、未集計活動のサーバー再処理で復元する。
 - `firestore.indexes.json`へ滞留回収用`aggregated ASC + submittedAt ASC`を追加し、AGENTS/OPERATIONS/RELEASE_TEST_CHECKLISTへインデックス先行デプロイ、障害復旧、アラート、回帰確認を追記した。確認成功: `npm run typecheck`、全unit、Functions build、全Firestore Rules、集計統合テスト（再実行の二重加算なし・v1月次の二重加算なし・v2絶対値再構築）、テストTS型検査、`git diff --check`。
-- **本番反映は途中**: 2026-08-05に新しいFirestoreインデックスを`zelio-run`へデプロイし、実クエリ成功でREADYを確認済み。Functions限定デプロイは`retry: true`変更に`--force`が必要となり、`--force`付き再申請がCodex実行承認の利用上限で拒否されたため、6 Functionsはいずれも未更新、未集計6件も未変更。別経路の本番データ修正は行っていない。次回は下記コマンドを明示承認のうえ実行し、その後6件を復旧・監査する。
+- **本番Functions反映済み（2026-08-09）**: 2026-08-05にREADY確認済みのFirestoreインデックスに続き、`--force`付き限定デプロイで集計復旧6 Functionsと`submitActivity`を`zelio-run`へ反映した。7件すべて`ACTIVE`。未集計6件への手動復旧Callable実行と匿名集計監査は引き続き未実施。
 
 ### 2026-08-04 GPS距離処理v3と獲得標高の初期リリース非表示
 
@@ -429,7 +443,7 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 
 ## 次にやること
 
-1. **ユーザーの本番デプロイ明示承認を得て、`submitActivity`と集計復旧6 Functionsを`zelio-run`へ限定反映し、関数状態を確認する（その後に未集計6件の復旧・匿名集計監査を別工程で行う）。**
+1. **物理端末でGPS実走 → バックグラウンド → 画面ロック → 保存 → オフライン復帰 → チャレンジ反映を通し、保存活動の`battleCreditStatus` / `battleCreditReason`を本番実通信で確認する。**
 
 ## その次の候補
 - 同一端末・同一コースでGPS v3を最低5回実走し、既知距離の中央値誤差±2%以内・単発±5%以内・10分静止20m未満と、90度/Uターンを削りすぎないことを確認する

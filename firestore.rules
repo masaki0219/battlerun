@@ -81,15 +81,15 @@ service cloud.firestore {
         && validAvatarEmoji(request.resource.data)
         && validWeeklyGoal(request.resource.data.get('weeklyGoal', null))
         && validRunningPresenceSetting(request.resource.data)
-        && request.resource.data.name is string
-        && request.resource.data.name.size() >= 1
-        && request.resource.data.name.size() <= 40
-        && safeUserText(request.resource.data.name);
+        && request.resource.data.get('name', '') is string
+        && request.resource.data.get('name', '').size() >= 1
+        && request.resource.data.get('name', '').size() <= 40
+        && safeUserText(request.resource.data.get('name', ''));
       allow update: if isSelf(userId)
-        && request.resource.data.name is string
-        && request.resource.data.name.size() >= 1
-        && request.resource.data.name.size() <= 40
-        && safeUserText(request.resource.data.name)
+        && request.resource.data.get('name', '') is string
+        && request.resource.data.get('name', '').size() >= 1
+        && request.resource.data.get('name', '').size() <= 40
+        && safeUserText(request.resource.data.get('name', ''))
         && request.resource.data.plan in ['free', 'pro']
         && keepsOrRemovesLegacyAvatarUrl()
         && validAvatarEmoji(request.resource.data)
@@ -152,18 +152,18 @@ service cloud.firestore {
       allow create: if isSelf(userId)
         && request.resource.data.keys().hasOnly(['name', 'avatarEmoji', 'updatedAt'])
         && validAvatarEmoji(request.resource.data)
-        && request.resource.data.name is string
-        && request.resource.data.name.size() >= 1
-        && request.resource.data.name.size() <= 40
-        && safeUserText(request.resource.data.name);
+        && request.resource.data.get('name', '') is string
+        && request.resource.data.get('name', '').size() >= 1
+        && request.resource.data.get('name', '').size() <= 40
+        && safeUserText(request.resource.data.get('name', ''));
       allow update: if isSelf(userId)
         && request.resource.data.keys().hasOnly(['name', 'avatarEmoji', 'avatarUrl', 'updatedAt'])
         && keepsOrRemovesLegacyAvatarUrl()
         && validAvatarEmoji(request.resource.data)
-        && request.resource.data.name is string
-        && request.resource.data.name.size() >= 1
-        && request.resource.data.name.size() <= 40
-        && safeUserText(request.resource.data.name);
+        && request.resource.data.get('name', '') is string
+        && request.resource.data.get('name', '').size() >= 1
+        && request.resource.data.get('name', '').size() <= 40
+        && safeUserText(request.resource.data.get('name', ''));
       allow delete: if false;
     }
 

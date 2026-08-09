@@ -360,6 +360,11 @@ async function run() {
     'fail',
   );
   await check(
+    'battles get: 認証済みユーザーはpublicチャレンジを単品取得できる',
+    getDoc(doc(bobDb, 'battles/battle2')),
+    'succeed',
+  );
+  await check(
     'battles get: 参加者はprivateチャレンジを単品取得できる',
     getDoc(doc(aliceDb, 'battles/battle1')),
     'succeed',

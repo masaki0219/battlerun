@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  ActivityIndicator, Alert, TextInput, Share,
+  ActivityIndicator, Alert, Share,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -476,7 +476,7 @@ export default function BattleScreen() {
   }
 
   // ── 表示部品（小さいものは inline） ────────────────────────
-  const publicCard = (battle: Battle) => {
+  const renderPublicCard = (battle: Battle, prominentJoin = false) => {
     const membership = myMembershipFor(battle.id);
     return (
       <PublicBattleCard
@@ -487,6 +487,7 @@ export default function BattleScreen() {
         joined={!!membership}
         seasonTitle={battle.seasonId ? seasons[battle.seasonId]?.title : undefined}
         expanded={expandedBattles.has(battle.id)}
+        prominentJoin={prominentJoin}
         onToggleExpand={() => toggleExpanded(battle.id)}
         onPress={() => router.push(`/battle/${battle.id}` as any)}
         onPressJoin={() => {
@@ -499,6 +500,7 @@ export default function BattleScreen() {
       />
     );
   };
+  const publicCard = (battle: Battle) => renderPublicCard(battle);
 
   const privateCard = (battle: Battle) => (
     <PrivateBattleCard
@@ -786,33 +788,30 @@ export default function BattleScreen() {
               <Text style={styles.sectionTitle}>参加するチャレンジを選ぶ</Text>
               <Text style={styles.choiceHint}>開催中のチャレンジから最大2件まで参加できます</Text>
             </View>
-            {choices.map(publicCard)}
+            {choices.map((battle) => renderPublicCard(battle, true))}
           </>
         )}
 
         {remainingChoices.length > 0 && (
           <>
             <Text style={styles.sectionTitle}>その他の公開チャレンジ</Text>
-            {remainingChoices.map(publicCard)}
+            {remainingChoices.map((battle) => renderPublicCard(battle, true))}
           </>
         )}
 
+        <Button
+          label="チャレンジに参加せず、まず走る"
+          onPress={() => router.push('/(tabs)/record' as any)}
+          variant="secondary"
+        />
+
         {/* 招待コードで参加 */}
         {privateView === 'list' && (
-          <Card style={[styles.card, { marginTop: Spacing.lg }]}>
-            <Text style={styles.formTitle}>友達チャレンジに参加</Text>
-            <Text style={styles.inputLabel}>6桁の招待コード</Text>
-            <TextInput
-              style={[styles.input, styles.codeInput]}
-              value={inviteCode}
-              onChangeText={(v) => setInviteCode(v.toUpperCase())}
-              placeholder="例: A3F9KZ"
-              placeholderTextColor={Colors.textTertiary}
-              maxLength={6}
-              autoCapitalize="characters"
-            />
-            <Button label="検索" onPress={handleSearchInviteCode} loading={searching} style={{ marginTop: Spacing.md }} />
-          </Card>
+          <Button
+            label="招待コードをお持ちですか？"
+            onPress={() => setPrivateView('join_code')}
+            variant="secondary"
+          />
         )}
         {privateView === 'join_code' && inviteJoinView('join_code')}
         {privateView === 'join_select' && inviteJoinView('join_select')}
@@ -829,6 +828,7 @@ export default function BattleScreen() {
               }
               setPrivateView('create');
             }}
+            variant="secondary"
             style={{ marginTop: Spacing.sm }}
           />
         )}
@@ -1080,14 +1080,4 @@ const styles = StyleSheet.create({
   emptyStateTitle: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.semibold, color: Colors.textSecondary },
   emptyStateHint: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary, textAlign: 'center' },
 
-  // State B のインライン招待コード入力カード
-  formTitle: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.lg },
-  inputLabel: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary, marginBottom: Spacing.xs, marginTop: Spacing.md },
-  input: {
-    backgroundColor: Colors.surfaceGray, borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
-    fontSize: Typography.fontSize.md, color: Colors.textPrimary,
-    borderWidth: 1, borderColor: Colors.border,
-  },
-  codeInput: { fontSize: Typography.fontSize['2xl'], fontWeight: Typography.fontWeight.bold, textAlign: 'center', letterSpacing: 4 },
 });
