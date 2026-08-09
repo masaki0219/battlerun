@@ -76,9 +76,14 @@ export default function BattleScreen() {
   const [selectionOwnerId, setSelectionOwnerId] = useState<string | null>(null);
 
   // 各バトルの陣営統計をリアルタイム購読（public / private を同一フックで共通化）
-  const publicStatsMap = useBattleCategoryStats(publicBattles);
-  const privateStatsMap = useBattleCategoryStats(privateBattles);
-  const categoryStatsMap: Record<string, CategoryStats[]> = { ...publicStatsMap, ...privateStatsMap };
+  const publicStats = useBattleCategoryStats(publicBattles);
+  const privateStats = useBattleCategoryStats(privateBattles);
+  const categoryStatsMap: Record<string, CategoryStats[]> = {
+    ...publicStats.statsMap,
+    ...privateStats.statsMap,
+  };
+  const categoryStatsFailed = publicStats.failedBattleIds.size > 0
+    || privateStats.failedBattleIds.size > 0;
 
   // チーム選択モーダル
   const [categoryModalBattle, setCategoryModalBattle] = useState<Battle | null>(null);
@@ -667,7 +672,7 @@ export default function BattleScreen() {
         {renderWeeklyCard()}
 
         {/* チーム内ランキング（自分の陣営の中での順位） */}
-        {displayedBattle && teamRanking.top.length > 0 && (
+        {displayedBattle && (teamRanking.top.length > 0 || teamRanking.error) && (
           <View>
             <Text style={styles.sectionTitle}>チーム内ランキング</Text>
             <TeamRankingCard
@@ -864,6 +869,20 @@ export default function BattleScreen() {
           <Ionicons name="cloud-offline-outline" size={16} color={Colors.error} />
           <Text style={styles.loadErrorText}>チャレンジを読み込めませんでした</Text>
           <TouchableOpacity onPress={() => setReloadKey((key) => key + 1)} accessibilityRole="button">
+            <Text style={styles.loadErrorRetry}>再試行</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {!loadFailed && categoryStatsFailed && (
+        <View style={styles.loadErrorBanner} accessibilityRole="alert">
+          <Ionicons name="cloud-offline-outline" size={16} color={Colors.error} />
+          <Text style={styles.loadErrorText}>チーム成績を読み込めませんでした</Text>
+          <TouchableOpacity
+            onPress={() => { publicStats.retry(); privateStats.retry(); }}
+            accessibilityRole="button"
+            accessibilityLabel="チーム成績を再読み込み"
+          >
             <Text style={styles.loadErrorRetry}>再試行</Text>
           </TouchableOpacity>
         </View>

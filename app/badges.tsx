@@ -16,6 +16,7 @@ import { useAuthStore } from '../stores/authStore';
 import type { UserActivityStats, EarnedBadge, UserTitle } from '../types';
 import { Colors, BorderRadius, TextStyles } from '../design_tokens';
 import { ProgressBar } from '../components/ui/ProgressBar';
+import { teamTitleLabel } from '../lib/teamTitle';
 
 // ── バッジ定義 ─────────────────────────────────────────────────
 interface BadgeDef {
@@ -197,6 +198,8 @@ export default function BadgesScreen() {
     badge: b,
     prog: b.progress!(stats!),
   }));
+  const upcomingIds = new Set(upcoming.map(({ badge }) => badge.id));
+  const remainingUnearned = unearned.filter((badge) => !upcomingIds.has(badge.id));
 
   const titles = [...(user?.titles ?? [])].sort(
     (a, b) => new Date(b.awardedAt).getTime() - new Date(a.awardedAt).getTime()
@@ -270,11 +273,11 @@ export default function BadgesScreen() {
           )}
 
           {/* 未獲得バッジ */}
-          {unearned.length > 0 && (
+          {remainingUnearned.length > 0 && (
             <View style={s.section}>
               <Text style={TextStyles.sectionTitle}>未獲得バッジ</Text>
               <View style={s.badgeGrid}>
-                {unearned.map((b) => (
+                {remainingUnearned.map((b) => (
                   <View key={b.id} style={[s.badgeItem, s.badgeItemGray]}>
                     <View style={[s.badgeIcon, { backgroundColor: Colors.surfaceAlt }]}>
                       <Ionicons name={b.icon as any} size={28} color={Colors.textTertiary} />
@@ -300,7 +303,7 @@ export default function BadgesScreen() {
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={s.titleBattleName} numberOfLines={1}>
-                        {t.rank === 1 ? '👑 優勝チームメンバー' : t.rank === 2 ? '準優勝チームメンバー' : `${t.rank}位チームメンバー`}
+                        {t.rank === 1 ? '👑 ' : ''}{teamTitleLabel(t.rank)}
                         　{t.battleTitle}
                       </Text>
                       <Text style={s.titleMeta}>

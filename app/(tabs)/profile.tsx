@@ -19,15 +19,18 @@ import { SUBSCRIPTION_DISCLAIMER } from '../../lib/legal';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '../../components/ui/Avatar';
 import { useRecentActivities } from '../../hooks/useRecentActivities';
+import { useMonthlyStats } from '../../hooks/useMonthlyStats';
 import { streakDays } from '../../utils/displayStats';
+import { monthlyDistanceLowerBound, reconcileMonthlyStats } from '../../utils/monthlyStats';
 import { Colors, DarkColors, Typography, Spacing, BorderRadius, Shadow } from '../../design_tokens';
 import type { UserTitle } from '../../types';
 import { httpsCallable } from 'firebase/functions';
 import { registerPushToken } from '../../lib/notifications';
 import Constants from 'expo-constants';
+import { teamTitleLabel } from '../../lib/teamTitle';
 
 function TitleBadge({ title, selected }: { title: UserTitle; selected: boolean }) {
-  const rankLabel = title.rank === 1 ? '優勝チームメンバー' : title.rank === 2 ? '準優勝チームメンバー' : `${title.rank}位チームメンバー`;
+  const rankLabel = teamTitleLabel(title.rank);
   const awardedDate = new Date(title.awardedAt).toLocaleDateString('ja-JP', {
     year: 'numeric', month: 'short',
   });
@@ -98,6 +101,8 @@ export default function ProfileScreen() {
 
   // 自分の戦績（累計距離・ラン回数・ストリーク）
   const { activities } = useRecentActivities(50);
+  const { months: monthlyStats } = useMonthlyStats();
+  const reconciledMonths = reconcileMonthlyStats(monthlyStats, activities);
   const recentTotalKm = activities.reduce(
     (sum, activity) => sum + nonNegativeStat(activity.distanceKm),
     0,
@@ -107,6 +112,7 @@ export default function ProfileScreen() {
     recentTotalKm,
     nonNegativeStat(user?.totalDistanceKm),
     nonNegativeStat(serverStats?.totalDistanceKm),
+    monthlyDistanceLowerBound(reconciledMonths),
   );
   const totalRuns = Math.max(
     activities.length,
@@ -310,7 +316,7 @@ export default function ProfileScreen() {
     (a, b) => new Date(b.awardedAt).getTime() - new Date(a.awardedAt).getTime()
   );
   const profileTitle = titles[0]
-    ? `称号：${titles[0].rank === 1 ? '優勝チームメンバー' : titles[0].rank === 2 ? '準優勝チームメンバー' : `${titles[0].rank}位チームメンバー`}`
+    ? `称号：${teamTitleLabel(titles[0].rank)}`
     : 'チャレンジで称号を獲得しよう';
   const userIsPro = isPro(user.plan, proEntitlement);
   // 価格（期間つき）を提示できるときだけ購入導線を有効にする

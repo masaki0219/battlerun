@@ -14,7 +14,7 @@ import { useAuthStore } from '../../../stores/authStore';
 import { useBattleStore } from '../../../stores/battleStore';
 import { isPro } from '../../../lib/pro';
 import type { Battle, CategoryStats } from '../../../types';
-import { Colors, DarkColors, Spacing, BorderRadius, teamColor } from '../../../design_tokens';
+import { Colors, DarkColors, Spacing, BorderRadius, teamColor, teamColorMap } from '../../../design_tokens';
 import { MonoLabel } from '../../../components/ui/MonoLabel';
 import { RankBadge } from '../../../components/ui/RankBadge';
 import { VersusGauge } from '../../../components/viz/VersusGauge';
@@ -24,6 +24,7 @@ import { contributionShare } from '../../../utils/displayStats';
 import { useBattleParticipants } from '../../../hooks/useBattleParticipants';
 import { decorLabel } from '../../../lib/locale';
 import { prioritizeTeams } from '../../../utils/teamDisplay';
+import { teamTitleLabel } from '../../../lib/teamTitle';
 
 function mapFirestoreToBattle(id: string, data: Record<string, unknown>): Battle {
   return {
@@ -157,13 +158,14 @@ export default function BattleResultScreen() {
   const rival = myTeamIdx > 0 ? sorted[myTeamIdx - 1] : myTeamIdx === 0 ? sorted[1] : undefined;
   const gaugeLeft = myTeam ?? sorted[0];
   const gaugeRight = myTeam ? rival : sorted[1];
+  const colorsByCategory = teamColorMap(localBattle.categories.map((category) => category.id));
   const finalColumns = prioritizeTeams(sorted, myCatId).map((team) => ({
     id: team.categoryId,
     label: team.label,
     km: valOf(team),
     rank: allZero ? null : 1 + sorted.filter((item) => valOf(item) > valOf(team)).length,
     isMine: team.categoryId === myCatId,
-    color: teamColor(team.categoryId),
+    color: colorsByCategory[team.categoryId] ?? teamColor(team.categoryId),
   }));
   const myShare = myTeam ? contributionShare(myStats.totalKm, myTeam.totalDistanceKm) : 0;
 
@@ -202,7 +204,7 @@ export default function BattleResultScreen() {
   // 称号（優勝/準優勝陣営の一員）はサーバー（battleStatusScheduler）が付与したuser.titlesを正とする。
   // 結果画面を開いたクライアントでは計算しない。
   const myTitle = user?.titles?.find((t) => t.battleId === localBattle.id) ?? null;
-  const titleName = myTitle ? (myTitle.rank === 1 ? '優勝チームの一員' : '準優勝チームの一員') : null;
+  const titleName = myTitle ? teamTitleLabel(myTitle.rank) : null;
 
   return (
     <SafeAreaView style={s.root} edges={['top']}>
@@ -229,8 +231,8 @@ export default function BattleResultScreen() {
             <MonoLabel color={DarkColors.textTertiary} size={9}>{decorLabel('最終結果', 'FINAL')}</MonoLabel>
             <View style={{ marginTop: 12 }}>
               <VersusGauge
-                left={{ label: gaugeLeft.label, km: valOf(gaugeLeft), isMine: gaugeLeft.categoryId === myCatId, color: teamColor(gaugeLeft.categoryId) }}
-                right={{ label: gaugeRight.label, km: valOf(gaugeRight), isMine: gaugeRight.categoryId === myCatId, color: teamColor(gaugeRight.categoryId) }}
+                left={{ label: gaugeLeft.label, km: valOf(gaugeLeft), isMine: gaugeLeft.categoryId === myCatId, color: colorsByCategory[gaugeLeft.categoryId] ?? teamColor(gaugeLeft.categoryId) }}
+                right={{ label: gaugeRight.label, km: valOf(gaugeRight), isMine: gaugeRight.categoryId === myCatId, color: colorsByCategory[gaugeRight.categoryId] ?? teamColor(gaugeRight.categoryId) }}
                 size="lg"
                 dark
                 unit={rankType === 'average' ? 'km/人' : 'km'}
@@ -277,7 +279,7 @@ export default function BattleResultScreen() {
                   {myTitle?.teamName ? `「${myTitle.teamName}」として走った仲間に贈られる称号` : 'チームとして勝ち取った称号'}
                 </Text>
               </View>
-              <View style={s.titleNewChip}><Text style={s.titleNew}>NEW</Text></View>
+              <View style={s.titleNewChip}><Text style={s.titleNew}>{decorLabel('新しい称号', 'NEW')}</Text></View>
             </View>
           </View>
         )}
@@ -400,7 +402,7 @@ export default function BattleResultScreen() {
 
         {/* ── 次のアクション ── */}
         <View style={s.section}>
-          <MonoLabel color={Colors.textTertiary} size={9}>NEXT ACTION</MonoLabel>
+          <MonoLabel color={Colors.textTertiary} size={9}>{decorLabel('次にすること', 'NEXT ACTION')}</MonoLabel>
           <View style={s.nextActions}>
             <TouchableOpacity
               style={s.nextBtn}

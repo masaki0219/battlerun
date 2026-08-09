@@ -43,13 +43,16 @@ function battleMeta(item: ActiveBattleSwitcherItem): string {
 
 /** 複数参加時に、閲覧中のチャレンジを切り替えるコンパクトカード列。 */
 export function ActiveBattleSwitcher({ items, selectedBattleId, onSelect }: Props) {
-  const { width } = useWindowDimensions();
+  const { width, fontScale } = useWindowDimensions();
+  const largeText = fontScale >= 1.6;
   const availableWidth = width - Spacing.lg * 2;
-  const cardWidth = Math.min(192, Math.max(144, (availableWidth - Spacing.sm) / 2));
+  const cardWidth = largeText
+    ? Math.min(300, availableWidth * 0.84)
+    : Math.min(192, Math.max(144, (availableWidth - Spacing.sm) / 2));
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, largeText && styles.headerLargeText]}>
         <Text style={styles.heading}>参加中のチャレンジ</Text>
         <Text style={styles.count}>{items.length}件</Text>
       </View>
@@ -70,6 +73,7 @@ export function ActiveBattleSwitcher({ items, selectedBattleId, onSelect }: Prop
               style={[
                 styles.card,
                 { width: cardWidth },
+                largeText && styles.cardLargeText,
                 selected && styles.cardSelected,
                 index < items.length - 1 && styles.cardSpacing,
               ]}
@@ -100,6 +104,7 @@ export function ActiveBattleSwitcher({ items, selectedBattleId, onSelect }: Prop
 const styles = StyleSheet.create({
   container: { gap: Spacing.sm },
   header: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
+  headerLargeText: { flexDirection: 'column', alignItems: 'flex-start', gap: Spacing.xs },
   heading: {
     fontSize: Typography.fontSize.sm,
     fontWeight: Typography.fontWeight.bold,
@@ -126,6 +131,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary,
     backgroundColor: Colors.primaryLight,
   },
+  cardLargeText: { minHeight: 132 },
   cardSpacing: { marginRight: Spacing.sm },
   cardTop: { gap: Spacing.xs },
   title: {

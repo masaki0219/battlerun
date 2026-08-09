@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Colors, Spacing, BorderRadius } from '../../design_tokens';
-import type { KmSplit } from '../../utils/displayStats';
+import { fastestFullKmSplitIndex, type KmSplit } from '../../utils/displayStats';
 
 function formatSplitPace(secondsPerKm: number): string {
   if (!Number.isFinite(secondsPerKm) || secondsPerKm <= 0) return "--'--\"";
@@ -25,6 +25,7 @@ export function KmSplitsCard({ splits }: { splits: KmSplit[] }) {
   if (splits.length === 0) return null;
 
   const paces = splits.map((s) => s.seconds / s.distanceKm);
+  const fastestFullLapIndex = fastestFullKmSplitIndex(splits);
   const fastest = Math.min(...paces);
   const slowest = Math.max(...paces);
   // ペースは「小さいほど速い」ため、速さ（1/ペース）に直してから正規化する
@@ -37,7 +38,7 @@ export function KmSplitsCard({ splits }: { splits: KmSplit[] }) {
       {splits.map((split, i) => {
         const pace = paces[i];
         const isPartial = split.distanceKm < 1;
-        const isFastest = splits.length > 1 && pace === fastest;
+        const isFastest = i === fastestFullLapIndex;
         const speed = 1 / Math.max(pace, 0.001);
         const ratio = speedSpan > 0 ? FLOOR + (1 - FLOOR) * ((speed - slowestSpeed) / speedSpan) : 1;
         return (

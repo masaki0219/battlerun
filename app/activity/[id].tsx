@@ -18,7 +18,7 @@ import { KmSplitsCard } from '../../components/run/KmSplitsCard';
 import { RunShareCard } from '../../components/run/RunShareCard';
 import { SafetyActionsModal } from '../../components/moderation/SafetyActionsModal';
 import { useBlockedUsers } from '../../hooks/useBlockedUsers';
-import { kmSplits, estimatedCalories } from '../../utils/displayStats';
+import { estimatedCalories, formatDistanceKm, kmSplits } from '../../utils/displayStats';
 import { buildRouteVisualization, type RoutePaceBand } from '../../utils/routeSplits';
 import { buildRunShareMessage, formatShareDuration } from '../../utils/runShare';
 import { shareRunResult } from '../../lib/runSharing';
@@ -389,7 +389,7 @@ export default function ActivityDetailScreen() {
         {/* ── Hero stats ── */}
         <View style={s.heroCard}>
           <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-            <Text style={s.heroBig}>{activity.distanceKm.toFixed(2)}</Text>
+            <Text style={s.heroBig}>{formatDistanceKm(activity.distanceKm)}</Text>
             <Text style={s.heroUnit}>KM</Text>
           </View>
           <View style={s.statRow}>
@@ -495,7 +495,7 @@ export default function ActivityDetailScreen() {
                 <Ionicons name="flash" size={18} color={Colors.accent} />
                 <View style={{ flex: 1 }}>
                   <Text style={s.battleTitle}>{c.battleTitle}</Text>
-                  <Text style={s.battleContrib}>+{c.creditedDistanceKm.toFixed(2)}km 貢献</Text>
+                  <Text style={s.battleContrib}>+{formatDistanceKm(c.creditedDistanceKm)}km 貢献</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
               </TouchableOpacity>
@@ -585,7 +585,7 @@ export default function ActivityDetailScreen() {
           currentUserId={user.id}
           target={{
             type: 'activity', id: activity.id, targetUid: activity.userId,
-            contentSnapshot: `${activity.displayName} / ${activity.distanceKm.toFixed(2)}km`,
+            contentSnapshot: `${activity.displayName} / ${formatDistanceKm(activity.distanceKm)}km`,
           }}
           targetDisplayName={activity.displayName}
           onClose={() => setShowSafety(false)}

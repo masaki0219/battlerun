@@ -5,7 +5,7 @@
  * ハードコードされた色・サイズは禁止。
  */
 import { Platform, TextStyle } from 'react-native';
-import { pickOtherTeamColor, pickTeamColor } from './utils/teamColors';
+import { pickOtherTeamColor, pickTeamColor, pickTeamColors } from './utils/teamColors';
 
 // ============================================================
 // カラーパレット
@@ -63,25 +63,24 @@ export const Colors = {
   rank2Bg: '#EDF2F1',
   rank3Bg: '#F6EAE0',
 
-  // チーム識別色。categoryId のハッシュから決定論的に割り当てる。
-  // 自チームの強調は色の置換ではなく、枠線・背景・ラベルで行う。
+  // 一覧カード向けチーム色。自チームの強調は色の置換ではなく、枠線・背景・ラベルで行う。
   teamColors: [
     '#087B73',  // 自陣営（primary）
     '#EF7136',  // 敵筆頭（accent）
     '#3A86FF',
     '#9B5CFF',
     '#E5A13A',
-    '#5E7C77',
+    '#779490',
   ],
 
-  // 陣営識別カラー（バトル詳細・一覧で最大6陣営を色分け）
+  // 陣営識別専用カラー（順位・CTA・状態色とは重複させない）。
   teamPalette: [
-    '#0F9187',
-    '#EF7136',
-    '#3A86FF',
-    '#9B5CFF',
-    '#E5A13A',
-    '#5E7C77',
+    '#2FAE9F',
+    '#5797E6',
+    '#A477D4',
+    '#D56F9E',
+    '#8FAE4F',
+    '#7E9692',
   ],
 
   // チャート用（WeeklyBarChart）
@@ -134,6 +133,11 @@ export function otherTeamColor(order: number): string {
 
 export function teamColor(categoryId: string): string {
   return pickTeamColor(Colors.teamPalette, categoryId);
+}
+
+/** チャレンジ内で重複しない、categoryIdベースの安定したチーム色。 */
+export function teamColorMap(categoryIds: readonly string[]): Record<string, string> {
+  return pickTeamColors(Colors.teamPalette, categoryIds);
 }
 
 /** 活動詳細マップの相対ラップペース（速い・通常・ゆっくり）。 */

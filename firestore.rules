@@ -7,7 +7,7 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(uid));
     }
     function isAdmin() {
-      return signedIn() && userDoc(request.auth.uid).data.role == 'admin';
+      return signedIn() && userDoc(request.auth.uid).data.get('role', '') == 'admin';
     }
     function safeUserText(text) {
       return text is string

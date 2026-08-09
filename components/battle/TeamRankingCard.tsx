@@ -20,6 +20,23 @@ interface Props {
  * 自分が上位に入っている場合は、その行をハイライトして重複表示しない。
  */
 export function TeamRankingCard({ ranking, contributions = {}, currentUserId, onPressMore, blockedUserIds }: Props) {
+  if (ranking.error) {
+    return (
+      <Card style={styles.card} padding={Spacing.md}>
+        <View style={styles.errorRow} accessibilityRole="alert">
+          <Ionicons name="cloud-offline-outline" size={18} color={Colors.error} />
+          <Text style={styles.errorText}>チーム内ランキングを取得できませんでした</Text>
+          <TouchableOpacity
+            onPress={ranking.retry}
+            accessibilityRole="button"
+            accessibilityLabel="チーム内ランキングを再読み込み"
+          >
+            <Text style={styles.errorRetry}>再試行</Text>
+          </TouchableOpacity>
+        </View>
+      </Card>
+    );
+  }
   const { myRank, teamSize, myKm } = ranking;
   const top = ranking.top.filter((member) => member.isMe || !blockedUserIds?.has(member.userId));
   if (top.length === 0) return null;
@@ -118,6 +135,9 @@ export function TeamRankingCard({ ranking, contributions = {}, currentUserId, on
 const styles = StyleSheet.create({
   // 画面側が左右パディングを持つので Card のデフォルト marginHorizontal は打ち消す
   card: { marginBottom: 0, marginHorizontal: 0 },
+  errorRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  errorText: { flex: 1, fontSize: Typography.fontSize.sm, color: Colors.textSecondary },
+  errorRetry: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.primaryDark },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

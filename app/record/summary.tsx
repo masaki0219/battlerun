@@ -38,6 +38,9 @@ interface BattleImpact {
   creditedDistanceKm?: number;
 }
 
+type BattleCreditStatus = 'eligible' | 'not-participating' | 'not-eligible' | 'unknown';
+type BattleCreditReason = 'battle-finalized' | 'outside-period' | 'inactive-battle' | null;
+
 const PERSONAL_RECORD_LABELS: Partial<Record<PersonalRecordKey, string>> = {
   fastest1kSec: '最速1km',
   fastest5kSec: '最速5km',
@@ -85,6 +88,8 @@ export default function RecordingSummaryScreen() {
   const [impacts, setImpacts] = useState<BattleImpact[]>([]);
   const [loadingImpact, setLoadingImpact] = useState(true);
   const [impactTimedOut, setImpactTimedOut] = useState(false);
+  const [battleCreditStatus, setBattleCreditStatus] = useState<BattleCreditStatus>('unknown');
+  const [battleCreditReason, setBattleCreditReason] = useState<BattleCreditReason>(null);
   const [newRecords, setNewRecords] = useState<PersonalRecordKey[]>([]);
   const [activityRoute, setActivityRoute] = useState<RoutePoint[]>([]);
   const [sharing, setSharing] = useState(false);
@@ -162,6 +167,22 @@ export default function RecordingSummaryScreen() {
     const unsubscribe = onSnapshot(doc(db, 'activities', activityId), (snapshot) => {
       if (!snapshot.exists()) return;
       const data = snapshot.data();
+      const nextCreditStatus = data['battleCreditStatus'];
+      setBattleCreditStatus(
+        nextCreditStatus === 'eligible'
+          || nextCreditStatus === 'not-participating'
+          || nextCreditStatus === 'not-eligible'
+          ? nextCreditStatus
+          : 'unknown',
+      );
+      const nextCreditReason = data['battleCreditReason'];
+      setBattleCreditReason(
+        nextCreditReason === 'battle-finalized'
+          || nextCreditReason === 'outside-period'
+          || nextCreditReason === 'inactive-battle'
+          ? nextCreditReason
+          : null,
+      );
       setNewRecords(personalRecordKeys(data['newRecords']));
       const impactMap = (data['aggregationImpacts'] as Record<string, BattleImpact> | undefined) ?? {};
       setImpacts(Object.values(impactMap).sort((a, b) => {
@@ -188,11 +209,27 @@ export default function RecordingSummaryScreen() {
   const primaryCreditedDistanceKm = primaryImpact?.creditedDistanceKm ?? distanceKm;
   const rankChanged = primaryImpact && primaryImpact.rankBefore !== primaryImpact.rankAfter;
   const hasMultipleImpacts = impacts.length > 1;
+  const emptyImpactTitle = battleCreditStatus === 'not-eligible'
+    ? 'チャレンジに加算されませんでした'
+    : battleCreditStatus === 'eligible'
+      ? 'チャレンジに反映できませんでした'
+      : 'チャレンジ未参加';
+  const emptyImpactDetail = battleCreditReason === 'battle-finalized'
+    ? '結果確定後に再送されたため、個人記録だけに保存されました'
+    : battleCreditReason === 'outside-period'
+      ? 'チャレンジ開催期間外の記録として、個人記録だけに保存されました'
+      : battleCreditStatus === 'not-eligible'
+        ? '対象チャレンジの状態を確認してください'
+        : battleCreditStatus === 'eligible'
+          ? '活動詳細で反映状況を確認してください'
+          : 'チャレンジに参加して記録を競おう';
 
   async function handleShareRun() {
     if (sharing || !sharePreferenceLoaded) return;
     const impactLabel = primaryImpact
-      ? `「${primaryImpact.battleTitle}」チーム ${primaryImpact.rankBefore}位→${primaryImpact.rankAfter}位`
+      ? rankChanged
+        ? `「${primaryImpact.battleTitle}」チーム ${primaryImpact.rankBefore}位→${primaryImpact.rankAfter}位`
+        : `「${primaryImpact.battleTitle}」チーム ${primaryImpact.rankAfter}位をキープ`
       : null;
     const message = buildRunShareMessage({
       distanceKm,
@@ -281,7 +318,7 @@ export default function RecordingSummaryScreen() {
                 <Text style={s.badgeTitle}>{newRecords.map((key) => PERSONAL_RECORD_LABELS[key]).join('・')}</Text>
                 <Text style={s.badgeSub}>今日のランで新しい記録が生まれました</Text>
               </View>
-              <Text style={s.badgeNew}>NEW</Text>
+              <Text style={s.badgeNew}>{decorLabel('新記録', 'NEW')}</Text>
             </View>
           </View>
         )}
@@ -296,7 +333,7 @@ export default function RecordingSummaryScreen() {
 
         {/* ── Battle impact ─────────────────────────────── */}
         <View style={s.section}>
-          <Text style={TextStyles.sectionTitle}>ランへの反映</Text>
+          <Text style={TextStyles.sectionTitle}>チャレンジへの反映</Text>
           {loadingImpact ? (
             <View style={[s.impactCard, { alignItems: 'center', paddingVertical: 24 }]}>
               <ActivityIndicator color={Colors.primary} />
@@ -309,16 +346,16 @@ export default function RecordingSummaryScreen() {
             </View>
           ) : primaryImpact ? (
             <View style={s.impactCard}>
-              <View style={s.rankRise}>
-                <View style={s.rankBefore}>
-                  <Text style={s.rankBeforeLabel}>BEFORE</Text>
-                  <View style={s.rankBox}>
-                    <Text style={s.rankBoxNum}>{primaryImpact.rankBefore}</Text>
+              {rankChanged ? (
+                <View style={s.rankRise}>
+                  <View style={s.rankBefore}>
+                    <Text style={s.rankBeforeLabel}>変更前</Text>
+                    <View style={s.rankBox}>
+                      <Text style={s.rankBoxNum}>{primaryImpact.rankBefore}</Text>
+                    </View>
                   </View>
-                </View>
-                <View style={s.rankArrowWrap}>
-                  <View style={s.rankArrowLine} />
-                  {rankChanged && (
+                  <View style={s.rankArrowWrap}>
+                    <View style={s.rankArrowLine} />
                     <View style={s.rankArrowBadge}>
                       <Text style={s.rankArrowText}>
                         {primaryImpact.rankBefore > primaryImpact.rankAfter
@@ -326,24 +363,31 @@ export default function RecordingSummaryScreen() {
                           : `${primaryImpact.rankAfter - primaryImpact.rankBefore} 位↓`}
                       </Text>
                     </View>
-                  )}
-                  <Ionicons name="chevron-forward" size={14} color={Colors.primaryDark} />
-                </View>
-                <View style={s.rankAfter}>
-                  <Text style={s.rankAfterLabel}>AFTER</Text>
-                  <View style={[s.rankBoxAfter, !rankChanged && { backgroundColor: Colors.textSecondary }]}>
-                    <Text style={s.rankBoxAfterNum}>{primaryImpact.rankAfter}</Text>
+                    <Ionicons name="chevron-forward" size={14} color={Colors.primaryDark} />
+                  </View>
+                  <View style={s.rankAfter}>
+                    <Text style={s.rankAfterLabel}>変更後</Text>
+                    <View style={s.rankBoxAfter}>
+                      <Text style={s.rankBoxAfterNum}>{primaryImpact.rankAfter}</Text>
+                    </View>
                   </View>
                 </View>
-              </View>
+              ) : (
+                <View style={s.rankKept}>
+                  <Ionicons name="shield-checkmark-outline" size={24} color={Colors.primaryDark} />
+                  <Text style={s.rankKeptText}>{primaryImpact.rankAfter}位をキープ</Text>
+                </View>
+              )}
 
               <View style={s.impactBottom}>
                 <View>
                   <Text style={s.impactBattleLabel}>{primaryImpact.battleTitle}</Text>
                   <Text style={s.impactTeamText}>
-                    あなたのランでチームが{' '}
+                    あなたのランでチームは{' '}
                     <Text style={{ color: rankChanged ? Colors.primaryDark : Colors.textPrimary, fontWeight: '900' }}>
-                      {primaryImpact.rankBefore}位→{primaryImpact.rankAfter}位
+                      {rankChanged
+                        ? `${primaryImpact.rankBefore}位→${primaryImpact.rankAfter}位`
+                        : `${primaryImpact.rankAfter}位をキープ`}
                     </Text>
                   </Text>
                   {hasMultipleImpacts && (
@@ -364,9 +408,15 @@ export default function RecordingSummaryScreen() {
             </View>
           ) : (
             <View style={[s.impactCard, { alignItems: 'center', paddingVertical: 20 }]}>
-              <Ionicons name="walk-outline" size={32} color={Colors.textTertiary} />
-              <Text style={{ color: Colors.textSecondary, marginTop: 8, fontSize: 13 }}>チャレンジ未参加</Text>
-              <Text style={{ color: Colors.textSecondary, fontSize: 11, marginTop: 2 }}>チャレンジに参加して記録を競おう</Text>
+              <Ionicons
+                name={battleCreditStatus === 'not-eligible' ? 'information-circle-outline' : 'walk-outline'}
+                size={32}
+                color={Colors.textTertiary}
+              />
+              <Text style={{ color: Colors.textSecondary, marginTop: 8, fontSize: 13 }}>{emptyImpactTitle}</Text>
+              <Text style={{ color: Colors.textSecondary, fontSize: 11, marginTop: 2, textAlign: 'center' }}>
+                {emptyImpactDetail}
+              </Text>
             </View>
           )}
         </View>
@@ -379,9 +429,11 @@ export default function RecordingSummaryScreen() {
             distanceKm={distanceKm}
             durationLabel={formatShareDuration(durationSeconds)}
             paceLabel={pace.includes('--') ? null : pace}
-            dateLabel="TODAY"
+            dateLabel={decorLabel('今日', 'TODAY')}
             impactLabel={primaryImpact
-              ? `「${primaryImpact.battleTitle}」チーム ${primaryImpact.rankBefore}位→${primaryImpact.rankAfter}位`
+              ? rankChanged
+                ? `「${primaryImpact.battleTitle}」チーム ${primaryImpact.rankBefore}位→${primaryImpact.rankAfter}位`
+                : `「${primaryImpact.battleTitle}」チーム ${primaryImpact.rankAfter}位をキープ`
               : null}
             mapRegion={includeRouteInShare ? mapRegion : null}
             routeVisualization={routeVisualization}
@@ -502,6 +554,11 @@ const s = StyleSheet.create({
     shadowOpacity: 0.06, shadowRadius: 14, elevation: 3,
   },
   rankRise: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  rankKept: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 10, borderRadius: BorderRadius.md, backgroundColor: Colors.primaryLight,
+  },
+  rankKeptText: { fontSize: 18, fontWeight: '900', color: Colors.primaryDark },
   rankBefore: { alignItems: 'center' },
   rankBeforeLabel: { fontSize: 9, color: Colors.textTertiary, fontWeight: '700', letterSpacing: 1, marginBottom: 4 },
   rankBox: {

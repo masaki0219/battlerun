@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
-import { remainingLabel } from '../utils/displayStats';
+import { comebackTarget, fastestFullKmSplitIndex, formatDistanceKm, remainingLabel } from '../utils/displayStats';
 import { validateDisplayName, DISPLAY_NAME_MAX_LENGTH } from '../lib/validation/displayName';
-import { pickOtherTeamColor, pickTeamColor } from '../utils/teamColors';
+import { pickOtherTeamColor, pickTeamColor, pickTeamColors } from '../utils/teamColors';
 import { factionBarRatio, prioritizeTeams } from '../utils/teamDisplay';
+import { teamTitleLabel } from '../lib/teamTitle';
 
 // ── remainingLabel: チャレンジ詳細のカウントダウン（切り捨て）と同じ丸めになること ──
 {
@@ -21,6 +22,33 @@ import { factionBarRatio, prioritizeTeams } from '../utils/teamDisplay';
   assert.equal(remainingLabel('not-a-date', now), null);
 }
 
+// 距離はGPSの見かけ精度を過剰に出さず、小数1桁へ統一する。
+assert.equal(formatDistanceKm(5.24), '5.2');
+assert.equal(formatDistanceKm(-1), '0.0');
+assert.equal(formatDistanceKm(Number.NaN), '0.0');
+assert.equal(teamTitleLabel(1), '優勝チームの一員');
+assert.equal(teamTitleLabel(2), '準優勝チームの一員');
+assert.equal(teamTitleLabel(4), '4位チームの一員');
+assert.equal(fastestFullKmSplitIndex([
+  { km: 1, seconds: 360, distanceKm: 1 },
+  { km: 2, seconds: 330, distanceKm: 1 },
+  { km: 2.7, seconds: 180, distanceKm: 0.7 },
+]), 1, '端数区間の換算ペースが最速でも1kmラップだけを比較する');
+assert.equal(fastestFullKmSplitIndex([
+  { km: 1, seconds: 360, distanceKm: 1 },
+  { km: 1.4, seconds: 120, distanceKm: 0.4 },
+]), null, '比較できる1kmラップが1本だけなら最速を表示しない');
+
+// 逆転ペースは切り上げ日数ではなく実残り時間で割る。
+{
+  const now = new Date('2026-07-29T11:00:00+09:00');
+  const target = comebackTarget(100, '2026-08-03T10:39:00+09:00', now);
+  assert.ok(target);
+  assert.equal(target.totalKm, 100.01);
+  assert.ok(target.kmPerDay > 20 && target.kmPerDay < 21);
+  assert.equal(comebackTarget(100, '2026-07-29T10:00:00+09:00', now), null);
+}
+
 // ── validateDisplayName: 公開ランキングに出る唯一のUGCなので長さ・制御文字を弾く ──
 {
   assert.equal(validateDisplayName('まさき').ok, true);
@@ -30,6 +58,16 @@ import { factionBarRatio, prioritizeTeams } from '../utils/teamDisplay';
   assert.equal(validateDisplayName('a'.repeat(DISPLAY_NAME_MAX_LENGTH)).ok, true);
   assert.equal(validateDisplayName('a'.repeat(DISPLAY_NAME_MAX_LENGTH + 1)).ok, false);
   assert.equal(validateDisplayName('ab\ncd').ok, false);
+}
+
+// ハッシュが衝突しても同一チャレンジ内では別色になり、入力順にも依存しない。
+{
+  const palette = ['teal', 'sky', 'purple', 'rose'];
+  const ids = ['morning', 'night', 'sales', 'blue'];
+  const forward = pickTeamColors(palette, ids);
+  const reversed = pickTeamColors(palette, [...ids].reverse());
+  assert.equal(new Set(Object.values(forward)).size, ids.length);
+  assert.deepEqual(forward, reversed);
 }
 
 // ── pickOtherTeamColor: 先頭（自チーム色）を他チームへ割り当てないこと ──

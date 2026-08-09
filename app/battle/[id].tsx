@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import { useBattleStore } from '../../stores/battleStore';
-import { Colors, DarkColors, Spacing, Shadow, BorderRadius, TextStyles, Typography, teamColor } from '../../design_tokens';
+import { Colors, DarkColors, Spacing, Shadow, BorderRadius, TextStyles, Typography, teamColor, teamColorMap } from '../../design_tokens';
 import { MonoLabel } from '../../components/ui/MonoLabel';
 import { StatBlock } from '../../components/ui/StatBlock';
 import { ProgressBar } from '../../components/ui/ProgressBar';
@@ -28,6 +28,7 @@ import type { CategoryStats, Battle, Category } from '../../types';
 import { inviteWebUrl } from '../../lib/invite';
 import { useBlockedUsers } from '../../hooks/useBlockedUsers';
 import { prioritizeTeams } from '../../utils/teamDisplay';
+import { comebackTarget } from '../../utils/displayStats';
 
 // ─── countdown helpers ─────────────────────────────────────────
 function timeLeft(endAt: string): { d: number; h: number; m: number } {
@@ -59,6 +60,8 @@ export default function BattleDetailScreen() {
   const [stats, setStats] = useState<CategoryStats[]>([]);
   const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
   const [loading, setLoading] = useState(true);
+  const [statsError, setStatsError] = useState(false);
+  const [statsRetryKey, setStatsRetryKey] = useState(0);
   const [fetchedBattle, setFetchedBattle] = useState<Battle | null>(null);
   const [showTeamChange, setShowTeamChange] = useState(false);
   const [changingTeam, setChangingTeam] = useState(false);
@@ -137,6 +140,7 @@ export default function BattleDetailScreen() {
   useEffect(() => {
     if (!id) return;
     setLoading(true);
+    setStatsError(false);
     const colRef = collection(db, 'battles', id, 'category_stats');
     const unsub = onSnapshot(colRef, (snap) => {
       const s: CategoryStats[] = snap.docs.map((d) => ({
@@ -148,9 +152,15 @@ export default function BattleDetailScreen() {
       }));
       setStats(s);
       setLoading(false);
-    }, () => setLoading(false));
+      setStatsError(false);
+    }, (error) => {
+      console.warn('[BattleDetail] category stats subscription failed:', error);
+      setStats([]);
+      setLoading(false);
+      setStatsError(true);
+    });
     return unsub;
-  }, [id, battle]);
+  }, [id, battle, statsRetryKey]);
 
   // ── recent activities for this battle (best-effort) ────────
   useEffect(() => {
@@ -228,21 +238,22 @@ export default function BattleDetailScreen() {
     : sorted[1];
   const gaugeLeft = myTeam ?? sorted[0];
   const gaugeRight = myTeam ? rival : sorted[1];
-  const remainingDays = Math.max(1, Math.ceil((new Date(battle.endAt).getTime() - Date.now()) / 86_400_000));
-  const targetKmPerDay = myTeam && rival && !leading
+  const gapToOvertakeKm = myTeam && rival && !leading
     ? (rankType === 'average'
-      ? Math.max(0, rival.avgDistanceKm * Math.max(myTeam.participantCount, 1) - myTeam.totalDistanceKm + 0.01) / remainingDays
-      : Math.max(0, rival.totalDistanceKm - myTeam.totalDistanceKm + 0.01) / remainingDays)
+      ? Math.max(0, rival.avgDistanceKm * Math.max(myTeam.participantCount, 1) - myTeam.totalDistanceKm)
+      : Math.max(0, rival.totalDistanceKm - myTeam.totalDistanceKm))
     : null;
+  const comeback = gapToOvertakeKm != null ? comebackTarget(gapToOvertakeKm, battle.endAt) : null;
   const bothZero = gaugeLeft && gaugeRight && val(gaugeLeft) <= 0 && val(gaugeRight) <= 0;
   const maxVal = Math.max(...sorted.map(val), 0.01);
+  const colorsByCategory = teamColorMap(battle.categories.map((category) => category.id));
   const multiTeamColumns = prioritizeTeams(sorted, myCatId).map((team) => ({
     id: team.categoryId,
     label: team.label,
     km: val(team),
     rank: allZero ? null : 1 + sorted.filter((item) => val(item) > val(team)).length,
     isMine: team.categoryId === myCatId,
-    color: teamColor(team.categoryId),
+    color: colorsByCategory[team.categoryId] ?? teamColor(team.categoryId),
   }));
 
   async function shareInvite(targetBattle: Battle) {
@@ -323,6 +334,19 @@ export default function BattleDetailScreen() {
         contentContainerStyle={s.scroll}
         showsVerticalScrollIndicator={false}
       >
+        {statsError && (
+          <View style={s.connectionError} accessibilityRole="alert">
+            <Ionicons name="cloud-offline-outline" size={17} color={Colors.error} />
+            <Text style={s.connectionErrorText}>チーム成績を取得できませんでした</Text>
+            <TouchableOpacity
+              onPress={() => setStatsRetryKey((key) => key + 1)}
+              accessibilityRole="button"
+              accessibilityLabel="チーム成績を再読み込み"
+            >
+              <Text style={s.connectionErrorRetry}>再試行</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         {/* ── Dark hero (勝負どころ) ──────────────────────── */}
         <View style={s.hero}>
           {battle.inviteCode ? (
@@ -339,7 +363,7 @@ export default function BattleDetailScreen() {
               </TouchableOpacity>
             </View>
           ) : (
-            <MonoLabel color={DarkColors.textTertiary} size={9}>BATTLE / ACTIVE</MonoLabel>
+            <MonoLabel color={DarkColors.textTertiary} size={9}>チャレンジ / 開催中</MonoLabel>
           )}
           <Text style={s.heroTitle}>{battle.title}</Text>
 
@@ -360,8 +384,8 @@ export default function BattleDetailScreen() {
           ) : gaugeLeft && gaugeRight ? (
             <View style={s.heroGauge}>
               <VersusGauge
-                left={{ label: gaugeLeft.label, km: val(gaugeLeft), isMine: gaugeLeft.categoryId === myCatId, color: teamColor(gaugeLeft.categoryId) }}
-                right={{ label: gaugeRight.label, km: val(gaugeRight), isMine: gaugeRight.categoryId === myCatId, color: teamColor(gaugeRight.categoryId) }}
+                left={{ label: gaugeLeft.label, km: val(gaugeLeft), isMine: gaugeLeft.categoryId === myCatId, color: colorsByCategory[gaugeLeft.categoryId] ?? teamColor(gaugeLeft.categoryId) }}
+                right={{ label: gaugeRight.label, km: val(gaugeRight), isMine: gaugeRight.categoryId === myCatId, color: colorsByCategory[gaugeRight.categoryId] ?? teamColor(gaugeRight.categoryId) }}
                 size="lg"
                 dark
                 unit={rankType === 'average' ? 'km/人' : 'km'}
@@ -369,11 +393,11 @@ export default function BattleDetailScreen() {
             </View>
           ) : null}
 
-          {targetKmPerDay != null && !bothZero && (
+          {comeback != null && !bothZero && (
             <View style={s.heroPace}>
               <Ionicons name="flash" size={14} color={DarkColors.accent} />
               <Text style={s.heroPaceText}>
-                相手の距離が増えなければ、1日 {targetKmPerDay.toFixed(1)}km で逆転
+                相手が伸びなければ、チーム全体であと {comeback.totalKm.toFixed(1)}km。1日 {comeback.kmPerDay.toFixed(1)}km が逆転の目安
               </Text>
             </View>
           )}
@@ -414,13 +438,15 @@ export default function BattleDetailScreen() {
             <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.md }]}>チームランキング</Text>
             {loading && sorted.length === 0 ? (
               <ActivityIndicator color={Colors.primary} style={{ marginVertical: 20 }} />
+            ) : statsError ? (
+              <Text style={s.rankingUnavailable}>接続を確認して再試行してください</Text>
             ) : sorted.length === 0 ? (
               <EmptyState icon="flag-outline" title="まだ記録がありません" hint="最初のランでチームに貢献しよう" />
             ) : (
               sorted.map((cat, i) => {
                 const isMine = cat.categoryId === myCatId;
                 const displayRank = allZero ? null : 1 + sorted.filter((item) => val(item) > val(cat)).length;
-                const barColor = teamColor(cat.categoryId);
+                const barColor = colorsByCategory[cat.categoryId] ?? teamColor(cat.categoryId);
                 return (
                   <View key={cat.categoryId} style={s.rankRow}>
                     <Text style={[s.rankNum, isMine && s.rankNumMine]}>{displayRank ?? '—'}</Text>
@@ -454,7 +480,7 @@ export default function BattleDetailScreen() {
           </View>
         )}
 
-        {!isIndividual && teamRanking.top.length > 0 && (
+        {!isIndividual && (teamRanking.top.length > 0 || teamRanking.error) && (
           <View>
             <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.md }]}>チーム内ランキング</Text>
             <TeamRankingCard
@@ -554,6 +580,14 @@ export default function BattleDetailScreen() {
 }
 
 const s = StyleSheet.create({
+  connectionError: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    padding: Spacing.md, borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
+  },
+  connectionErrorText: { flex: 1, fontSize: Typography.fontSize.sm, color: Colors.textSecondary },
+  connectionErrorRetry: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.primaryDark },
+  rankingUnavailable: { paddingVertical: Spacing.lg, textAlign: 'center', color: Colors.textSecondary },
   leaveButton: {
     minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm,
     borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.error,

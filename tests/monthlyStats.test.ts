@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { aggregateMonthlyActivities, parseMonthlyStatsImpact, tokyoMonthKey as serverMonthKey } from '../functions/src/monthlyStats';
-import { recentTokyoMonthKeys, tokyoMonthKey } from '../utils/monthlyStats';
+import {
+  monthlyDistanceLowerBound,
+  recentTokyoMonthKeys,
+  reconcileMonthlyStats,
+  tokyoMonthKey,
+} from '../utils/monthlyStats';
 
 const julyBoundary = new Date('2026-06-30T15:00:00.000Z');
 assert.equal(tokyoMonthKey(julyBoundary), '2026-07');
@@ -51,5 +56,18 @@ assert.deepEqual(aggregated.get('2026-07'), {
 assert.deepEqual(aggregated.get('2026-08'), {
   monthKey: '2026-08', km: 54, count: 52, durationSec: 32_400, elevationM: 102,
 });
+
+const reconciled = reconcileMonthlyStats([
+  { monthKey: '2026-07', km: 80, count: 8, durationSec: 8_000, elevationM: 0 },
+  { monthKey: '2026-08', km: 5, count: 1, durationSec: 1_000, elevationM: 0 },
+], [
+  { startedAt: '2026-07-02T00:00:00.000Z', distanceKm: 70, durationSeconds: 7_000 },
+  { startedAt: '2026-08-02T00:00:00.000Z', distanceKm: 20, durationSeconds: 2_000 },
+]);
+assert.deepEqual(reconciled, [
+  { monthKey: '2026-07', km: 80, count: 8, durationSec: 8_000, elevationM: 0 },
+  { monthKey: '2026-08', km: 20, count: 1, durationSec: 2_000, elevationM: 0 },
+]);
+assert.equal(monthlyDistanceLowerBound(reconciled), 100, '生涯表示の下限は月次突合の合計を下回らない');
 
 console.log('monthlyStats tests passed');

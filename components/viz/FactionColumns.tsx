@@ -100,6 +100,7 @@ export function FactionColumns({ factions, height = 120, valueSuffix = 'km' }: P
             <Text style={[styles.legendLabel, f.isMine && styles.legendLabelMine]} numberOfLines={1}>
               {f.label}
             </Text>
+            {f.isMine && <Text style={styles.legendMine}>あなた</Text>}
             <Text style={styles.legendRank}>{f.rank == null ? '順位なし' : `${f.rank}位`}</Text>
           </View>
         ))}
@@ -170,5 +171,6 @@ const styles = StyleSheet.create({
     color: DarkColors.textSecondary,
   },
   legendLabelMine: { color: DarkColors.primaryTint },
+  legendMine: { fontSize: 8, fontWeight: Typography.fontWeight.bold, color: DarkColors.primaryTint },
   legendRank: { fontSize: 9, color: DarkColors.textTertiary, fontVariant: ['tabular-nums'] },
 });

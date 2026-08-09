@@ -22,3 +22,34 @@ export function pickTeamColor(palette: readonly string[], categoryId: string): s
   }
   return palette[(hash >>> 0) % palette.length];
 }
+
+/**
+ * 同じチャレンジ内では可能な限り別々の色を割り当てる。
+ * categoryIdをソートしてからハッシュ位置を線形探索するため、ランキング順が変わっても色は変わらない。
+ */
+export function pickTeamColors(
+  palette: readonly string[],
+  categoryIds: readonly string[],
+): Record<string, string> {
+  if (palette.length === 0) return {};
+  const assignments: Record<string, string> = {};
+  const used = new Set<string>();
+  const uniqueIds = [...new Set(categoryIds)].sort((a, b) => a.localeCompare(b));
+
+  for (const categoryId of uniqueIds) {
+    const preferred = pickTeamColor(palette, categoryId);
+    const preferredIndex = Math.max(0, palette.indexOf(preferred));
+    let color = preferred;
+    for (let offset = 0; offset < palette.length; offset += 1) {
+      const candidate = palette[(preferredIndex + offset) % palette.length];
+      if (!used.has(candidate)) {
+        color = candidate;
+        break;
+      }
+    }
+    assignments[categoryId] = color;
+    used.add(color);
+  }
+
+  return assignments;
+}

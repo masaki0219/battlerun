@@ -10,12 +10,14 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { cachedPublicProfile } from './publicProfileCache';
 import { isPresenceFresh } from '../utils/presence';
 import { PRESENCE_ACTIVE_WINDOW_MS } from '../utils/presence';
 import type { LiveRunCheer, RunningPresence } from '../types';
 
-const profileCache = new Map<string, { name: string; avatarEmoji?: string }>();
-const ownCheerCache = new Map<string, boolean>();
+const OWN_CHEER_CACHE_TTL_MS = 5 * 60_000;
+const OWN_CHEER_CACHE_MAX_ENTRIES = 500;
+const ownCheerCache = new Map<string, { value: boolean; expiresAt: number }>();
 
 function timestampMs(value: unknown): number {
   const timestamp = value as { toMillis?: () => number } | undefined;
@@ -27,16 +29,27 @@ function timestampIso(value: unknown): string {
   return timestamp?.toDate?.().toISOString() ?? '';
 }
 
-async function publicProfile(uid: string): Promise<{ name: string; avatarEmoji?: string }> {
-  const cached = profileCache.get(uid);
-  if (cached) return cached;
-  const snapshot = await getDoc(doc(db, 'publicProfiles', uid));
-  const profile = {
-    name: (snapshot.data()?.['name'] as string | undefined) ?? 'メンバー',
-    avatarEmoji: (snapshot.data()?.['avatarEmoji'] as string | undefined) ?? undefined,
-  };
-  profileCache.set(uid, profile);
-  return profile;
+function readOwnCheerCache(key: string): boolean | undefined {
+  const cached = ownCheerCache.get(key);
+  if (!cached) return undefined;
+  if (cached.expiresAt <= Date.now()) {
+    ownCheerCache.delete(key);
+    return undefined;
+  }
+  return cached.value;
+}
+
+function writeOwnCheerCache(key: string, value: boolean): void {
+  const nowMs = Date.now();
+  for (const [cachedKey, cached] of ownCheerCache) {
+    if (cached.expiresAt <= nowMs) ownCheerCache.delete(cachedKey);
+  }
+  while (ownCheerCache.size >= OWN_CHEER_CACHE_MAX_ENTRIES) {
+    const oldestKey = ownCheerCache.keys().next().value as string | undefined;
+    if (!oldestKey) break;
+    ownCheerCache.delete(oldestKey);
+  }
+  ownCheerCache.set(key, { value, expiresAt: nowMs + OWN_CHEER_CACHE_TTL_MS });
 }
 
 function ownCheerKey(battleId: string, runnerId: string, sessionId: string, currentUserId: string): string {
@@ -106,12 +119,12 @@ export function subscribeBattlePresence(
       const uid = presenceDoc.id;
       const sessionId = data['sessionId'] as string;
       const cacheKey = ownCheerKey(battleId, uid, sessionId, currentUserId);
-      let cheeredByMe = ownCheerCache.get(cacheKey);
-      const profilePromise = publicProfile(uid);
+      let cheeredByMe = readOwnCheerCache(cacheKey);
+      const profilePromise = cachedPublicProfile(uid);
       if (cheeredByMe === undefined && uid !== currentUserId) {
         const cheer = await getDoc(doc(db, 'battles', battleId, 'presence', uid, 'cheers', currentUserId));
         cheeredByMe = cheer.exists() && cheer.data()['sessionId'] === sessionId;
-        ownCheerCache.set(cacheKey, cheeredByMe);
+        writeOwnCheerCache(cacheKey, cheeredByMe);
       }
       const profile = await profilePromise;
       return {
@@ -172,7 +185,7 @@ export async function cheerRunningMember(params: {
     sessionId: params.sessionId,
     createdAt: serverTimestamp(),
   });
-  ownCheerCache.set(
+  writeOwnCheerCache(
     ownCheerKey(params.battleId, params.runnerId, params.sessionId, params.fromUid),
     true,
   );
@@ -201,7 +214,7 @@ export function subscribeRunCheers(params: {
       .forEach((change) => {
         const data = change.doc.data();
         const senderId = data['fromUid'] as string;
-        void publicProfile(senderId).then((profile) => params.onCheer({
+        void cachedPublicProfile(senderId).then((profile) => params.onCheer({
           id: `${change.doc.id}:${params.sessionId}`,
           senderId,
           senderName: profile.name,

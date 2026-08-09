@@ -7,11 +7,11 @@
  * 本格的な i18n を導入する場合はこのモジュールを置き換える。
  */
 
+import { getLocales } from 'expo-localization';
+
 function detectJapanese(): boolean {
   try {
-    // Hermes (SDK 54) は Intl を同梱しており、resolvedOptions().locale が端末ロケールを返す。
-    const locale = Intl.DateTimeFormat().resolvedOptions().locale ?? '';
-    return locale.toLowerCase().startsWith('ja');
+    return getLocales()[0]?.languageCode?.toLowerCase() === 'ja';
   } catch {
     // 判定できない環境では日本語を既定にする（日本語ファーストのアプリのため）
     return true;

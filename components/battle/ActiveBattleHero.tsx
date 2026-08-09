@@ -1,10 +1,10 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { StatBlock } from '../ui/StatBlock';
 import { FactionColumns } from '../viz/FactionColumns';
-import { Colors, DarkColors, Typography, Spacing, BorderRadius, Shadow, teamColor } from '../../design_tokens';
-import { sortedStats, statValue, daysLeft, remainingLabel } from '../../utils/displayStats';
+import { DarkColors, Typography, Spacing, BorderRadius, Shadow, teamColor, teamColorMap } from '../../design_tokens';
+import { comebackTarget, sortedStats, statValue, remainingLabel } from '../../utils/displayStats';
 import type { Battle, CategoryStats } from '../../types';
 import { prioritizeTeams } from '../../utils/teamDisplay';
 
@@ -35,13 +35,13 @@ interface Props {
 export function ActiveBattleHero({
   battle, stats, myCategoryId, myDist, teamRank, activeBattleCount, onPress,
 }: Props) {
+  const { fontScale } = useWindowDimensions();
+  const largeText = fontScale >= 1.6;
   const rt = battle.rankingType;
   const sorted = sortedStats(stats, rt);
   const myIndex = sorted.findIndex((s) => s.categoryId === myCategoryId);
   const allZero = sorted.every((item) => statValue(item, rt) <= 0);
   const totalTeams = sorted.length;
-  const days = daysLeft(battle.endAt);
-  // 表示は詳細画面のカウントダウンと同じ切り捨て基準に揃える（days は逆転ペースの計算用）
   const remaining = remainingLabel(battle.endAt);
 
   const myStat = myIndex >= 0 ? sorted[myIndex] : undefined;
@@ -60,38 +60,36 @@ export function ActiveBattleHero({
   const diffKm = Math.abs(rivalKm - myKm);
   const bothZero = hasFactions && myKm <= 0 && rivalKm <= 0;
 
-  const targetKmPerDay = !leading && myStat && rivalStat && days && days > 0
+  const gapToOvertakeKm = !leading && myStat && rivalStat
     ? (rt === 'average'
-      ? Math.max(0, rivalStat.avgDistanceKm * Math.max(myStat.participantCount, 1) - myStat.totalDistanceKm + 0.01) / days
-      : Math.max(0, rivalKm - myKm + 0.01) / days)
+      ? Math.max(0, rivalStat.avgDistanceKm * Math.max(myStat.participantCount, 1) - myStat.totalDistanceKm)
+      : Math.max(0, rivalKm - myKm))
+    : null;
+  const comeback = gapToOvertakeKm != null
+    ? comebackTarget(gapToOvertakeKm, battle.endAt)
     : null;
 
+  const colorsByCategory = teamColorMap(battle.categories.map((category) => category.id));
   const columns = prioritizeTeams(sorted, myCategoryId).map((s) => ({
     id: s.categoryId,
     label: s.label,
     km: statValue(s, rt),
     rank: allZero ? null : 1 + sorted.filter((item) => statValue(item, rt) > statValue(s, rt)).length,
     isMine: s.categoryId === myCategoryId,
-    color: teamColor(s.categoryId),
+    color: colorsByCategory[s.categoryId] ?? teamColor(s.categoryId),
   }));
 
   return (
     <TouchableOpacity activeOpacity={0.92} onPress={onPress}>
       <View style={styles.shadow}>
         <View style={styles.clip}>
-          <View style={styles.body}>
-            <View style={styles.topRow}>
-              <View style={styles.topLeft}>
-                <View style={styles.eyebrowRow}>
-                  <View style={styles.iconChip}>
-                    <Ionicons name="flash" size={13} color={Colors.textOnAccent} />
-                  </View>
-                  <Text style={styles.eyebrow} maxFontSizeMultiplier={1.3}>参加中のチャレンジ</Text>
-                </View>
-                <Text style={styles.title} numberOfLines={2}>{battle.title}</Text>
+          <View style={[styles.body, largeText && styles.bodyLargeText]}>
+            <View style={[styles.topRow, largeText && styles.topRowLargeText]}>
+              <View style={[styles.topLeft, largeText && styles.topLeftLargeText]}>
+                <Text style={styles.title} numberOfLines={largeText ? undefined : 2}>{battle.title}</Text>
               </View>
               {remaining !== null && (
-                <View style={styles.daysPill}>
+                <View style={[styles.daysPill, largeText && styles.daysPillLargeText]}>
                   <Text style={styles.daysPillLabel}>残り</Text>
                   <Text style={styles.daysPillValue}>{remaining}</Text>
                 </View>
@@ -100,7 +98,7 @@ export function ActiveBattleHero({
 
             {hasFactions ? (
               <>
-                <View style={styles.standingRow}>
+                <View style={[styles.standingRow, largeText && styles.standingRowLargeText]}>
                   <View style={styles.standingLeft}>
                     <Text style={styles.teamLabel} numberOfLines={1}>{myStat!.label}</Text>
                     <View style={styles.rankLine}>
@@ -108,7 +106,7 @@ export function ActiveBattleHero({
                       <Text style={styles.rankUnit}>{myRank ? `位 / ${totalTeams}` : '順位なし'}</Text>
                     </View>
                   </View>
-                  <View style={styles.standingRight}>
+                  <View style={[styles.standingRight, largeText && styles.standingRightLargeText]}>
                     <Text style={styles.teamKm}>{myKm.toFixed(1)} {rt === 'average' ? 'km/人' : 'km'}</Text>
                     <Text style={styles.gapText}>
                       {bothZero
@@ -122,11 +120,12 @@ export function ActiveBattleHero({
 
                 <FactionColumns factions={columns} valueSuffix={rt === 'average' ? 'km/人' : 'km'} />
 
-                {targetKmPerDay != null && !bothZero && (
-                  <View style={styles.insight}>
+                {comeback != null && !bothZero && (
+                  <View style={[styles.insight, largeText && styles.insightLargeText]}>
                     <Ionicons name="speedometer-outline" size={15} color={DarkColors.accent} />
-                    <Text style={styles.insightText} maxFontSizeMultiplier={1.3}>
-                      相手の距離が増えなければ <Text style={styles.insightStrong}>1日 {targetKmPerDay.toFixed(1)}km</Text> で逆転
+                    <Text style={styles.insightText}>
+                      相手が伸びなければ、チーム全体であと {comeback.totalKm.toFixed(1)}km。{' '}
+                      <Text style={styles.insightStrong}>1日 {comeback.kmPerDay.toFixed(1)}km</Text> が逆転の目安
                     </Text>
                   </View>
                 )}
@@ -150,14 +149,14 @@ export function ActiveBattleHero({
 
           {/* フッター帯（自分の貢献と陣営内での立ち位置） */}
           <View style={styles.footer}>
-            <View style={styles.footerCols}>
-              <View style={styles.footerCol}>
+            <View style={[styles.footerCols, largeText && styles.footerColsLargeText]}>
+              <View style={[styles.footerCol, largeText && styles.footerColLargeText]}>
                 <Text style={styles.footerLabel}>あなた</Text>
                 <Text style={styles.footerValue}>{myDist.toFixed(1)} km</Text>
               </View>
 
               {teamRank && teamRank.myRank > 0 && (
-                <View style={styles.footerCol}>
+                <View style={[styles.footerCol, largeText && styles.footerColLargeText]}>
                   <Text style={styles.footerLabel}>チーム内</Text>
                   <Text style={styles.footerValue}>
                     {teamRank.myRank}位 / {teamRank.teamSize}人
@@ -166,7 +165,7 @@ export function ActiveBattleHero({
               )}
 
               {teamRank && teamRank.gapToNextKm != null && (
-                <View style={styles.footerCol}>
+                <View style={[styles.footerCol, largeText && styles.footerColLargeText]}>
                   <Text style={styles.footerLabel}>{teamRank.myRank - 1}位まで</Text>
                   <Text style={[styles.footerValue, styles.footerValueAccent]}>
                     あと {teamRank.gapToNextKm.toFixed(1)} km
@@ -201,26 +200,13 @@ const styles = StyleSheet.create({
     padding: Spacing.xl,
     gap: Spacing.lg,
   },
+  bodyLargeText: { padding: Spacing.lg, gap: Spacing.md },
 
   topRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: Spacing.md },
+  topRowLargeText: { flexDirection: 'column', alignItems: 'stretch' },
   topLeft: { flex: 1 },
-  eyebrowRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  iconChip: {
-    width: 26,
-    height: 26,
-    borderRadius: BorderRadius.sm,
-    backgroundColor: DarkColors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  eyebrow: {
-    fontSize: Typography.fontSize.xs,
-    fontWeight: Typography.fontWeight.bold,
-    color: DarkColors.textSecondary,
-    letterSpacing: 1.2,
-  },
+  topLeftLargeText: { flex: 0 },
   title: {
-    marginTop: Spacing.md,
     fontSize: Typography.fontSize.xl,
     fontWeight: Typography.fontWeight.bold,
     color: DarkColors.textPrimary,
@@ -234,6 +220,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: 6,
   },
+  daysPillLargeText: { alignSelf: 'flex-start', flexDirection: 'row', gap: Spacing.xs },
   daysPillLabel: { fontSize: 9, fontWeight: Typography.fontWeight.medium, color: DarkColors.textSecondary },
   daysPillValue: {
     fontSize: Typography.fontSize.sm,
@@ -248,8 +235,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: Spacing.md,
   },
+  standingRowLargeText: { flexDirection: 'column', alignItems: 'stretch' },
   standingLeft: { flex: 1 },
   standingRight: { alignItems: 'flex-end' },
+  standingRightLargeText: { alignItems: 'flex-start' },
   teamLabel: {
     fontSize: 10,
     fontWeight: Typography.fontWeight.bold,
@@ -293,6 +282,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: 10,
   },
+  insightLargeText: { alignItems: 'flex-start' },
   insightText: { flex: 1, fontSize: Typography.fontSize.sm, color: DarkColors.textSecondary },
   insightStrong: {
     fontWeight: Typography.fontWeight.extrabold,
@@ -317,7 +307,9 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
   },
   footerCols: { flexDirection: 'row', gap: Spacing.xl },
+  footerColsLargeText: { flexDirection: 'column', gap: Spacing.md },
   footerCol: { flex: 1 },
+  footerColLargeText: { flex: 0 },
   footerLabel: { fontSize: 10, color: DarkColors.textSecondary },
   footerValue: {
     marginTop: 2,

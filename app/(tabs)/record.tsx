@@ -464,7 +464,7 @@ export default function RecordScreen() {
           || pointAgeMs < 0
           || pointAgeMs > WARMUP_POINT_MAX_AGE_MS
         ) {
-          Alert.alert('GPSを準備しています', '正確な開始地点を取得できませんでした。空が見える場所でGPS状態が更新されてから、もう一度STARTを押してください。');
+          Alert.alert('GPSを準備しています', '正確な開始地点を取得できませんでした。空が見える場所でGPS状態が更新されてから、もう一度「スタート」を押してください。');
           return;
         }
         warmupSeed = {
@@ -567,7 +567,7 @@ export default function RecordScreen() {
       if (background?.granted) {
         Alert.alert(
           '位置情報の設定が完了しました',
-          '「常に許可」に設定できました。準備ができたらSTARTを押してください。',
+          '「常に許可」に設定できました。準備ができたら「スタート」を押してください。',
         );
         return;
       }
@@ -600,7 +600,7 @@ export default function RecordScreen() {
       const action = await new Promise<'configure' | 'foreground' | 'cancel'>((resolve) => {
         Alert.alert(
           '画面OFFでも記録するための設定',
-          '端末の位置情報を「常に許可」にすると、画面をロックしたり他のアプリを開いたりしても計測が続きます。設定後は状態を確認して、STARTをもう一度押してください。',
+          '端末の位置情報を「常に許可」にすると、画面をロックしたり他のアプリを開いたりしても計測が続きます。設定後は状態を確認して、「スタート」をもう一度押してください。',
           [
             { text: '画面を開いたまま開始', style: 'cancel', onPress: () => resolve('foreground') },
             { text: '設定する', onPress: () => resolve('configure') },
@@ -636,7 +636,7 @@ export default function RecordScreen() {
       ) {
         Alert.alert(
           'GPSを準備しています',
-          '正確な開始地点を取得中です。空が見える場所で「GPS 準備OK」または「開始できます」と表示されてからSTARTを押してください。',
+          '正確な開始地点を取得中です。空が見える場所で「GPS 準備OK」または「開始できます」と表示されてから「スタート」を押してください。',
         );
         return;
       }
@@ -703,7 +703,7 @@ export default function RecordScreen() {
               reset();
               Alert.alert(
                 '端末に保存しました',
-                '通信できなかったため、記録を端末に保管しました。オンライン復帰時に自動で再送します。',
+                '通信できなかったため、記録を端末に保管しました。オンライン復帰時に自動で再送します。開催中のチャレンジには、結果確定前に再送できた場合に加算されます。',
               );
             } else if (e instanceof ActivitySaveError && e.kind === 'rejected') {
               reset();
@@ -817,59 +817,8 @@ export default function RecordScreen() {
             </Text>
           )}
 
-          {/* Voice coach settings */}
-          <View style={s.voiceRow}>
-            <TouchableOpacity
-              style={s.voiceSettingsButton}
-              onPress={() => setShowVoiceSettings(true)}
-              accessibilityRole="button"
-              accessibilityLabel="音声コーチの設定を開く"
-            >
-              <Ionicons name="volume-medium-outline" size={16} color={voiceGuide ? Colors.primaryDark : Colors.textTertiary} />
-              <View style={s.voiceLabelWrap}>
-                <Text style={[s.voiceLabel, voiceGuide && { color: Colors.primaryDark }]}>音声コーチ</Text>
-                {voiceGuide && (
-                  <Text style={s.voiceSummary}>
-                    {voiceSettings.intervalType === 'distance'
-                      ? `${voiceSettings.distanceKm}kmごと`
-                      : `${voiceSettings.timeMinutes}分ごと`}
-                  </Text>
-                )}
-              </View>
-              <Ionicons name="settings-outline" size={15} color={Colors.textTertiary} />
-            </TouchableOpacity>
-            <Switch
-              value={voiceGuide}
-              onValueChange={(enabled) => updateVoiceSettings({ enabled })}
-              trackColor={{ false: Colors.surfaceGray, true: `${Colors.primary}60` }}
-              thumbColor={voiceGuide ? Colors.primary : Colors.textTertiary}
-              style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
-            />
-          </View>
-
-          {/* Auto pause toggle (GPS only) */}
-          {selectedMode === 'gps' && (
-            <View style={s.voiceRow}>
-              <Ionicons name="pause-circle-outline" size={16} color={autoPauseEnabled ? Colors.primaryDark : Colors.textTertiary} />
-              <View style={s.voiceLabelWrap}>
-                <View style={s.autoPauseTitleRow}>
-                  <Text style={[s.voiceLabel, autoPauseEnabled && { color: Colors.primaryDark }]}>オートポーズ</Text>
-                  <Text style={s.experimentalBadge} maxFontSizeMultiplier={1.3}>試験的</Text>
-                </View>
-                <Text style={s.voiceSummary}>停止を誤検知する場合があります（初期設定OFF）</Text>
-              </View>
-              <Switch
-                value={autoPauseEnabled}
-                onValueChange={setAutoPauseEnabled}
-                trackColor={{ false: Colors.surfaceGray, true: `${Colors.primary}60` }}
-                thumbColor={autoPauseEnabled ? Colors.primary : Colors.textTertiary}
-                style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
-              />
-            </View>
-          )}
-
           {/* Goal chips */}
-          <View style={s.goalRow}>
+          <View style={[s.goalRow, fontScale >= 1.6 && s.goalRowLargeText]}>
             <Text style={s.goalRowLabel}>目標</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.goalChips}>
               {GOAL_OPTIONS.map((option, idx) => {
@@ -891,10 +840,10 @@ export default function RecordScreen() {
           </View>
 
           {/* START button */}
-          <View style={s.startArea}>
+          <View style={[s.startArea, fontScale >= 1.6 && s.startAreaLargeText]}>
             {declarationBattle && (
               <TouchableOpacity
-                style={s.declarationGuide}
+                style={[s.declarationGuide, fontScale >= 1.6 && s.declarationGuideLargeText]}
                 onPress={() => router.push('/(tabs)/battle' as any)}
                 activeOpacity={0.7}
                 accessibilityRole="button"
@@ -903,15 +852,15 @@ export default function RecordScreen() {
                 <View style={s.declarationGuideIcon}>
                   <Ionicons name={ownDeclaration?.status === 'done' ? 'checkmark' : 'flag-outline'} size={16} color={Colors.accentDark} />
                 </View>
-                <View style={s.declarationGuideCopy}>
-                  <Text style={s.declarationGuideTitle} numberOfLines={1}>
+                <View style={[s.declarationGuideCopy, fontScale >= 1.6 && s.declarationGuideCopyLargeText]}>
+                  <Text style={s.declarationGuideTitle} numberOfLines={fontScale >= 1.6 ? undefined : 1}>
                     {ownDeclaration?.status === 'done'
                       ? '今日のラン宣言を達成しました'
                       : ownDeclaration
                         ? `今日の予定：${declarationTimeLabel(ownDeclaration.plannedAt, ownDeclaration.timezone)}`
                         : '今日、走る予定はありますか？'}
                   </Text>
-                  <Text style={s.declarationGuideBattle} numberOfLines={1}>{declarationBattle.title}</Text>
+                  <Text style={s.declarationGuideBattle} numberOfLines={fontScale >= 1.6 ? undefined : 1}>{declarationBattle.title}</Text>
                 </View>
                 <Text style={s.declarationGuideAction}>{ownDeclaration?.status === 'planned' ? '変更' : ownDeclaration ? '確認' : '宣言する'}</Text>
                 <Ionicons name="chevron-forward" size={15} color={Colors.textTertiary} />
@@ -926,9 +875,9 @@ export default function RecordScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="ランの記録を開始"
               >
-                {/* 英字STARTは装飾扱い（意味は accessibilityLabel とヒント文が担う）。
-                    固定120pt円からはみ出て「STA」に切れるため、このテキストだけ倍率上限を設ける */}
-                <Text style={s.startLabel} maxFontSizeMultiplier={1.2}>START</Text>
+                <Text style={s.startLabel} maxFontSizeMultiplier={1.2}>
+                  {decorLabel('スタート', 'START')}
+                </Text>
               </TouchableOpacity>
             </View>
             <Text style={s.startHint}>タップしてラン開始</Text>
@@ -1027,6 +976,56 @@ export default function RecordScreen() {
             )}
           </View>
 
+          {/* 開始を最優先にし、任意設定はその後に置く。最大文字サイズでもCTAまでの距離を短くする。 */}
+          <View style={s.voiceRow}>
+            <TouchableOpacity
+              style={s.voiceSettingsButton}
+              onPress={() => setShowVoiceSettings(true)}
+              accessibilityRole="button"
+              accessibilityLabel="音声コーチの設定を開く"
+            >
+              <Ionicons name="volume-medium-outline" size={16} color={voiceGuide ? Colors.primaryDark : Colors.textTertiary} />
+              <View style={s.voiceLabelWrap}>
+                <Text style={[s.voiceLabel, voiceGuide && { color: Colors.primaryDark }]}>音声コーチ</Text>
+                {voiceGuide && (
+                  <Text style={s.voiceSummary}>
+                    {voiceSettings.intervalType === 'distance'
+                      ? `${voiceSettings.distanceKm}kmごと`
+                      : `${voiceSettings.timeMinutes}分ごと`}
+                  </Text>
+                )}
+              </View>
+              <Ionicons name="settings-outline" size={15} color={Colors.textTertiary} />
+            </TouchableOpacity>
+            <Switch
+              value={voiceGuide}
+              onValueChange={(enabled) => updateVoiceSettings({ enabled })}
+              trackColor={{ false: Colors.surfaceGray, true: `${Colors.primary}60` }}
+              thumbColor={voiceGuide ? Colors.primary : Colors.textTertiary}
+              style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
+            />
+          </View>
+
+          {selectedMode === 'gps' && (
+            <View style={s.voiceRow}>
+              <Ionicons name="pause-circle-outline" size={16} color={autoPauseEnabled ? Colors.primaryDark : Colors.textTertiary} />
+              <View style={s.voiceLabelWrap}>
+                <View style={s.autoPauseTitleRow}>
+                  <Text style={[s.voiceLabel, autoPauseEnabled && { color: Colors.primaryDark }]}>オートポーズ</Text>
+                  <Text style={s.experimentalBadge} maxFontSizeMultiplier={1.3}>試験的</Text>
+                </View>
+                <Text style={s.voiceSummary}>停止を誤検知する場合があります（初期設定OFF）</Text>
+              </View>
+              <Switch
+                value={autoPauseEnabled}
+                onValueChange={setAutoPauseEnabled}
+                trackColor={{ false: Colors.surfaceGray, true: `${Colors.primary}60` }}
+                thumbColor={autoPauseEnabled ? Colors.primary : Colors.textTertiary}
+                style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
+              />
+            </View>
+          )}
+
           {/* 前回のラン・今週 */}
           <View style={s.preData}>
             {recentLoading ? (
@@ -1073,7 +1072,7 @@ export default function RecordScreen() {
               <EmptyState
                 icon="walk-outline"
                 title="最初のランを記録しよう"
-                hint="STARTを押して走り出そう"
+                hint="「スタート」を押して走り出そう"
               />
             )}
           </View>
@@ -1472,6 +1471,7 @@ const s = StyleSheet.create({
   },
 
   startArea: { alignItems: 'center', justifyContent: 'center', gap: 16, paddingVertical: 36 },
+  startAreaLargeText: { paddingVertical: 20 },
   declarationGuide: {
     width: '88%', maxWidth: 360, minHeight: 48,
     flexDirection: 'row', alignItems: 'center', gap: 9,
@@ -1479,11 +1479,13 @@ const s = StyleSheet.create({
     borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.border,
     backgroundColor: Colors.surface,
   },
+  declarationGuideLargeText: { flexDirection: 'column', alignItems: 'flex-start' },
   declarationGuideIcon: {
     width: 30, height: 30, borderRadius: BorderRadius.full,
     alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.accentLight,
   },
   declarationGuideCopy: { flex: 1, minWidth: 0 },
+  declarationGuideCopyLargeText: { flex: 0, width: '100%' },
   declarationGuideTitle: { fontSize: 11, fontWeight: '800', color: Colors.textPrimary },
   declarationGuideBattle: { marginTop: 2, fontSize: 9, color: Colors.textSecondary },
   declarationGuideAction: { fontSize: 10, fontWeight: '800', color: Colors.primaryDark },
@@ -1511,6 +1513,9 @@ const s = StyleSheet.create({
     gap: 10,
     paddingLeft: 40,
     marginTop: 12,
+  },
+  goalRowLargeText: {
+    flexDirection: 'column', alignItems: 'stretch', paddingLeft: 20, gap: 6,
   },
   goalRowLabel: { fontSize: 13, fontWeight: '600' as const, color: Colors.textSecondary },
   goalChips: { flexDirection: 'row' as const, gap: 6, paddingRight: 20 },

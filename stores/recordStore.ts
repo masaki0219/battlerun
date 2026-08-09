@@ -755,6 +755,8 @@ interface SubmittedActivityResult {
   durationSeconds: number;
   steps: number;
   battleIds: string[];
+  battleCreditStatus: 'eligible' | 'not-participating' | 'not-eligible' | 'unknown';
+  battleCreditReason: 'battle-finalized' | 'outside-period' | 'inactive-battle' | null;
   declarationAchieved: boolean;
 }
 
@@ -778,8 +780,12 @@ async function submitPending(item: PendingActivity): Promise<SubmittedActivityRe
     durationSeconds: number;
     steps: number;
     battleIds?: string[];
+    battleCreditStatus?: SubmittedActivityResult['battleCreditStatus'];
+    battleCreditReason?: SubmittedActivityResult['battleCreditReason'];
   };
   const battleIds = Array.isArray(submitted.battleIds) ? submitted.battleIds : [];
+  const battleCreditStatus = submitted.battleCreditStatus ?? 'unknown';
+  const battleCreditReason = submitted.battleCreditReason ?? null;
   let declarationAchieved = false;
   let completionHandledByServer = false;
   try {
@@ -807,7 +813,13 @@ async function submitPending(item: PendingActivity): Promise<SubmittedActivityRe
     });
     declarationAchieved = declarationAchieved || completedByClient;
   }
-  return { ...submitted, battleIds, declarationAchieved };
+  return {
+    ...submitted,
+    battleIds,
+    battleCreditStatus,
+    battleCreditReason,
+    declarationAchieved,
+  };
 }
 
 /** ローカルに残っている未送信記録を順番に再送する。 */

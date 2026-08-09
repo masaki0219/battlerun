@@ -47,7 +47,7 @@ export default function InviteScreen() {
         <View style={styles.icon}>
           <Ionicons name="people-outline" size={30} color={Colors.primaryDark} />
         </View>
-        <Text style={styles.eyebrow}>ZELIO INVITATION</Text>
+        <Text style={styles.eyebrow}>ZELIO 招待</Text>
         <Text style={styles.title}>{code ? 'チャレンジに招待されました' : '招待リンクを確認できません'}</Text>
         {code ? (
           <>
@@ -59,7 +59,10 @@ export default function InviteScreen() {
         ) : (
           <>
             <Text style={styles.body}>リンクが途中で切れている可能性があります。送信者から6桁の招待コードを受け取ってください。</Text>
-            <Button label="ログイン画面へ" onPress={() => router.replace('/auth/login')} />
+            <Button
+              label={user ? 'チャレンジ一覧へ' : 'ログイン画面へ'}
+              onPress={() => router.replace(user ? '/(tabs)/battle' : '/auth/login')}
+            />
           </>
         )}
       </View>

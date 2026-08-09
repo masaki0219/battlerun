@@ -185,6 +185,12 @@ export function lastRun(activities: Activity[]): Activity | null {
 
 export type RankingType = 'average' | 'total';
 
+/** 距離の表示精度をアプリ内で小数1桁へ揃える。異常値は安全に0へ丸める。 */
+export function formatDistanceKm(distanceKm: number): string {
+  const safeDistance = Number.isFinite(distanceKm) ? Math.max(0, distanceKm) : 0;
+  return safeDistance.toFixed(1);
+}
+
 /** rankingType に応じた比較値（total=合計 / average=1人あたり平均）。 */
 export function statValue(s: CategoryStats, rankingType: RankingType): number {
   return rankingType === 'total' ? s.totalDistanceKm : s.avgDistanceKm;
@@ -207,17 +213,42 @@ export function maxStat(stats: CategoryStats[], rankingType: RankingType): numbe
   return Math.max(...stats.map((s) => statValue(s, rankingType)), 0.01);
 }
 
-/** 終了日までの残り日数（0 未満は 0、endAt 空なら null）。 */
+/** 終了日までの残り日数を切り上げで返す（0 未満は0、endAt空ならnull）。 */
 export function daysLeft(endAt: string, now: Date = new Date()): number | null {
   const end = parseDate(endAt);
   if (!end) return null;
   return Math.max(0, Math.ceil((end.getTime() - now.getTime()) / DAY_MS));
 }
 
+export interface ComebackTarget {
+  totalKm: number;
+  kmPerDay: number;
+}
+
+/**
+ * 逆転までのチーム合計距離と24時間あたりの目安。
+ * 切り上げた「残り日数」で割ると画面のカウントダウンと食い違うため、残り時間を小数日で使う。
+ */
+export function comebackTarget(
+  distanceGapKm: number,
+  endAt: string,
+  now: Date = new Date(),
+): ComebackTarget | null {
+  const end = parseDate(endAt);
+  if (!end || !Number.isFinite(distanceGapKm) || distanceGapKm < 0) return null;
+  const remainingMs = end.getTime() - now.getTime();
+  if (remainingMs <= 0) return null;
+  const totalKm = distanceGapKm + 0.01;
+  return {
+    totalKm,
+    kmPerDay: totalKm / (remainingMs / DAY_MS),
+  };
+}
+
 /**
  * 残り時間の表示ラベル。チャレンジ詳細のカウントダウン（日 / 時 / 分＝切り捨て）と
- * 同じ基準で丸める。`daysLeft()`（切り上げ）は逆転ペースの計算用で、表示には使わない
- * （切り上げと切り捨てが混ざると、ホーム「残り5日」／詳細「4日23時間」のように食い違う）。
+ * 同じ基準で丸める。切り上げ日数を表示へ流用すると、ホーム「残り5日」／詳細
+ * 「4日23時間」のように食い違うため、この関数は切り捨てで揃える。
  */
 export function remainingLabel(endAt: string, now: Date = new Date()): string | null {
   const end = parseDate(endAt);
@@ -266,6 +297,23 @@ export interface KmSplit {
   seconds: number;
   /** 区間の実距離（km）。整数区間は 1、端数区間のみ 1 未満 */
   distanceKm: number;
+}
+
+/** 端数区間を除いた1kmラップのうち最速の配列index。比較対象が2本未満ならnull。 */
+export function fastestFullKmSplitIndex(splits: KmSplit[]): number | null {
+  let fullLapCount = 0;
+  let fastestIndex: number | null = null;
+  let fastestPace = Number.POSITIVE_INFINITY;
+  splits.forEach((split, index) => {
+    if (split.distanceKm < 1 || split.seconds <= 0) return;
+    fullLapCount += 1;
+    const pace = split.seconds / split.distanceKm;
+    if (pace < fastestPace) {
+      fastestPace = pace;
+      fastestIndex = index;
+    }
+  });
+  return fullLapCount >= 2 ? fastestIndex : null;
 }
 
 /**

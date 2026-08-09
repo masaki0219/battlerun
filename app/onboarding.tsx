@@ -8,6 +8,7 @@ import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, DarkColors, Typography, Spacing, BorderRadius, Shadow } from '../design_tokens';
+import { decorLabel } from '../lib/locale';
 
 export const ONBOARDING_KEY = '@battlerun_onboarding_seen';
 
@@ -30,21 +31,21 @@ const STEP_COLORS: Record<number, string> = {
 };
 
 const STEP_LABELS: Record<number, string> = {
-  1: 'STEP 01 / ZELIO とは',
-  2: 'STEP 02 / 記録のしかた',
-  3: 'STEP 03 / チャレンジ参加',
-  4: 'STEP 04 / さっそく始める',
+  1: decorLabel('01 / ZELIO とは', 'STEP 01 / ABOUT ZELIO'),
+  2: decorLabel('02 / 記録のしかた', 'STEP 02 / RECORDING'),
+  3: decorLabel('03 / チャレンジ参加', 'STEP 03 / CHALLENGES'),
+  4: decorLabel('04 / さっそく始める', 'STEP 04 / GET STARTED'),
 };
 
 const STEP_HEADINGS: Record<number, string> = {
-  1: '歩くと、\nチームが強くなる。',
+  1: '歩いても走っても、\nチームが強くなる。',
   2: '走るだけで、\nあとは自動。',
   3: 'あと少しで\n逆転できる。',
   4: 'ZELIOを\n始めよう。',
 };
 
 const STEP_BODIES: Record<number, string> = {
-  1: 'あなたの走った距離が、そのままチームの得点になる。友達と競い合いながら、もっと走れる。',
+  1: '歩いても走っても、その距離がチームの得点になる。友達と競い合いながら、もっと続けられる。',
   2: 'アプリを開いてボタンを押すだけ。GPSでルート記録か、歩数モードか選べる。',
   3: '順位はリアルタイムで動く。あなたの一走りが、チームの順位を変える。',
   4: 'アカウントを作成して、最初のランや仲間とのチャレンジを始めよう。',
@@ -136,10 +137,10 @@ function OB1() {
   return (
     <View style={ob1.card}>
       <View style={ob1.header}>
-        <Text style={ob1.headerLabel}>SCOREBOARD</Text>
+        <Text style={ob1.headerLabel}>{decorLabel('チーム順位', 'SCOREBOARD')}</Text>
         <View style={ob1.live}>
           <View style={ob1.liveDot} />
-          <Text style={ob1.liveText}>LIVE</Text>
+          <Text style={ob1.liveText}>{decorLabel('開催中', 'LIVE')}</Text>
         </View>
       </View>
       {[
@@ -154,7 +155,7 @@ function OB1() {
           <View style={[ob1.stripe, { backgroundColor: t.c }]} />
           <Text style={[ob1.name, t.us && ob1.nameUs]} numberOfLines={1}>
             {t.n}
-            {t.us && <Text style={[ob1.ours, { color: t.c }]}> OURS</Text>}
+            {t.us && <Text style={[ob1.ours, { color: t.c }]}> {decorLabel('あなた', 'OURS')}</Text>}
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 2 }}>
             <Text style={ob1.km}>{t.km}</Text>
@@ -240,7 +241,7 @@ function OB2() {
     <View style={ob2.wrap}>
       <View style={ob2.startOuter}>
         <View style={ob2.startBtn}>
-          <Text style={ob2.startText}>START</Text>
+          <Text style={ob2.startText}>{decorLabel('スタート', 'START')}</Text>
         </View>
       </View>
       <View style={ob2.toggle}>
@@ -332,7 +333,7 @@ const ob2 = StyleSheet.create({
 function OB3() {
   return (
     <View style={ob3.card}>
-      <Text style={ob3.label}>NEXT MOVE</Text>
+      <Text style={ob3.label}>{decorLabel('次の一歩', 'NEXT MOVE')}</Text>
       <View style={ob3.numRow}>
         <Text style={ob3.pre}>あと</Text>
         <Text style={ob3.bigNum}>1.8</Text>
@@ -343,7 +344,7 @@ function OB3() {
       </Text>
       <View style={ob3.livePill}>
         <View style={ob3.liveIndicator} />
-        <Text style={ob3.liveText}>LIVE 順位が動く</Text>
+        <Text style={ob3.liveText}>{decorLabel('開催中・順位が動く', 'LIVE RANKING')}</Text>
       </View>
     </View>
   );

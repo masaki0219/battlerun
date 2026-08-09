@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
-import { collection, onSnapshot, doc, getDoc } from 'firebase/firestore';
+import { useCallback, useEffect, useState } from 'react';
+import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { cachedPublicProfile } from '../lib/publicProfileCache';
 
 export interface TeamRankingMember {
   userId: string;
@@ -23,9 +24,13 @@ export interface TeamRanking {
   /** ひとつ上の順位との距離差。自分が1位・未参加なら null */
   gapToNextKm: number | null;
   loading: boolean;
+  error: boolean;
+  retry: () => void;
 }
 
-const EMPTY: Omit<TeamRanking, 'loading'> = {
+type TeamRankingData = Omit<TeamRanking, 'loading' | 'error' | 'retry'>;
+
+const EMPTY: TeamRankingData = {
   top: [], myRank: 0, teamSize: 0, myKm: 0, gapToNextKm: null,
 };
 
@@ -43,8 +48,11 @@ export function useTeamRanking(
   myUserId: string | undefined,
   { topCount = 3 }: { topCount?: number } = {},
 ): TeamRanking {
-  const [state, setState] = useState<Omit<TeamRanking, 'loading'>>(EMPTY);
+  const [state, setState] = useState<TeamRankingData>(EMPTY);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
+  const retry = useCallback(() => setRetryKey((key) => key + 1), []);
   const [resolvedKey, setResolvedKey] = useState<string | null>(null);
   const requestKey = battleId && categoryId && myUserId
     ? `${battleId}:${categoryId}:${myUserId}`
@@ -54,12 +62,14 @@ export function useTeamRanking(
     if (!battleId || !categoryId || !myUserId) {
       setState(EMPTY);
       setLoading(false);
+      setError(false);
       setResolvedKey(null);
       return;
     }
     // 閲覧中チャレンジを切り替えた直後に、前のチーム順位を一瞬表示しない。
     setState(EMPTY);
     setLoading(true);
+    setError(false);
     setResolvedKey(null);
     const effectKey = `${battleId}:${categoryId}:${myUserId}`;
     let generation = 0;
@@ -84,10 +94,10 @@ export function useTeamRanking(
 
         const top = await Promise.all(
           team.slice(0, topCount).map(async (p) => {
-            const userSnap = await getDoc(doc(db, 'publicProfiles', p.userId));
+            const profile = await cachedPublicProfile(p.userId).catch(() => null);
             return {
               userId: p.userId,
-              displayName: (userSnap.data()?.['name'] as string) ?? 'メンバー',
+              displayName: profile?.name ?? 'メンバー',
               totalDistanceKm: p.totalDistanceKm,
               rank: allZero ? null : 1 + team.filter((member) => member.totalDistanceKm > p.totalDistanceKm).length,
               isMe: p.userId === myUserId,
@@ -106,11 +116,13 @@ export function useTeamRanking(
             gapToNextKm,
           });
           setResolvedKey(effectKey);
+          setError(false);
         }
       } catch {
         if (currentGeneration === generation) {
           setState(EMPTY);
           setResolvedKey(effectKey);
+          setError(true);
         }
       } finally {
         if (currentGeneration === generation) setLoading(false);
@@ -119,12 +131,13 @@ export function useTeamRanking(
       setState(EMPTY);
       setResolvedKey(effectKey);
       setLoading(false);
+      setError(true);
     });
 
     return () => { generation += 1; unsubscribe(); };
-  }, [battleId, categoryId, myUserId, topCount]);
+  }, [battleId, categoryId, myUserId, topCount, retryKey]);
 
-  if (!requestKey) return { ...EMPTY, loading: false };
-  if (resolvedKey !== requestKey) return { ...EMPTY, loading: true };
-  return { ...state, loading };
+  if (!requestKey) return { ...EMPTY, loading: false, error: false, retry };
+  if (resolvedKey !== requestKey) return { ...EMPTY, loading: true, error: false, retry };
+  return { ...state, loading, error, retry };
 }

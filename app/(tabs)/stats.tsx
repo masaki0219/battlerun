@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRecentActivities } from '../../hooks/useRecentActivities';
 import { useAuthStore } from '../../stores/authStore';
-import { calendarWeekKey, calendarWeekStart, hasHighTrainingLoad, weeklyBuckets, streakDays, relativeDay } from '../../utils/displayStats';
+import { calendarWeekKey, calendarWeekStart, formatDistanceKm, hasHighTrainingLoad, weeklyBuckets, streakDays, relativeDay } from '../../utils/displayStats';
 import { Colors, Spacing, BorderRadius, Shadow, TextStyles, Typography } from '../../design_tokens';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { WeeklyBarChart } from '../../components/viz/WeeklyBarChart';
@@ -15,8 +15,15 @@ import { WeeklyGoalProgress } from '../../components/run/WeeklyGoalProgress';
 import { WeeklyGoalSettingsModal } from '../../components/run/WeeklyGoalSettingsModal';
 import { MonthlyBarChart } from '../../components/viz/MonthlyBarChart';
 import { useMonthlyStats } from '../../hooks/useMonthlyStats';
-import { monthLabel, recentTokyoMonthKeys, tokyoMonthKey } from '../../utils/monthlyStats';
-import type { MeasurementType, MonthlyStat } from '../../types';
+import {
+  monthLabel,
+  monthlyDistanceLowerBound,
+  recentTokyoMonthKeys,
+  reconcileMonthlyStats,
+  tokyoMonthKey,
+} from '../../utils/monthlyStats';
+import type { MeasurementType } from '../../types';
+import { decorLabel } from '../../lib/locale';
 
 type ActivityFilter = 'all' | 'gps' | 'steps';
 
@@ -53,10 +60,6 @@ export default function StatsScreen() {
     && user.totalDistanceKm >= 0
     ? user.totalDistanceKm
     : null;
-  const lifetimeKm = Math.max(recentKm, serverLifetimeKm ?? 0);
-  const lifetimeNote = serverLifetimeKm != null && recentKm > serverLifetimeKm + 0.001
-    ? '集計確認中'
-    : serverLifetimeKm != null ? '生涯累計' : '直近50件';
   const longestRun = activities.reduce(
     (max, activity) => Math.max(max, nonNegativeMetric(activity.distanceKm)),
     0,
@@ -75,30 +78,8 @@ export default function StatsScreen() {
   const highTrainingLoad = hasHighTrainingLoad(activities, now);
   const currentWeekKey = calendarWeekKey(now);
   const recentMonthKeys = recentTokyoMonthKeys(now, 12);
-  const monthlyStatsMap = new Map(monthlyStats.map((month) => [month.monthKey, month]));
-  const recentMonthlyStatsMap = new Map<string, MonthlyStat>();
-  for (const activity of activities) {
-    const startedAt = new Date(activity.startedAt);
-    if (Number.isNaN(startedAt.getTime())) continue;
-    const monthKey = tokyoMonthKey(startedAt);
-    const current = recentMonthlyStatsMap.get(monthKey) ?? {
-      monthKey, km: 0, count: 0, durationSec: 0, elevationM: 0,
-    };
-    current.km += nonNegativeMetric(activity.distanceKm);
-    current.count += 1;
-    current.durationSec += nonNegativeMetric(activity.durationSeconds);
-    recentMonthlyStatsMap.set(monthKey, current);
-  }
-  for (const [monthKey, local] of recentMonthlyStatsMap) {
-    const server = monthlyStatsMap.get(monthKey);
-    monthlyStatsMap.set(monthKey, server ? {
-      monthKey,
-      km: Math.max(server.km, local.km),
-      count: Math.max(server.count, local.count),
-      durationSec: Math.max(server.durationSec, local.durationSec),
-      elevationM: Math.max(server.elevationM, local.elevationM),
-    } : local);
-  }
+  const reconciledMonths = reconcileMonthlyStats(monthlyStats, activities);
+  const monthlyStatsMap = new Map(reconciledMonths.map((month) => [month.monthKey, month]));
   const currentMonthKey = tokyoMonthKey(now);
   const monthKm = monthlyStatsMap.get(currentMonthKey)?.km ?? 0;
   const bestMonthRecordKm = Math.max(
@@ -121,6 +102,13 @@ export default function StatsScreen() {
   const annualKm = [...monthlyStatsMap.values()]
     .filter((month) => month.monthKey.startsWith(`${currentYear}-`))
     .reduce((sum, month) => sum + month.km, 0);
+  const reconciledMonthlyKm = monthlyDistanceLowerBound(reconciledMonths);
+  const lifetimeKm = Math.max(recentKm, serverLifetimeKm ?? 0, reconciledMonthlyKm);
+  const lifetimeNeedsReview = serverLifetimeKm != null
+    && (recentKm > serverLifetimeKm + 0.001 || reconciledMonthlyKm > serverLifetimeKm + 0.001);
+  const lifetimeNote = lifetimeNeedsReview
+    ? '集計確認中'
+    : serverLifetimeKm != null ? '生涯累計' : '取得済み記録';
 
   useEffect(() => {
     if (loading || !user || !highTrainingLoad) return;
@@ -319,8 +307,8 @@ export default function StatsScreen() {
                         </View>
                         <View style={styles.rowMain}>
                           <View style={styles.distanceLine}>
-                            <Text style={styles.rowDistance}>{activity.distanceKm.toFixed(2)} km</Text>
-                            {isBest && <Text style={styles.bestBadge}>BEST</Text>}
+                            <Text style={styles.rowDistance}>{formatDistanceKm(activity.distanceKm)} km</Text>
+                            {isBest && <Text style={styles.bestBadge}>{decorLabel('最長', 'BEST')}</Text>}
                           </View>
                           <Text style={styles.rowDetail}>
                             {formatTime(activity.durationSeconds)} ・ {isSteps ? `${(activity.steps ?? 0).toLocaleString()}歩` : 'GPS'}

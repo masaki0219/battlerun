@@ -5,6 +5,8 @@ import {
   BorderRadius, Colors, DarkColors, RoutePaceColors, Typography,
 } from '../../design_tokens';
 import type { RouteVisualization, RoutePaceBand } from '../../utils/routeSplits';
+import { decorLabel } from '../../lib/locale';
+import { formatDistanceKm } from '../../utils/displayStats';
 
 const ROUTE_PACE_COLOR: Record<RoutePaceBand, string> = {
   fast: RoutePaceColors.fast,
@@ -47,7 +49,7 @@ export const RunShareCard = forwardRef<View, RunShareCardProps>(function RunShar
       ref={ref}
       collapsable={false}
       style={s.card}
-      accessibilityLabel={`${safeDistance.toFixed(1)}キロ、時間${durationLabel}の共有画像プレビュー`}
+      accessibilityLabel={`${formatDistanceKm(safeDistance)}キロ、時間${durationLabel}の共有画像プレビュー`}
     >
       {showMap ? (
         <MapView
@@ -87,7 +89,7 @@ export const RunShareCard = forwardRef<View, RunShareCardProps>(function RunShar
         <View style={s.noMapHero}>
           <View style={s.noMapRingOuter} />
           <View style={s.noMapRingInner} />
-          <Text allowFontScaling={false} style={s.noMapLabel}>RUN TOGETHER</Text>
+          <Text allowFontScaling={false} style={s.noMapLabel}>{decorLabel('一緒に走ろう', 'RUN TOGETHER')}</Text>
         </View>
       )}
 
@@ -98,25 +100,25 @@ export const RunShareCard = forwardRef<View, RunShareCardProps>(function RunShar
           </View>
           <Text allowFontScaling={false} style={s.brand}>ZELIO</Text>
           <View style={s.brandDivider} />
-          <Text allowFontScaling={false} style={s.resultLabel}>RUN RESULT</Text>
+          <Text allowFontScaling={false} style={s.resultLabel}>{decorLabel('ラン結果', 'RUN RESULT')}</Text>
           {!!dateLabel && <Text allowFontScaling={false} style={s.dateLabel}>{dateLabel}</Text>}
         </View>
 
         <View style={s.distanceRow}>
-          <Text allowFontScaling={false} style={s.distance}>{safeDistance.toFixed(1)}</Text>
+          <Text allowFontScaling={false} style={s.distance}>{formatDistanceKm(safeDistance)}</Text>
           <Text allowFontScaling={false} style={s.distanceUnit}>KM</Text>
         </View>
 
         <View style={s.statsRow}>
           <View style={s.statCell}>
-            <Text allowFontScaling={false} style={s.statLabel}>TIME</Text>
+            <Text allowFontScaling={false} style={s.statLabel}>{decorLabel('時間', 'TIME')}</Text>
             <Text allowFontScaling={false} style={s.statValue}>{durationLabel}</Text>
           </View>
           {!!paceLabel && (
             <>
               <View style={s.statDivider} />
               <View style={s.statCell}>
-                <Text allowFontScaling={false} style={s.statLabel}>AVG PACE</Text>
+                <Text allowFontScaling={false} style={s.statLabel}>{decorLabel('平均ペース', 'AVG PACE')}</Text>
                 <Text allowFontScaling={false} style={s.statValue}>{paceLabel}<Text style={s.statUnit}>/km</Text></Text>
               </View>
             </>
@@ -132,14 +134,14 @@ export const RunShareCard = forwardRef<View, RunShareCardProps>(function RunShar
         <View style={s.footer}>
           <View>
             <Text allowFontScaling={false} style={s.tag}>#ZELIO</Text>
-            <Text allowFontScaling={false} style={s.tagline}>仲間と走ると、もっと続く。</Text>
+            <Text allowFontScaling={false} style={s.tagline}>歩いても走っても、チームが強くなる。</Text>
           </View>
         </View>
       </View>
 
       {showWatermark && (
         <View style={s.watermark}>
-          <Text allowFontScaling={false} style={s.watermarkText}>MADE WITH ZELIO</Text>
+          <Text allowFontScaling={false} style={s.watermarkText}>{decorLabel('ZELIOで作成', 'MADE WITH ZELIO')}</Text>
         </View>
       )}
     </View>

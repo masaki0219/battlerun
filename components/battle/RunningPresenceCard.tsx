@@ -5,6 +5,7 @@ import { Avatar } from '../ui/Avatar';
 import { BorderRadius, Colors, Shadow, Spacing, Typography } from '../../design_tokens';
 import type { RunningPresence } from '../../types';
 import type { ReportTarget } from '../../lib/moderation';
+import { decorLabel } from '../../lib/locale';
 
 export function RunningPresenceCard({
   presences,
@@ -41,7 +42,7 @@ export function RunningPresenceCard({
         </View>
         <View style={styles.liveChip}>
           <View style={styles.liveDot} />
-          <Text style={styles.liveText}>LIVE</Text>
+          <Text style={styles.liveText}>{decorLabel('走行中', 'LIVE')}</Text>
         </View>
       </View>
       <View style={styles.card}>

@@ -1,4 +1,4 @@
-export const DEFAULT_INCLUDE_ROUTE_IN_SHARE = true;
+export const DEFAULT_INCLUDE_ROUTE_IN_SHARE = false;
 
 const STORAGE_PREFIX = '@zelio_run_share_include_route';
 

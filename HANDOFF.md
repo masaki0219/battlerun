@@ -1,6 +1,6 @@
 # HANDOFF
 
-最終更新: 2026-08-05
+最終更新: 2026-08-09
 
 ## プロジェクトの目的
 
@@ -23,6 +23,24 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 ※ 同フォルダの `BattleRunホーム画面作成 (コピー).zip` は旧版。パレット（`theme.css`）は同一だが、ヒーローが2陣営のVSゲージで、チーム内ランキングが無い。**最終版はこちら（コピーでない方）**。
 
 ## 最後に完了したこと
+
+### 2026-08-09 総合レビュー／メタレビューの優先指摘を修正（Functions反映待ち）
+
+- 追加メタレビューを実コードへ照合し、バッジの「次に取れそう／未獲得」二重表示、不完全な招待リンクのログイン済み遷移、端数ラップの最速判定、距離表示の小数1桁統一、順位据え置き時の`3→3`表示、称号名の不一致を修正した。
+- 逆転目安は切り上げ日数で割るのをやめ、実残り時間から24時間あたりを算出する。ホーム／詳細とも「チーム全体であとXkm・1日Ykmが目安」と主語と総量を明記した。
+- チーム識別色を順位・CTA色と重複しない専用6色へ変更し、categoryIdのハッシュ衝突時は同一チャレンジ内で未使用色へずらす安定割当を追加した。全色はダークカード背景とのコントラスト3:1超を計算確認した。
+- 最大文字サイズではチャレンジ切替見出し・カード幅、ヒーローのタイトル／残り時間／順位／フッター、ラン画面の目標／宣言カードを縦配置へ切り替え、主要文言の1行切り捨てを外した。React Nativeの非推奨`SafeAreaView`もsafe-area-contextへ移行した。
+- オンボーディング、スタート、ライブ表示、ラン結果／共有画像などの装飾英語を`decorLabel()`へ接続し、共有タグラインを「歩いても走っても、チームが強くなる。」へ統一した。
+- Firestore Rulesの`isAdmin()`はrole欠落時に評価エラーを出さない`data.get('role', '')`へ変更した。ローカルRulesテストはJava Runtime不在で開始できず未実行（コード失敗ではない）。本番ルール変更・Functions変更ともデプロイしていない。
+- 追加確認成功: `npx tsc --noEmit`、全unit（逆転計算・距離・端数ラップ・称号・色衝突テストを追加）、Functions build、iOS Expo export、`git diff --check`。
+- Firebase Authの直接依存`@firebase/auth ^1.13.1`を削除し、初期化・永続化・認証APIをすべて`firebase/auth`へ統一した。SDK実装の1.13.1/1.7.9混在を解消し、Fast Refresh時は`auth/already-initialized`だけ既存インスタンスへフォールバックする。`npm ls @firebase/auth --all`ではアプリ側はFirebase 10.14.1配下の1.7.9系だけになった（compat側にも同一1.7.9があるが、直接依存していた異版本は消えた）。
+- `submitActivity`の「記録終了から10分以内だけチャレンジ加算」を廃止した。活動の開始・終了がチャレンジ期間内で、送信時点が終了10分後の結果確定前なら、開催中のオフライン記録を12時間後等でも加算する。結果確定後は個人記録だけに保存し、活動へ`battleCreditStatus` / `battleCreditReason`を残してサマリーに「結果確定後」「期間外」等の理由を表示する。ヘルプ・オフライン保存ダイアログ・リリース確認シナリオも同期した。
+- 月次サーバー値と直近活動の突合を`reconcileMonthlyStats`へ一本化し、年間・生涯・今月およびプロフィール累計が同じ月次下限を使うようにした。「年間累計 > 生涯累計」の表示矛盾を防ぐテストを追加した。`backfillMonthlyStats`は同一ユーザーにつきアプリセッション中1回だけ呼び、失敗時だけ次回マウントで再試行する。
+- `expo-localization 17.0.9`を追加し、装飾ラベルの言語判定を`getLocales()[0].languageCode`へ変更した。`BATTLE / ACTIVE`とサマリーの`BEFORE / AFTER`は日本語化した。
+- ホーム／チャレンジ詳細のチーム成績とチーム内ランキングで、Firestore購読失敗を0km・空ランキングとして表示せず、「取得できませんでした／再試行」へ分離した。上位プロフィール取得は5分TTL・200件上限・同時要求共有の共通キャッシュにし、プレゼンスのプロフィール／応援キャッシュも無期限から5分TTL・上限付きへ変更した。
+- 最大文字サイズへの対応は文字倍率を制限せず、ラン画面を「モード → 目標 → START → 音声コーチ／オートポーズ」の順に変更した。共有画像のルートは新規既定OFF、ダーク面の最弱チーム色は背景とのコントラスト3:1超へ変更し、自チームへ色以外の「あなた」表示を追加した。
+- 確認成功: `npm run typecheck`、テストTS型検査、全unit、Functions build、iOS Expo export、Expo Doctor 18/18、`git diff --check`。`npm audit --omit=dev`はroot 37件（high 14 / moderate 23）、Functions 9件（high 1 / moderate 8）。強制更新は未適用。
+- 本番`zelio-run`への限定デプロイ（`submitActivity`＋2026-08-05から未反映の集計復旧6 Functions）を申請したが、「今回のユーザー依頼に本番デプロイの明示承認がない」と実行承認側に拒否された。回避実行はしておらず、**本番変更は0件**。クライアント変更・Functions変更ともローカル未コミットで、本番反映待ち。
 
 ### 2026-08-05 活動集計停止の原因修正と自動復旧を実装（Functions反映待ち）
 
@@ -411,7 +429,7 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 
 ## 次にやること
 
-1. **`firebase deploy --only functions:aggregateActivity,functions:awardBadgesOnActivityAggregated,functions:syncMyBadges,functions:backfillMonthlyStats,functions:recoverStaleActivityAggregations,functions:retryPendingActivityAggregations --project zelio-run --non-interactive --force`を明示承認のうえ実行し、未集計6件を復旧して匿名集計監査を再実行する。**
+1. **ユーザーの本番デプロイ明示承認を得て、`submitActivity`と集計復旧6 Functionsを`zelio-run`へ限定反映し、関数状態を確認する（その後に未集計6件の復旧・匿名集計監査を別工程で行う）。**
 
 ## その次の候補
 - 同一端末・同一コースでGPS v3を最低5回実走し、既知距離の中央値誤差±2%以内・単発±5%以内・10分静止20m未満と、90度/Uターンを削りすぎないことを確認する

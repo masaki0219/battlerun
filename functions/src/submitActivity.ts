@@ -2,6 +2,10 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { MAX_ACTIVITY_DISTANCE_KM } from './constants';
 import {
+  battleCreditEligibility,
+  type BattleCreditIneligibilityReason,
+} from './battleCredit';
+import {
   GPS_PROCESSING_VERSION,
   MAX_RUNNING_SPEED_MPS,
   replayAcceptedGpsRoute,
@@ -220,6 +224,8 @@ export const submitActivity = onCall(
         durationSeconds: existing['durationSeconds'],
         steps: existing['steps'] ?? 0,
         battleIds: existing['battleIds'] ?? [],
+        battleCreditStatus: existing['battleCreditStatus'] ?? 'unknown',
+        battleCreditReason: existing['battleCreditReason'] ?? null,
       };
     }
 
@@ -305,10 +311,9 @@ export const submitActivity = onCall(
         .filter((id): id is string => typeof id === 'string'),
     )].slice(0, 50);
 
-    // 10分を超える遅延送信は個人履歴としては受理するが、過去バトルへの後付け加算はしない。
-    const eligibleForBattleCredit = endedAtMs >= now - 10 * 60_000;
-    const activeBattleIds = eligibleForBattleCredit ? (
-      await Promise.all(candidateBattleIds.map(async (battleId) => {
+    // 記録終了からの固定10分ではなく、開催期間と結果確定時刻で判定する。
+    // これにより開催中の通信断は救済しつつ、確定済み結果の後付け変更は防ぐ。
+    const battleCandidates = await Promise.all(candidateBattleIds.map(async (battleId) => {
         const [battleSnap, participantSnap] = await Promise.all([
           db.doc(`battles/${battleId}`).get(),
           db.doc(`battles/${battleId}/participants/${uid}`).get(),
@@ -317,14 +322,36 @@ export const submitActivity = onCall(
         const battle = battleSnap.data()!;
         const startAt = battle['startAt'] as Timestamp | undefined;
         const endAt = battle['endAt'] as Timestamp | undefined;
-        if (
-          !['active', 'finished'].includes(battle['status'] as string) || !startAt || !endAt ||
-          startedAtMs < startAt.toMillis() || startedAtMs > endAt.toMillis() ||
-          endedAtMs > endAt.toMillis() + 10 * 60_000
-        ) return null;
-        return battleId;
-      }))
-    ).filter((id): id is string => id !== null).slice(0, 2) : [];
+        if (!startAt || !endAt) {
+          return { battleId, eligible: false as const, reason: 'inactive-battle' as const };
+        }
+        return {
+          battleId,
+          ...battleCreditEligibility({
+            battleStatus: battle['status'],
+            battleStartAtMs: startAt.toMillis(),
+            battleEndAtMs: endAt.toMillis(),
+            activityStartedAtMs: startedAtMs,
+            activityEndedAtMs: endedAtMs,
+            submittedAtMs: now,
+          }),
+        };
+      }));
+    const activeBattleIds = battleCandidates
+      .filter((candidate): candidate is { battleId: string; eligible: true } => candidate?.eligible === true)
+      .map((candidate) => candidate.battleId)
+      .slice(0, 2);
+    const ineligibilityReasons = battleCandidates.flatMap((candidate): BattleCreditIneligibilityReason[] => (
+      candidate && !candidate.eligible ? [candidate.reason] : []
+    ));
+    const battleCreditStatus = activeBattleIds.length > 0
+      ? 'eligible'
+      : candidateBattleIds.length === 0 ? 'not-participating' : 'not-eligible';
+    const battleCreditReason = ineligibilityReasons.includes('battle-finalized')
+      ? 'battle-finalized'
+      : ineligibilityReasons.includes('outside-period')
+        ? 'outside-period'
+        : ineligibilityReasons[0] ?? null;
 
     const saveBatch = db.batch();
     saveBatch.create(activityRef, {
@@ -333,6 +360,8 @@ export const submitActivity = onCall(
       visibility: 'public_v2',
       battleId: activeBattleIds[0] ?? null,
       battleIds: activeBattleIds,
+      battleCreditStatus,
+      battleCreditReason,
       distanceKm,
       steps: measurementType === 'steps' ? steps : null,
       durationSeconds,
@@ -372,6 +401,8 @@ export const submitActivity = onCall(
         durationSeconds: committed['durationSeconds'],
         steps: committed['steps'] ?? 0,
         battleIds: committed['battleIds'] ?? [],
+        battleCreditStatus: committed['battleCreditStatus'] ?? 'unknown',
+        battleCreditReason: committed['battleCreditReason'] ?? null,
       };
     }
 
@@ -381,6 +412,8 @@ export const submitActivity = onCall(
       durationSeconds,
       steps,
       battleIds: activeBattleIds,
+      battleCreditStatus,
+      battleCreditReason,
     };
   },
 );

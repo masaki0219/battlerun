@@ -17,6 +17,22 @@ function nonNegative(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
 }
 
+const backfillByUser = new Map<string, Promise<void>>();
+
+function ensureMonthlyStatsBackfill(userId: string): Promise<void> {
+  const existing = backfillByUser.get(userId);
+  if (existing) return existing;
+  const request = httpsCallable(functions, 'backfillMonthlyStats')({})
+    .then(() => undefined)
+    .catch((error) => {
+      // 一時障害なら次回マウントで再試行できるよう、失敗Promiseは保持しない。
+      backfillByUser.delete(userId);
+      throw error;
+    });
+  backfillByUser.set(userId, request);
+  return request;
+}
+
 export function useMonthlyStats(now = new Date()): {
   months: MonthlyStat[];
   loading: boolean;
@@ -37,7 +53,7 @@ export function useMonthlyStats(now = new Date()): {
     setLoading(true);
     void (async () => {
       try {
-        await httpsCallable(functions, 'backfillMonthlyStats')({});
+        await ensureMonthlyStatsBackfill(user.id);
       } catch (error) {
         console.warn('[MonthlyStats] backfill failed; using current aggregate:', error);
       }

@@ -1,5 +1,5 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { initializeAuth, type Persistence } from '@firebase/auth';
+import { FirebaseError, initializeApp, getApps, getApp } from 'firebase/app';
+import { getAuth, initializeAuth, type Auth, type Persistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getFunctions } from 'firebase/functions';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -14,17 +14,29 @@ const firebaseConfig = {
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-// getReactNativePersistence は @firebase/auth の web 型定義に含まれないが、
+// getReactNativePersistence は firebase/auth の web 型定義に含まれないが、
 // metro.config.js の react-native condition により RN ビルドを参照するため実行時には存在する。
-// @firebase/auth を直接 devDependency にしたことで EAS でも require が解決できる。
+// initializeAuth と同じ firebase/auth 経由で解決し、異なる Auth SDK 実装を混在させない。
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { getReactNativePersistence } = require('@firebase/auth') as {
+const { getReactNativePersistence } = require('firebase/auth') as {
   getReactNativePersistence: (storage: typeof AsyncStorage) => Persistence;
 };
 
-export const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(AsyncStorage),
-});
+function initializeAppAuth(): Auth {
+  try {
+    return initializeAuth(app, {
+      persistence: getReactNativePersistence(AsyncStorage),
+    });
+  } catch (error) {
+    // Fast Refresh で同じ FirebaseApp の Auth が既に初期化済みなら、その1個だけを再利用する。
+    if (error instanceof FirebaseError && error.code === 'auth/already-initialized') {
+      return getAuth(app);
+    }
+    throw error;
+  }
+}
+
+export const auth = initializeAppAuth();
 
 export const db = getFirestore(app);
 export const functions = getFunctions(app);

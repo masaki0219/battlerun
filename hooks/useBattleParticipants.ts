@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { collection, onSnapshot, doc, getDoc, query, orderBy, limit as firestoreLimit } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, limit as firestoreLimit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { cachedPublicProfile } from '../lib/publicProfileCache';
 
 /** battles/{id}/participants/{uid} を表示用に整形した1件 */
 export interface BattleParticipant {
@@ -43,8 +44,8 @@ export function useBattleParticipants(
             const uid = d.id;
             const km = (d.data()['totalDistanceKm'] as number) ?? 0;
             const activityCount = (d.data()['activityCount'] as number | undefined) ?? null;
-            const userSnap = await getDoc(doc(db, 'publicProfiles', uid));
-            const name = (userSnap.data()?.['name'] as string) ?? 'メンバー';
+            const profile = await cachedPublicProfile(uid).catch(() => null);
+            const name = profile?.name ?? 'メンバー';
             return { userId: uid, displayName: name, totalDistanceKm: km, activityCount };
           }),
         );

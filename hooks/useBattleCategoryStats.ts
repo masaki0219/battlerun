@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { onSnapshot, collection } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import type { Battle, CategoryStats } from '../types';
@@ -10,11 +10,29 @@ import type { Battle, CategoryStats } from '../types';
  * （新形状クエリ・新規インデックスは追加しない）。
  * battles 配列は store の安定参照を渡すこと（レンダー毎に生成した配列を渡すと再購読される）。
  */
-export function useBattleCategoryStats(battles: Battle[]): Record<string, CategoryStats[]> {
+export interface BattleCategoryStatsSubscription {
+  statsMap: Record<string, CategoryStats[]>;
+  failedBattleIds: ReadonlySet<string>;
+  retry: () => void;
+}
+
+export function useBattleCategoryStats(battles: Battle[]): BattleCategoryStatsSubscription {
   const [statsMap, setStatsMap] = useState<Record<string, CategoryStats[]>>({});
+  const [failedBattleIds, setFailedBattleIds] = useState<string[]>([]);
+  const [retryKey, setRetryKey] = useState(0);
+  const retry = useCallback(() => setRetryKey((key) => key + 1), []);
 
   useEffect(() => {
-    if (battles.length === 0) return;
+    if (battles.length === 0) {
+      setStatsMap({});
+      setFailedBattleIds([]);
+      return;
+    }
+    const activeIds = new Set(battles.map((battle) => battle.id));
+    setStatsMap((previous) => Object.fromEntries(
+      Object.entries(previous).filter(([battleId]) => activeIds.has(battleId)),
+    ));
+    setFailedBattleIds([]);
     const unsubs = battles.map((battle) => {
       const colRef = collection(db, 'battles', battle.id, 'category_stats');
       return onSnapshot(colRef, (snap) => {
@@ -30,10 +48,17 @@ export function useBattleCategoryStats(battles: Battle[]): Record<string, Catego
           };
         });
         setStatsMap((prev) => ({ ...prev, [battle.id]: stats }));
+        setFailedBattleIds((previous) => previous.filter((battleId) => battleId !== battle.id));
+      }, (error) => {
+        console.warn(`[BattleCategoryStats] subscription failed (${battle.id}):`, error);
+        setStatsMap((previous) => ({ ...previous, [battle.id]: [] }));
+        setFailedBattleIds((previous) => previous.includes(battle.id)
+          ? previous
+          : [...previous, battle.id]);
       });
     });
     return () => unsubs.forEach((u) => u());
-  }, [battles]);
+  }, [battles, retryKey]);
 
-  return statsMap;
+  return { statsMap, failedBattleIds: new Set(failedBattleIds), retry };
 }
