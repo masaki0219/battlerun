@@ -37,6 +37,7 @@ export function PublicBattleCard({
   const meta = [
     remaining !== null ? `残り ${remaining}` : null,
     `${participantCount}人参加`,
+    battle.rankingType === 'average' ? '1人あたりの平均で競う' : 'チーム合計で競う',
     joined && myRank > 0 ? `${myRank}位 / ${sorted.length}チーム` : null,
     seasonTitle ?? null,
   ].filter(Boolean).join('　・　');

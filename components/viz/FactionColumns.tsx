@@ -140,7 +140,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     fontVariant: ['tabular-nums'],
   },
-  kmMine: { color: DarkColors.primaryTint },
+  kmMine: { color: DarkColors.textPrimary },
   bar: {
     width: '100%',
     maxWidth: 42,
@@ -148,9 +148,8 @@ const styles = StyleSheet.create({
     borderTopRightRadius: BorderRadius.sm,
   },
   barMine: {
-    borderWidth: 2,
-    borderBottomWidth: 0,
-    borderColor: DarkColors.primaryRing,
+    borderTopWidth: 3,
+    borderColor: DarkColors.textPrimary,
   },
 
   legendRow: { flexDirection: 'row', gap: Spacing.md, paddingTop: Spacing.sm },
@@ -162,7 +161,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  markMine: { borderWidth: 2, borderColor: DarkColors.primaryRing },
+  markMine: { borderWidth: 2, borderColor: DarkColors.textPrimary },
   markText: { fontSize: 9, fontWeight: Typography.fontWeight.bold, color: Colors.textOnPrimary },
   legendLabel: {
     marginTop: 3,
@@ -170,7 +169,7 @@ const styles = StyleSheet.create({
     fontWeight: Typography.fontWeight.bold,
     color: DarkColors.textSecondary,
   },
-  legendLabelMine: { color: DarkColors.primaryTint },
-  legendMine: { fontSize: 8, fontWeight: Typography.fontWeight.bold, color: DarkColors.primaryTint },
+  legendLabelMine: { color: DarkColors.textPrimary },
+  legendMine: { fontSize: 8, fontWeight: Typography.fontWeight.bold, color: DarkColors.textPrimary },
   legendRank: { fontSize: 9, color: DarkColors.textTertiary, fontVariant: ['tabular-nums'] },
 });

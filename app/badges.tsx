@@ -33,7 +33,7 @@ const BADGE_DEFS: BadgeDef[] = [
   {
     id: 'first_run',
     name: 'はじめの一歩',
-    desc: '初めて記録した',
+    desc: '初めて記録する',
     icon: 'flag',
     color: Colors.primary,
     check: (s) => s.activityCount >= 1,
@@ -41,7 +41,7 @@ const BADGE_DEFS: BadgeDef[] = [
   {
     id: 'early_bird',
     name: '朝活ランナー',
-    desc: '朝7時前に記録した',
+    desc: '朝7時前に記録する',
     icon: 'sunny',
     color: Colors.accentYellow,
     check: (s) => s.earlyMorningCount >= 1,
@@ -49,7 +49,7 @@ const BADGE_DEFS: BadgeDef[] = [
   {
     id: 'streak_3',
     name: '3日連続ラン',
-    desc: '3日連続で記録した',
+    desc: '3日連続で記録する',
     icon: 'flame',
     color: Colors.accent,
     check: (s) => s.consecutiveDays >= 3,
@@ -58,16 +58,16 @@ const BADGE_DEFS: BadgeDef[] = [
   {
     id: 'streak_7',
     name: '7日連続ラン',
-    desc: '7日連続で記録した',
+    desc: '7日連続で記録する',
     icon: 'flash',
-    color: Colors.pro,
+    color: Colors.primaryDark,
     check: (s) => s.consecutiveDays >= 7,
     progress: (s) => ({ current: Math.min(s.consecutiveDays, 7), target: 7, unit: '日' }),
   },
   {
     id: 'monthly_10km',
     name: '月間10km',
-    desc: '月に10km記録した',
+    desc: '月に10km記録する',
     icon: 'medal',
     color: Colors.primary,
     check: (s) => s.monthlyDistanceKm >= 10,
@@ -76,7 +76,7 @@ const BADGE_DEFS: BadgeDef[] = [
   {
     id: 'monthly_30km',
     name: '月間30km',
-    desc: '月に30km記録した',
+    desc: '月に30km記録する',
     icon: 'trophy',
     color: Colors.accentYellow,
     check: (s) => s.monthlyDistanceKm >= 30,
@@ -85,7 +85,7 @@ const BADGE_DEFS: BadgeDef[] = [
   {
     id: 'step_master',
     name: 'ウォークマスター',
-    desc: '歩数モードで10回記録した',
+    desc: '歩数モードで10回記録する',
     icon: 'footsteps',
     color: Colors.accent,
     check: (s) => s.stepsModeCount >= 10,
@@ -94,7 +94,7 @@ const BADGE_DEFS: BadgeDef[] = [
   {
     id: 'total_100km',
     name: '百里の旅人',
-    desc: '累計100km記録した',
+    desc: '累計100km記録する',
     icon: 'earth',
     color: Colors.accentYellow,
     check: (s) => s.totalDistanceKm >= 100,

@@ -60,7 +60,7 @@ interface BattleStore {
 
 // ラベルからカテゴリIDを生成する。日本語のみのラベルは英数字が残らないため
 // フォールバックで cat_{index} を用い、重複IDは連番サフィックスで回避する。
-function resolveCategoryIds(categories: { label: string }[]): Category[] {
+function resolveCategoryIds(categories: Pick<Category, 'label' | 'colorId'>[]): Category[] {
   const seen = new Set<string>();
   return categories.map((cat, i) => {
     const base =
@@ -74,7 +74,11 @@ function resolveCategoryIds(categories: { label: string }[]): Category[] {
     let n = 1;
     while (seen.has(id)) id = `${base}_${n++}`;
     seen.add(id);
-    return { id, label: cat.label.trim() };
+    return {
+      id,
+      label: cat.label.trim(),
+      ...(cat.colorId ? { colorId: cat.colorId } : {}),
+    };
   });
 }
 

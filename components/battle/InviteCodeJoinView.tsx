@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
-import { Colors, Typography, Spacing, BorderRadius } from '../../design_tokens';
+import { Colors, Typography, Spacing, BorderRadius, teamColorMap } from '../../design_tokens';
 import type { Battle } from '../../types';
 
 interface Props {
@@ -51,6 +51,7 @@ export function InviteCodeJoinView({
   }
 
   if (!foundBattle) return null;
+  const colorsByCategory = teamColorMap(foundBattle.categories);
   return (
     <Card style={styles.card}>
       <Text style={styles.formTitle}>{foundBattle.title}</Text>
@@ -67,7 +68,7 @@ export function InviteCodeJoinView({
             onPress={() => onJoinCategory(cat.id)}
             loading={joining}
             variant="secondary"
-            style={styles.catSelectBtn}
+            style={[styles.catSelectBtn, { borderLeftColor: colorsByCategory[cat.id] }]}
           />
         ))}
       </View>
@@ -92,5 +93,5 @@ const styles = StyleSheet.create({
   formBtn: { flex: 1 },
   battleMeta: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary, marginTop: 2 },
   catSelectList: { gap: Spacing.sm },
-  catSelectBtn: { marginTop: 0 },
+  catSelectBtn: { marginTop: 0, borderLeftWidth: 6 },
 });

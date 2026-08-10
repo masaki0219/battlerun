@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, Pressable, FlatList } from 'react-native';
 import { Button } from '../ui/Button';
-import { Colors, Spacing, BorderRadius, Typography } from '../../design_tokens';
+import { Colors, Spacing, BorderRadius, Typography, teamColorMap } from '../../design_tokens';
 import type { Battle, CategoryStats } from '../../types';
 
 interface Props {
@@ -39,6 +39,7 @@ export function CategorySelectModal({ visible, battle, stats, onJoin, onClose, l
   const shortageCategoryId = allCountsKnown && battle.categories.length >= 2
     ? battle.categories[counts.indexOf(Math.min(...(counts as number[])))].id
     : null;
+  const colorsByCategory = teamColorMap(battle.categories);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -64,6 +65,7 @@ export function CategorySelectModal({ visible, battle, stats, onJoin, onClose, l
                   accessibilityState={{ selected: isSelected }}
                   accessibilityLabel={count != null ? `${item.label}、${count}人が参加中` : item.label}
                 >
+                  <View style={[modal.colorDot, { backgroundColor: colorsByCategory[item.id] }]} />
                   <View style={modal.catBody}>
                     <Text style={[modal.catLabel, isSelected && modal.catLabelSelected]}>
                       {item.label}
@@ -115,6 +117,7 @@ const modal = StyleSheet.create({
   },
   catBtnSelected: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight },
   catBody: { flex: 1, gap: 2 },
+  colorDot: { width: 14, height: 14, borderRadius: BorderRadius.full, marginRight: Spacing.sm },
   catLabel: { fontSize: Typography.fontSize.md, color: Colors.textPrimary, fontWeight: Typography.fontWeight.medium },
   catLabelSelected: { color: Colors.primary, fontWeight: Typography.fontWeight.bold },
   catSub: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary },

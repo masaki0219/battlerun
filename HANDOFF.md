@@ -1,10 +1,10 @@
 # HANDOFF
 
-最終更新: 2026-08-09
+最終更新: 2026-08-10
 
 ## プロジェクトの目的
 
-仲間と合計距離を競うチーム対抗ランニング・ウォーキングアプリ。React Native / Expo で実装し、Firebase（Firestore）をバックエンド、RevenueCat を課金に使う。GPS によるアクティビティ記録とバトル（対戦）機能が中心。認証は現状メール/パスワードのみ（Google サインインは未実装）。
+仲間と合計距離を競うチーム対抗ランニング・ウォーキングアプリ。React Native / Expo で実装し、Firebase（Firestore）をバックエンド、RevenueCat を課金に使う。GPS によるアクティビティ記録とバトル（対戦）機能が中心。認証は現状メール/パスワードのみ（Apple／GoogleのFirebaseプロバイダはユーザー報告で有効化済みだが、クライアントのサインイン処理は未実装）。
 
 ## 現在の状態
 
@@ -23,6 +23,19 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 ※ 同フォルダの `BattleRunホーム画面作成 (コピー).zip` は旧版。パレット（`theme.css`）は同一だが、ヒーローが2陣営のVSゲージで、チーム内ランキングが無い。**最終版はこちら（コピーでない方）**。
 
 ## 最後に完了したこと
+
+### 2026-08-10 v3レビュー／メタレビューを実コードで再判定し、リリース前修正を実装
+
+- Claude Codeのv3レビューと、コード未確認のChatGPTメタレビューは参考資料として扱い、現行コード・ルール・依存・既存テストへ個別に照合した。Functions名の一致は本番コード同一性の証明にならないこと、未送信件数だけを根拠に30秒再送を止めるのは危険なこと、リージョン移行と大規模ランキング最適化は計測・段階移行が必要なことを踏まえ、今回は安全に閉じるクライアント修正へ絞った。
+- 友達チャレンジの各チームへ利用者が選ぶ`colorId`を追加し、作成フォームの7色選択、Firestore保存、招待参加・参加モーダル・ホーム・詳細・結果の全表示へ接続した。保存済みの明示色を最優先し、旧データは「赤チーム」「BLUE TEAM」「白組」等の完全一致だけを補完して「赤ちゃん」「青森」の誤判定を避ける。旧ハッシュ色はパレット拡張後も変わらず、自チームは色の置換でなく白い縁と「あなた」で識別する。
+- AX5対策として、友達チャレンジ詳細の招待コード行を大文字時に縦積み、STARTを1行中央寄せ＋自動縮小、タブラベルを非表示にせず2行表示へ変更した。`MonoLabel`は倍率上限1.6とし、日本語端末ではシステムフォント・通常字間に切り替えた。通知日時は`textSecondary`へ上げた。
+- 未送信キューはAsyncStorageを起動時に復元し、記録タブ上部へ件数・再送ボタン・送信中状態を表示する。起動時／復帰時／30秒間隔のAsyncStorage確認は維持し、UI件数を送信可否には使わない。新規キューへFirebase UIDを保存し、アカウント切替時は別利用者の件数を表示せず、送信直前にもUIDを照合して誤送信を防ぐ。旧ownerなしキューは従来互換で現ログイン利用者の記録として扱う。
+- 結果画面の「チャレンジを作る」はProなら作成フォームを直接開き、無料利用者には必要条件を説明する。公開カードへ平均戦／合計戦を明記し、音声コーチは初期OFF、未獲得バッジ文言は未来形、無料バッジからPro色を除外、通知の順位／リアクション色を意味に合うトークンへ変更した。
+- `RELEASE_TEST_CHECKLIST.md`へAX5全画面、再起動をまたぐ未送信再送、選択色の全画面一貫性を追加した。`npm audit fix`（`--force`なし）もroot/functionsへ適用し、Functionsはhigh 1件を解消した。RulesテストSDKはFirebase 12前提のv5から、アプリのFirebase 10とpeer互換のある公式v3.0.4へ揃え、同構成でRules全件を再実行した。現時点の`npm audit --omit=dev`はroot 35件（high 12 / moderate 23。Expo/Firebaseのメジャー更新が必要）、Functions 9件（moderateのみ）。互換性を壊す強制更新は行っていない。
+- 確認成功: `npx tsc --noEmit`、テストTS型検査、全unit、Functions build、Firestore Rules全件、Expo Doctor 18/18、iOS Expo export、ハードコードhex検査0件、`git diff --check`。Rulesは一時Temurin 21 JREと`zelio-run`名のローカルエミュレータで検証し、本番書き込みは0件。
+- Functionsの依存ロック更新を含むため、ユーザー指示を受けて全24 Functionsを`zelio-run`へデプロイした。エラー0件で、デプロイ後の一覧でも24/24件すべて`ACTIVE`。Firestore Rules／インデックス／Hostingは変更・デプロイしていない。クライアント差分はEAS／TestFlightへ未配布。
+- GitHub CLIを再認証し、現行差分を`feat/ui-consolidation`へcommit／pushして既存draft PR #1へ反映した。現行差分のAX5目視、GPS v3実走、バックグラウンド、画面ロック、オフライン再送、RevenueCat購入／復元、Push実配送はTestFlight／物理端末で未確認のため、リリース可とはまだ判定しない。
+- Firebase ConsoleでApple／Googleプロバイダを有効化しただけではアプリのログイン経路は増えない。現行コードにはApple／Googleボタン、ネイティブ認証、Firebase credential交換、既存メールアカウントとのリンク／競合処理、再認証・Appleトークン失効処理がない。`expo-apple-authentication`は依存済みだが、`ios.usesAppleSignIn`とconfig pluginも未設定。Googleは公式Expo案内に沿ったネイティブSDK、FirebaseのiOS/Android構成ファイル、iOS URL scheme、Android署名SHA-1を整え、新しいEASビルドで検証する必要がある。Appleの非公開メールへFirebaseメールを届けるprivate email relay登録と、法務文面／App Privacyの認証プロバイダ追記も必要。現状のプロフィール自動生成はproviderの`displayName`を未検証のまま公開できるため、ソーシャル初回ログインでは既存の表示名検証を通すニックネーム確定画面を先に挟む。
 
 ### 2026-08-09 v2メタレビューを実コードで再判定し、局所修正を実装・本番Functions/Rulesへ反映
 
@@ -443,9 +456,10 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 
 ## 次にやること
 
-1. **物理端末でGPS実走 → バックグラウンド → 画面ロック → 保存 → オフライン復帰 → チャレンジ反映を通し、保存活動の`battleCreditStatus` / `battleCreditReason`を本番実通信で確認する。**
+1. **Apple／Googleログインをクライアントへ実装し、初回ニックネーム検証、既存メールアカウントとのリンク、削除前のprovider再認証／Appleトークン失効まで含めて実機検証する。**
 
 ## その次の候補
+- 現行差分とApple／Googleログインを含むTestFlightビルドを作成し、`RELEASE_TEST_CHECKLIST.md`を2台の物理端末で全項目通して、GPS実走（バックグラウンド／画面ロック／オフライン復帰）、RevenueCat購入／復元、Push実配送、AX5全画面を確認する
 - 同一端末・同一コースでGPS v3を最低5回実走し、既知距離の中央値誤差±2%以内・単発±5%以内・10分静止20m未満と、90度/Uターンを削りすぎないことを確認する
 - シミュレータまたは実機で参加中チャレンジ切替（0〜3件、長いタイトル、最大文字サイズ、再起動、終了時フォールバック）を目視確認する
 - 2アカウントの実機またはTestFlightで、宣言作成→変更→応援→取消→再宣言→活動達成と通知を一連で確認する
@@ -464,6 +478,7 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 
 ## 未解決・要確認
 
+- **Apple／GoogleログインはFirebase側だけ有効でクライアント未実装（2026-08-10）**: Appleは`ios.usesAppleSignIn`、config plugin、Apple App ID capability、nonce付きID token→Firebase credential、初回だけ返る氏名の保存、private email relay登録、削除時の再認証／トークン失効が必要。GoogleはネイティブSDKとconfig plugin、Firebase構成ファイル、iOS URL scheme、AndroidのEAS/Play署名SHA-1、ID token→Firebase credentialが必要。providerの表示名を直接公開せず既存フィルターを通す初回ニックネーム画面、既存メールアカウントと同一メールになった場合の安全なリンク方針、法務文面とApp Privacyも更新・テストする。
 - ~~外部法務ページの同期が必要~~ **GitHub Pagesは解決済み（2026-08-02）**: `masaki0219/app-support` のPrivacy / Terms / Supportを内蔵アバター仕様へ更新し、Pagesデプロイ成功と公開本文を確認した。App Store ConnectのApp Privacy変更だけは人手で必要。
 - ~~旧Storage画像の確認・削除が必要~~ **解決済み（2026-08-02）**: 本番bucketの `avatars/` は0件・0 bytesで、削除対象はなかった。新規アクセスはStorageルールで全面拒否済み。
 - ~~UGCの通報・ブロックが未実装~~ **解決済み（2026-07-31）**: 投稿前フィルター、投稿別の通報、ユーザーブロック、相互インタラクション/通知遮断、管理者通報キュー、公開連絡先、運用手順まで実装・デプロイ済み。実際に原則24時間以内の一次対応を継続する運用と、提出前の2アカウント実機確認は人手で必要。
@@ -483,7 +498,7 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 - サポート窓口は `https://github.com/masaki0219/app-support/issues` を使用し、ZELIO Hostingの `/support.html` から案内する。個人情報を含む問い合わせを公開Issueへ書かせない注意文を表示済み。非公開窓口として2026-07-21にSupabase評価・ご要望フォームをヘルプへ併設した（返信不可のため、返信が必要な報告はGitHub Issueを継続使用）。
 - Supabase評価・ご要望フォームの実機/Expo Goでの目視（ヘルプ最上部のフォーム表示・星タップ・キーボードと送信ボタンの重なり・送信後のお礼表示・未設定時の非表示）は未実施。Hosting `/support.html` からのフォーム案内追記も未実施。
 - Expo依存は `expo ~54.0.35`、`expo-font ~14.0.12`、`expo-router ~6.0.24` へ更新済み。Expo Doctorは18/18合格。
-- `npm audit fix`（`--force`なし）適用後、rootの `npm audit --omit=dev` は critical 0 / high 2 / moderate 33。highはExpo配下の`postcss`とFirebase配下の`undici`で、解消候補はExpo/Firebaseのメジャー更新。functionsはhigh 0 / moderate 9で、残りはfirebase-admin配下の`uuid`系。互換性を壊す強制更新は未適用。
+- `npm audit fix`（`--force`なし）適用後、rootの `npm audit --omit=dev` は high 12 / moderate 23（合計35）。主なhighはExpo/Metro配下の`image-size`・`postcss`とFirebase配下の`undici`で、npm提示の解消はExpo/Firebaseのメジャー更新を伴う。functionsはhigh 0 / moderate 9で、残りはfirebase-admin配下の`uuid`系。互換性を壊す強制更新は未適用。
 - Firestore Rulesテストは一時Temurin 21 JREとローカルエミュレータで2026-08-01に全件成功。JREは`/tmp`だけに配置し、システムへインストールしていない。
 - `submitActivity` はサーバーで距離を再計算するが、Firebase App Checkのネイティブ導入は未実施。Firebase Apple/Android SDKの導入、App Attest/DeviceCheck・Play Integrity登録、debug token整備、メトリクス監視後に距離送信系から段階的にenforcementする。
 - クラッシュ監視・分析イベントはSDK/送信先・プライバシー申告を決める外部設定が必要なため未導入。App CheckもApple App Attest / DeviceCheck、Android Play Integrity、Firebase Console設定とdevelopment buildでの確認が必要。

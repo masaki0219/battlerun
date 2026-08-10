@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, Text, ActivityIndicator, StyleSheet, ViewStyle } from 'react-native';
+import { Pressable, Text, ActivityIndicator, StyleSheet, ViewStyle, StyleProp } from 'react-native';
 import { Colors, Typography, BorderRadius, ComponentSize } from '../../design_tokens';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'accent';
@@ -12,7 +12,7 @@ interface Props {
   size?: Size;
   disabled?: boolean;
   loading?: boolean;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
 }
 
 // このアプリの主 CTA はオレンジ（accent）。primary=accent に統一

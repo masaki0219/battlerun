@@ -69,7 +69,7 @@ export function ActiveBattleHero({
     ? comebackTarget(gapToOvertakeKm, battle.endAt)
     : null;
 
-  const colorsByCategory = teamColorMap(battle.categories.map((category) => category.id));
+  const colorsByCategory = teamColorMap(battle.categories);
   const columns = prioritizeTeams(sorted, myCategoryId).map((s) => ({
     id: s.categoryId,
     label: s.label,

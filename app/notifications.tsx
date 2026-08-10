@@ -18,11 +18,11 @@ import { EmptyState } from '../components/ui/EmptyState';
 
 function notificationIcon(type: NotificationType): { name: any; color: string } {
   switch (type) {
-    case 'rank_change':     return { name: 'trending-up-outline', color: Colors.info };
+    case 'rank_change':     return { name: 'trending-up-outline', color: Colors.primary };
     case 'battle_end_soon': return { name: 'timer-outline', color: Colors.accent };
     case 'title_earned':    return { name: 'ribbon-outline', color: Colors.accentYellow };
     case 'battle_ended':    return { name: 'flag-outline', color: Colors.textSecondary };
-    case 'reaction':        return { name: 'heart-outline', color: Colors.error };
+    case 'reaction':        return { name: 'heart-outline', color: Colors.accent };
     case 'declaration_cheer': return { name: 'flame-outline', color: Colors.accent };
     case 'presence_cheer': return { name: 'radio-outline', color: Colors.primary };
     default:                return { name: 'notifications-outline', color: Colors.textTertiary };
@@ -224,5 +224,5 @@ const s = StyleSheet.create({
     flexShrink: 0,
   },
   itemText: { fontSize: 12, color: Colors.textSecondary, lineHeight: 17 },
-  itemTime: { fontSize: 10, color: Colors.textTertiary, marginTop: 2, fontWeight: '600' },
+  itemTime: { fontSize: 10, color: Colors.textSecondary, marginTop: 2, fontWeight: '600' },
 });

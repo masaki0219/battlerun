@@ -28,7 +28,7 @@ export function BattleRankRows({ battle, sorted, myCatId, expanded, onToggleExpa
   const showMyExtra = !expanded && myIdx >= 3;
   const visible = expanded ? sorted : sorted.slice(0, 3);
   const hiddenCount = sorted.length - 3;
-  const colorsByCategory = teamColorMap(battle.categories.map((category) => category.id));
+  const colorsByCategory = teamColorMap(battle.categories);
 
   const row = (s: CategoryStats) => {
     const isMine = s.categoryId === myCatId;

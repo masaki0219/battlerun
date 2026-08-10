@@ -117,6 +117,7 @@ decision = evaluateAutoPause(detector, point(1, 5_000), false);
 assert.equal(decision.type, 'append');
 
 assert.equal(spokenPace(372), 'キロ 6分12秒');
+assert.equal(DEFAULT_VOICE_COACH_SETTINGS.enabled, false, '音声コーチは明示操作まで読み上げない');
 assert.equal(
   buildVoiceCoachAnnouncement(DEFAULT_VOICE_COACH_SETTINGS, {
     elapsedSeconds: 372,

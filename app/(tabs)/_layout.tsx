@@ -7,6 +7,7 @@ import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useAuthStore } from '../../stores/authStore';
 import {
   flushPendingActivities,
+  hydratePendingActivityQueue,
   hydrateRecordingSession,
   subscribePendingActivityDiscards,
   useRecordStore,
@@ -43,14 +44,11 @@ const TAB_ITEMS: {
 
 function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
-  // 文字を大きくしている端末ではラベルがタブ幅を超えて折り返し、バーからはみ出す。
-  // iOS の標準タブバーと同じくアイコンだけの表示へ切り替える
-  // （accessibilityLabel は残すので VoiceOver では従来どおり読み上げられる）。
   const { fontScale } = useWindowDimensions();
-  const hideLabels = fontScale >= 1.3;
+  const largeText = fontScale >= 1.3;
 
   return (
-    <View style={[tb.bar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+    <View style={[tb.bar, largeText && tb.barLargeText, { paddingBottom: Math.max(insets.bottom, 8) }]}>
       {state.routes.map((route, index) => {
         const item = TAB_ITEMS.find((t) => t.name === route.name);
         if (!item) return null;
@@ -80,15 +78,13 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
               >
                 <Ionicons name="walk" size={24} color={focused ? Colors.textOnAccent : Colors.textSecondary} />
               </TouchableOpacity>
-              {!hideLabels && (
-                <Text
-                  numberOfLines={1}
-                  maxFontSizeMultiplier={1.3}
-                  style={[tb.label, { color: focused ? Colors.accentDark : INK3, fontWeight: focused ? '700' : '500' }]}
-                >
-                  {item.label}
-                </Text>
-              )}
+              <Text
+                numberOfLines={2}
+                maxFontSizeMultiplier={1.6}
+                style={[tb.label, { color: focused ? Colors.accentDark : INK3, fontWeight: focused ? '700' : '500' }]}
+              >
+                {item.label}
+              </Text>
             </View>
           );
         }
@@ -107,15 +103,13 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
             accessibilityState={{ selected: focused }}
           >
             <Ionicons name={iconName} size={22} color={color} />
-            {!hideLabels && (
-              <Text
-                numberOfLines={1}
-                maxFontSizeMultiplier={1.3}
-                style={[tb.label, { color, fontWeight: focused ? '700' : '500' }]}
-              >
-                {item.label}
-              </Text>
-            )}
+            <Text
+              numberOfLines={2}
+              maxFontSizeMultiplier={1.6}
+              style={[tb.label, { color, fontWeight: focused ? '700' : '500' }]}
+            >
+              {item.label}
+            </Text>
           </TouchableOpacity>
         );
       })}
@@ -142,6 +136,7 @@ const tb = StyleSheet.create({
       android: { elevation: 8 },
     }),
   },
+  barLargeText: { paddingTop: 12 },
   tab: {
     flex: 1,
     alignItems: 'center',
@@ -150,6 +145,8 @@ const tb = StyleSheet.create({
   label: {
     fontSize: 10,
     letterSpacing: 0.4,
+    textAlign: 'center',
+    minHeight: 13,
   },
   centerWrap: {
     flex: 1,
@@ -220,6 +217,9 @@ export default function TabLayout() {
 
   useEffect(() => {
     void hydrateRecordingSession();
+    void hydratePendingActivityQueue().catch((error) => {
+      console.warn('[TabLayout] pending activity queue hydration failed:', error);
+    });
     if (!user) return;
 
     const flush = () => {

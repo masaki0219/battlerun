@@ -44,8 +44,8 @@ import {
   selectedBattleStorageKey,
   sortActiveBattlesForDisplay,
 } from '../../utils/battleSelection';
-import { Colors, Typography, Spacing, BorderRadius, Shadow } from '../../design_tokens';
-import type { Battle, Category, CategoryStats, RunningPresence } from '../../types';
+import { Colors, Typography, Spacing, BorderRadius, Shadow, TeamColorOptions } from '../../design_tokens';
+import type { Battle, Category, CategoryStats, RunningPresence, TeamColorId } from '../../types';
 import type { ReportTarget } from '../../lib/moderation';
 import { inviteWebUrl, normalizeInviteCode, PENDING_INVITE_CODE_KEY } from '../../lib/invite';
 
@@ -56,9 +56,9 @@ type PrivateView = 'list' | 'create' | 'join_code' | 'join_select';
 // メイン画面（state・購読・handler を集約。表示は components/battle/* に委譲）
 // ────────────────────────────────────────────────────────────────
 export default function BattleScreen() {
-  const params = useLocalSearchParams<{ inviteCode?: string }>();
-  const { user } = useAuthStore();
-  const userIsPro = user?.plan === 'pro';
+  const params = useLocalSearchParams<{ inviteCode?: string; open?: string }>();
+  const { user, proEntitlement } = useAuthStore();
+  const userIsPro = user?.plan === 'pro' || proEntitlement;
   const unreadNotifications = useUnreadNotifications();
   const {
     publicBattles, privateBattles, myMemberships, seasons, isLoading,
@@ -143,9 +143,25 @@ export default function BattleScreen() {
   const [createTitle, setCreateTitle] = useState('');
   const [createDesc, setCreateDesc] = useState('');
   const [createCategories, setCreateCategories] = useState<Category[]>([
-    { id: '', label: '' },
-    { id: '', label: '' },
+    { id: '', label: '', colorId: TeamColorOptions[0].id },
+    { id: '', label: '', colorId: TeamColorOptions[1].id },
   ]);
+
+  // 結果画面などから「作成」を選んだ場合、同じタブ内の作成フォームまで正しく開く。
+  useEffect(() => {
+    if (params.open !== 'create' || !user) return;
+    if (!userIsPro) {
+      Alert.alert(
+        'Proプランが必要です',
+        '友達チャレンジの作成にはProプランが必要です。\nプロフィール画面からアップグレードできます。',
+      );
+      router.setParams({ open: '' });
+      return;
+    }
+    setActiveTab('private');
+    setPrivateView('create');
+    router.setParams({ open: '' });
+  }, [params.open, user?.id, userIsPro]);
   const [createRankingType, setCreateRankingType] = useState<'average' | 'total'>('average');
   const [createStartAt, setCreateStartAt] = useState('');
   const [createEndAt, setCreateEndAt] = useState('');
@@ -420,7 +436,7 @@ export default function BattleScreen() {
         title: createTitle.trim(),
         description: createDesc.trim(),
         // ID生成は createBattle 側に集約。ラベルのみ渡す（id は無視される）。
-        categories: validCats.map((c) => ({ id: '', label: c.label.trim() })),
+        categories: validCats.map((c) => ({ id: '', label: c.label.trim(), colorId: c.colorId })),
         rankingType: createRankingType,
         startAt: startDate,
         endAt: endDate,
@@ -441,20 +457,36 @@ export default function BattleScreen() {
   function resetCreateForm() {
     setCreateTitle('');
     setCreateDesc('');
-    setCreateCategories([{ id: '', label: '' }, { id: '', label: '' }]);
+    setCreateCategories([
+      { id: '', label: '', colorId: TeamColorOptions[0].id },
+      { id: '', label: '', colorId: TeamColorOptions[1].id },
+    ]);
     setCreateRankingType('average');
     setCreateStartAt('');
     setCreateEndAt('');
   }
 
   function addCategory() {
-    setCreateCategories((prev) => [...prev, { id: '', label: '' }]);
+    setCreateCategories((prev) => {
+      const used = new Set(prev.map((category) => category.colorId));
+      const nextColor = TeamColorOptions.find((option) => !used.has(option.id))
+        ?? TeamColorOptions[prev.length % TeamColorOptions.length];
+      return [...prev, { id: '', label: '', colorId: nextColor.id }];
+    });
   }
   function removeCategory(index: number) {
     setCreateCategories((prev) => prev.filter((_, i) => i !== index));
   }
   function updateCategoryLabel(index: number, label: string) {
     setCreateCategories((prev) => prev.map((c, i) => (i === index ? { ...c, label } : c)));
+  }
+  function updateCategoryColor(index: number, colorId: TeamColorId) {
+    setCreateCategories((prev) => prev.map((category, currentIndex) => {
+      if (currentIndex === index) return { ...category, colorId };
+      if (category.colorId !== colorId) return category;
+      const previousColor = prev[index]?.colorId;
+      return previousColor ? { ...category, colorId: previousColor } : category;
+    }));
   }
 
   function copyInvite(code: string) {
@@ -530,6 +562,7 @@ export default function BattleScreen() {
       onAddCategory={addCategory}
       onRemoveCategory={removeCategory}
       onChangeCategoryLabel={updateCategoryLabel}
+      onChangeCategoryColor={updateCategoryColor}
       onChangeRankingType={setCreateRankingType}
       onChangeStartAt={setCreateStartAt}
       onChangeEndAt={setCreateEndAt}

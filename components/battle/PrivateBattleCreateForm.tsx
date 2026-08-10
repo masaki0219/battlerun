@@ -3,8 +3,8 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingVi
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { PeriodPicker } from './PeriodPicker';
-import { Colors, Typography, Spacing, BorderRadius } from '../../design_tokens';
-import type { Category } from '../../types';
+import { Colors, Typography, Spacing, BorderRadius, TeamColorOptions } from '../../design_tokens';
+import type { Category, TeamColorId } from '../../types';
 
 interface Props {
   title: string;
@@ -19,6 +19,7 @@ interface Props {
   onAddCategory: () => void;
   onRemoveCategory: (index: number) => void;
   onChangeCategoryLabel: (index: number, label: string) => void;
+  onChangeCategoryColor: (index: number, colorId: TeamColorId) => void;
   onChangeRankingType: (t: 'average' | 'total') => void;
   onChangeStartAt: (v: string) => void;
   onChangeEndAt: (v: string) => void;
@@ -30,6 +31,7 @@ interface Props {
 export function PrivateBattleCreateForm({
   title, desc, categories, rankingType, startAt, endAt, creating,
   onChangeTitle, onChangeDesc, onAddCategory, onRemoveCategory, onChangeCategoryLabel,
+  onChangeCategoryColor,
   onChangeRankingType, onChangeStartAt, onChangeEndAt, onSubmit, onCancel,
 }: Props) {
   return (
@@ -49,20 +51,47 @@ export function PrivateBattleCreateForm({
         {/* 記入例に実在ブランド名（禁止語リスト収載語）を使わない */}
         <Text style={styles.helpText}>参加者はどれか1つのチームに入って距離を競います（例: 朝ラン組 vs よる歩き隊）</Text>
         {categories.map((cat, i) => (
-          <View key={i} style={styles.catInputRow}>
-            <TextInput
-              style={[styles.input, { flex: 1 }]}
-              value={cat.label}
-              onChangeText={(v) => onChangeCategoryLabel(i, v)}
-              placeholder={i === 0 ? 'チーム 1（例: 朝ラン組）' : i === 1 ? 'チーム 2（例: よる歩き隊）' : `チーム ${i + 1}`}
-              placeholderTextColor={Colors.textTertiary}
-              maxLength={20}
-            />
-            {categories.length > 2 && (
-              <TouchableOpacity style={styles.catRemoveBtn} onPress={() => onRemoveCategory(i)}>
-                <Text style={styles.catRemoveText}>×</Text>
-              </TouchableOpacity>
-            )}
+          <View key={i} style={styles.catBlock}>
+            <View style={styles.catInputRow}>
+              <TextInput
+                style={[styles.input, { flex: 1 }]}
+                value={cat.label}
+                onChangeText={(v) => onChangeCategoryLabel(i, v)}
+                placeholder={i === 0 ? 'チーム 1（例: 朝ラン組）' : i === 1 ? 'チーム 2（例: よる歩き隊）' : `チーム ${i + 1}`}
+                placeholderTextColor={Colors.textTertiary}
+                maxLength={20}
+              />
+              {categories.length > 2 && (
+                <TouchableOpacity
+                  style={styles.catRemoveBtn}
+                  onPress={() => onRemoveCategory(i)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`チーム${i + 1}を削除`}
+                >
+                  <Text style={styles.catRemoveText}>×</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            <Text style={styles.colorLabel}>識別色</Text>
+            <View style={styles.colorRow}>
+              {TeamColorOptions.map((option) => {
+                const selected = cat.colorId === option.id;
+                return (
+                  <TouchableOpacity
+                    key={option.id}
+                    style={[styles.colorButton, selected && styles.colorButtonSelected]}
+                    onPress={() => onChangeCategoryColor(i, option.id)}
+                    accessibilityRole="radio"
+                    accessibilityLabel={`${option.label}をチーム${i + 1}の色にする`}
+                    accessibilityState={{ selected }}
+                  >
+                    <View style={[styles.colorSwatch, { backgroundColor: option.color }]}>
+                      {selected && <Text style={styles.colorCheck}>✓</Text>}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
         ))}
         <TouchableOpacity style={styles.addCatBtn} onPress={onAddCategory}>
@@ -118,9 +147,22 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.border,
   },
   inputMulti: { height: 72, textAlignVertical: 'top' },
-  catInputRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.sm },
+  catBlock: { marginTop: Spacing.sm },
+  catInputRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   catRemoveBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.error + '15', alignItems: 'center', justifyContent: 'center' },
   catRemoveText: { fontSize: Typography.fontSize.lg, color: Colors.error, fontWeight: Typography.fontWeight.bold },
+  colorLabel: { marginTop: Spacing.xs, fontSize: Typography.fontSize.xs, color: Colors.textSecondary },
+  colorRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs, marginTop: Spacing.xs },
+  colorButton: {
+    width: 34, height: 34, borderRadius: BorderRadius.full,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  colorButtonSelected: { borderWidth: 2, borderColor: Colors.textPrimary },
+  colorSwatch: {
+    width: 26, height: 26, borderRadius: BorderRadius.full,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  colorCheck: { color: Colors.textOnPrimary, fontSize: 14, fontWeight: Typography.fontWeight.bold },
   addCatBtn: { marginTop: Spacing.sm, padding: Spacing.sm, alignItems: 'center' },
   addCatText: { fontSize: Typography.fontSize.sm, color: Colors.primary, fontWeight: Typography.fontWeight.medium },
   modeRow: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.xs },

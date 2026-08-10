@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { comebackTarget, fastestFullKmSplitIndex, formatDistanceKm, remainingLabel } from '../utils/displayStats';
 import { validateDisplayName, DISPLAY_NAME_MAX_LENGTH } from '../lib/validation/displayName';
-import { pickOtherTeamColor, pickTeamColor, pickTeamColors } from '../utils/teamColors';
+import { inferredLegacyTeamColorId, pickOtherTeamColor, pickTeamColor, pickTeamColors } from '../utils/teamColors';
 import { factionBarRatio, prioritizeTeams } from '../utils/teamDisplay';
 import { teamTitleLabel } from '../lib/teamTitle';
 
@@ -68,6 +68,50 @@ assert.equal(fastestFullKmSplitIndex([
   const reversed = pickTeamColors(palette, [...ids].reverse());
   assert.equal(new Set(Object.values(forward)).size, ids.length);
   assert.deepEqual(forward, reversed);
+}
+
+// 旧データの色名補完は定型名だけに限定し、一般名詞の部分一致を避ける。
+assert.equal(inferredLegacyTeamColorId('赤チーム'), 'red');
+assert.equal(inferredLegacyTeamColorId('BLUE TEAM'), 'blue');
+assert.equal(inferredLegacyTeamColorId('白組'), 'gray');
+assert.equal(inferredLegacyTeamColorId('赤ちゃんチーム'), undefined);
+assert.equal(inferredLegacyTeamColorId('青森チーム'), undefined);
+assert.equal(inferredLegacyTeamColorId('赤より青派'), undefined);
+
+// 明示色はハッシュ割当より優先し、競合時も入力順に依存せず別色へずらす。
+{
+  const palette = ['teal', 'blue', 'red', 'gray'];
+  const ids = ['team-red', 'team-blue', 'other'];
+  const preferred = { 'team-red': 'red', 'team-blue': 'blue' };
+  const forward = pickTeamColors(palette, ids, preferred);
+  const reversed = pickTeamColors(palette, [...ids].reverse(), preferred);
+  assert.equal(forward['team-red'], 'red');
+  assert.equal(forward['team-blue'], 'blue');
+  assert.equal(new Set(Object.values(forward)).size, ids.length);
+  assert.deepEqual(forward, reversed);
+}
+
+// 保存済みの明示色は、旧データの名前から推測した色より必ず優先する。
+{
+  const palette = ['teal', 'blue', 'red', 'gray'];
+  const ids = ['legacy-red', 'saved-red', 'other'];
+  const explicit = { 'saved-red': 'red' };
+  const inferred = { 'legacy-red': 'red' };
+  const assigned = pickTeamColors(palette, ids, explicit, palette, inferred);
+  assert.equal(assigned['saved-red'], 'red');
+  assert.notEqual(assigned['legacy-red'], 'red');
+  assert.equal(new Set(Object.values(assigned)).size, ids.length);
+}
+
+// 選択色を追加しても、colorIdを持たない旧チームのハッシュ色は変えない。
+{
+  const legacyPalette = ['teal', 'blue', 'purple', 'pink', 'green', 'gray'];
+  const expandedPalette = [...legacyPalette, 'red'];
+  const ids = ['morning', 'night', 'sales'];
+  assert.deepEqual(
+    pickTeamColors(expandedPalette, ids, {}, legacyPalette),
+    pickTeamColors(legacyPalette, ids),
+  );
 }
 
 // ── pickOtherTeamColor: 先頭（自チーム色）を他チームへ割り当てないこと ──

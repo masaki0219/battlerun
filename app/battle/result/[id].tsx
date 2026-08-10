@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Share,
+  ActivityIndicator, Share, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -172,7 +172,7 @@ export default function BattleResultScreen() {
   const rival = myTeamIdx > 0 ? sorted[myTeamIdx - 1] : myTeamIdx === 0 ? sorted[1] : undefined;
   const gaugeLeft = myTeam ?? sorted[0];
   const gaugeRight = myTeam ? rival : sorted[1];
-  const colorsByCategory = teamColorMap(localBattle.categories.map((category) => category.id));
+  const colorsByCategory = teamColorMap(localBattle.categories);
   const finalColumns = prioritizeTeams(sorted, myCatId).map((team) => ({
     id: team.categoryId,
     label: team.label,
@@ -422,14 +422,27 @@ export default function BattleResultScreen() {
               style={s.nextBtn}
               onPress={() => router.replace('/(tabs)/battle' as any)}
               activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="次のチャレンジを探す"
             >
               <Ionicons name="search-outline" size={18} color={Colors.textPrimary} />
               <Text style={s.nextBtnText}>次のチャレンジを探す</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[s.nextBtn, userIsPro && s.nextBtnPro]}
-              onPress={() => router.push('/(tabs)/battle' as any)}
+              onPress={() => {
+                if (!userIsPro) {
+                  Alert.alert(
+                    'Proプランが必要です',
+                    '友達チャレンジの作成にはProプランが必要です。\nプロフィール画面からアップグレードできます。',
+                  );
+                  return;
+                }
+                router.push({ pathname: '/(tabs)/battle', params: { open: 'create' } } as any);
+              }}
               activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={userIsPro ? 'チャレンジを作る' : 'チャレンジを作る、Proプランが必要'}
             >
               <Ionicons name="add-circle-outline" size={18} color={userIsPro ? Colors.primary : Colors.textPrimary} />
               <Text style={[s.nextBtnText, userIsPro && { color: Colors.primary }]}>

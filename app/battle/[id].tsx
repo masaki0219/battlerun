@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Share, Alert,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Share, Alert, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -54,6 +54,8 @@ interface RecentActivity {
 
 export default function BattleDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { fontScale } = useWindowDimensions();
+  const largeText = fontScale >= 1.6;
   const { user } = useAuthStore();
   const { publicBattles, privateBattles, myMemberships, joinBattle, leaveBattle } = useBattleStore();
 
@@ -246,7 +248,7 @@ export default function BattleDetailScreen() {
   const comeback = gapToOvertakeKm != null ? comebackTarget(gapToOvertakeKm, battle.endAt) : null;
   const bothZero = gaugeLeft && gaugeRight && val(gaugeLeft) <= 0 && val(gaugeRight) <= 0;
   const maxVal = Math.max(...sorted.map(val), 0.01);
-  const colorsByCategory = teamColorMap(battle.categories.map((category) => category.id));
+  const colorsByCategory = teamColorMap(battle.categories);
   const multiTeamColumns = prioritizeTeams(sorted, myCatId).map((team) => ({
     id: team.categoryId,
     label: team.label,
@@ -350,10 +352,12 @@ export default function BattleDetailScreen() {
         {/* ── Dark hero (勝負どころ) ──────────────────────── */}
         <View style={s.hero}>
           {battle.inviteCode ? (
-            <View style={s.heroInviteRow}>
-              <MonoLabel color={DarkColors.primary} size={9}>{`招待コード ${battle.inviteCode}`}</MonoLabel>
+            <View style={[s.heroInviteRow, largeText && s.heroInviteRowLargeText]}>
+              <View style={s.heroInviteCode}>
+                <MonoLabel color={DarkColors.primary} size={9}>{`招待コード ${battle.inviteCode}`}</MonoLabel>
+              </View>
               <TouchableOpacity
-                style={s.heroInviteButton}
+                style={[s.heroInviteButton, largeText && s.heroInviteButtonLargeText]}
                 onPress={() => void shareInvite(battle)}
                 accessibilityRole="button"
                 accessibilityLabel="チャレンジの招待リンクを共有"
@@ -636,12 +640,17 @@ const s = StyleSheet.create({
     padding: Spacing.xl,
     gap: Spacing.lg,
   },
-  heroInviteRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  heroInviteRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm,
+  },
+  heroInviteRowLargeText: { flexDirection: 'column', alignItems: 'stretch' },
+  heroInviteCode: { flex: 1, minWidth: 0 },
   heroInviteButton: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 9, paddingVertical: 5,
     borderRadius: BorderRadius.full, backgroundColor: DarkColors.primarySoft,
   },
+  heroInviteButtonLargeText: { alignSelf: 'stretch', justifyContent: 'center', minHeight: 44 },
   heroInviteText: { fontSize: 10, fontWeight: '800', color: DarkColors.primary },
   heroTitle: {
     fontSize: 22,

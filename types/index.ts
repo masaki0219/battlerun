@@ -170,9 +170,13 @@ export interface Season {
 }
 
 /** バトル内の区分（チーム戦の陣営、公開バトルの選択肢） */
+export type TeamColorId = 'teal' | 'blue' | 'purple' | 'pink' | 'green' | 'gray' | 'red';
+
 export interface Category {
   id: string;    // FirestoreドキュメントのサブコレクションIDとして使用
   label: string; // 表示名（例: "きのこの山"、"さそり座"）
+  /** 新規作成時に利用者が選ぶ識別色。旧データはcategoryIdの安定ハッシュへフォールバックする。 */
+  colorId?: TeamColorId;
 }
 
 export interface Battle {

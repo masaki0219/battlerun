@@ -77,6 +77,10 @@ interface RecordState extends RecordStore {
   gpsProcessingState: GpsProcessingState;
   gpsRuntimeQuality: GpsRuntimeQualityMetrics;
   gpsDebugSamples: GpsDebugSample[];
+  /** AsyncStorageに残っている未送信記録数。起動時の読込前は0だが、送信可否の判定には使わない。 */
+  pendingActivityCount: number;
+  pendingQueueHydrated: boolean;
+  pendingQueueSending: boolean;
   /** 更新中だった旧セッションは、当時の互換入口で再生して保存不能になることを防ぐ。 */
   submissionGpsProcessingVersion: 1 | 2 | typeof GPS_PROCESSING_VERSION;
   /** GPS点の追加。手動停止中は捨て、自動停止中は再開判定だけを続ける */
@@ -194,6 +198,9 @@ export const useRecordStore = create<RecordState>((set, get) => ({
   gpsProcessingState: createInitialGpsProcessingState(),
   gpsRuntimeQuality: emptyGpsRuntimeQualityMetrics(),
   gpsDebugSamples: [],
+  pendingActivityCount: 0,
+  pendingQueueHydrated: false,
+  pendingQueueSending: false,
   submissionGpsProcessingVersion: GPS_PROCESSING_VERSION,
 
   startRecording: (
@@ -656,6 +663,8 @@ export async function hydrateRecordingSession(): Promise<void> {
 interface PendingActivity {
   localId: string;
   activity: Activity;
+  /** 別アカウントへ記録を誤送信しないため、キュー投入時のFirebase uidを保持する。 */
+  ownerUserId?: string;
 }
 
 export interface PendingActivitiesFlushResult {
@@ -701,9 +710,18 @@ async function readPendingActivities(): Promise<PendingActivity[]> {
   }
 }
 
+function pendingCountForCurrentUser(items: PendingActivity[]): number {
+  const currentUserId = auth.currentUser?.uid;
+  return items.filter((item) => !item.ownerUserId || item.ownerUserId === currentUserId).length;
+}
+
 async function writePendingActivities(items: PendingActivity[]): Promise<void> {
   if (items.length === 0) await AsyncStorage.removeItem(PENDING_ACTIVITIES_KEY);
   else await AsyncStorage.setItem(PENDING_ACTIVITIES_KEY, JSON.stringify(items));
+  useRecordStore.setState({
+    pendingActivityCount: pendingCountForCurrentUser(items),
+    pendingQueueHydrated: true,
+  });
 }
 
 // AsyncStorageにトランザクションAPIはないため、read-modify-writeだけを直列化する。
@@ -717,7 +735,22 @@ function withPendingQueueLock<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 async function pendingSnapshot(): Promise<PendingActivity[]> {
-  return withPendingQueueLock(() => readPendingActivities());
+  return withPendingQueueLock(async () => {
+    const items = await readPendingActivities();
+    useRecordStore.setState({
+      pendingActivityCount: pendingCountForCurrentUser(items),
+      pendingQueueHydrated: true,
+    });
+    return items;
+  });
+}
+
+/** UI表示用に未送信件数だけを復元する。再送処理の信頼性はこの値に依存させない。 */
+export async function hydratePendingActivityQueue(): Promise<number> {
+  // アカウント切替直後に、直前の利用者の件数を一瞬表示しない。
+  useRecordStore.setState({ pendingActivityCount: 0, pendingQueueHydrated: false });
+  const items = await pendingSnapshot();
+  return pendingCountForCurrentUser(items);
 }
 
 async function enqueuePending(item: PendingActivity): Promise<void> {
@@ -761,6 +794,9 @@ interface SubmittedActivityResult {
 }
 
 async function submitPending(item: PendingActivity): Promise<SubmittedActivityResult> {
+  if (item.ownerUserId && auth.currentUser?.uid !== item.ownerUserId) {
+    throw new Error('ログイン中のアカウントが変わったため、この記録の送信を保留しました。');
+  }
   const submit = httpsCallable(functions, 'submitActivity');
   const result = await submit({
     localId: item.localId,
@@ -828,11 +864,17 @@ let pendingFlush: Promise<PendingActivitiesFlushResult> | null = null;
 export function flushPendingActivities(): Promise<PendingActivitiesFlushResult> {
   if (pendingFlush) return pendingFlush;
 
+  useRecordStore.setState({ pendingQueueSending: true });
   pendingFlush = (async () => {
     const pending = await pendingSnapshot();
+    const flushingUserId = auth.currentUser?.uid;
     let sent = 0;
     let discarded = 0;
+    if (!flushingUserId) return { sent, discarded };
     for (const item of pending) {
+      // 送信途中にログアウト・アカウント切替が起きた場合は、その場で止めて次回ログイン時へ残す。
+      if (auth.currentUser?.uid !== flushingUserId) break;
+      if (item.ownerUserId && item.ownerUserId !== flushingUserId) continue;
       try {
         await submitPending(item);
         await removePending(item.localId);
@@ -853,6 +895,7 @@ export function flushPendingActivities(): Promise<PendingActivitiesFlushResult> 
 
   return pendingFlush.finally(() => {
     pendingFlush = null;
+    useRecordStore.setState({ pendingQueueSending: false });
   });
 }
 
@@ -867,6 +910,7 @@ export async function saveActivityToFirestore(params: {
   const pending: PendingActivity = {
     localId: `activity_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`,
     activity,
+    ...(auth.currentUser?.uid ? { ownerUserId: auth.currentUser.uid } : {}),
   };
 
   try {

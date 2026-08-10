@@ -880,7 +880,13 @@ export default function RecordScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="ランの記録を開始"
               >
-                <Text style={s.startLabel} maxFontSizeMultiplier={1.2}>
+                <Text
+                  style={s.startLabel}
+                  maxFontSizeMultiplier={1.2}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}
+                >
                   {decorLabel('スタート', 'START')}
                 </Text>
               </TouchableOpacity>
@@ -1510,7 +1516,10 @@ const s = StyleSheet.create({
     shadowColor: Colors.accentDark, shadowOffset: { width: 0, height: 14 },
     shadowOpacity: 0.34, shadowRadius: 28, elevation: 12,
   },
-  startLabel: { fontSize: 38, fontWeight: '900', color: Colors.textOnAccent, letterSpacing: 2 },
+  startLabel: {
+    width: '90%', fontSize: 38, fontWeight: '900', color: Colors.textOnAccent,
+    letterSpacing: 2, textAlign: 'center',
+  },
   startHint: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
 
   goalRow: {

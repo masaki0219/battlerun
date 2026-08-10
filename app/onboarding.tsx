@@ -7,17 +7,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, DarkColors, Typography, Spacing, BorderRadius, Shadow } from '../design_tokens';
+import { Colors, DarkColors, Typography, Spacing, BorderRadius, Shadow, TeamColorOptions } from '../design_tokens';
 import { decorLabel } from '../lib/locale';
 
 export const ONBOARDING_KEY = '@battlerun_onboarding_seen';
 
 const { width: W } = Dimensions.get('window');
 
-const TEAM_BLUE   = Colors.teamPalette[0];
-const TEAM_YELLOW = Colors.teamPalette[2];
-const TEAM_RED    = Colors.teamPalette[1];
-const TEAM_PURPLE = Colors.teamPalette[3];
+const TEAM_BLUE   = TeamColorOptions.find((option) => option.id === 'blue')!.color;
+const TEAM_YELLOW = Colors.accentYellow;
+const TEAM_RED    = TeamColorOptions.find((option) => option.id === 'red')!.color;
+const TEAM_PURPLE = TeamColorOptions.find((option) => option.id === 'purple')!.color;
 const GOLD   = Colors.rank1;
 const SILVER = Colors.rank2;
 const BRONZE = Colors.rank3;

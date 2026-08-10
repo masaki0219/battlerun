@@ -14,7 +14,8 @@ export interface VoiceCoachSettings {
 }
 
 export const DEFAULT_VOICE_COACH_SETTINGS: VoiceCoachSettings = {
-  enabled: true,
+  // 初回ランで予期せず音声が出ないよう、利用者が明示的に有効化する。
+  enabled: false,
   intervalType: 'distance',
   distanceKm: 1,
   timeMinutes: 5,

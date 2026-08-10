@@ -5,7 +5,8 @@
  * ハードコードされた色・サイズは禁止。
  */
 import { Platform, TextStyle } from 'react-native';
-import { pickOtherTeamColor, pickTeamColor, pickTeamColors } from './utils/teamColors';
+import { inferredLegacyTeamColorId, pickOtherTeamColor, pickTeamColor, pickTeamColors } from './utils/teamColors';
+import type { Category, TeamColorId } from './types';
 
 // ============================================================
 // カラーパレット
@@ -82,6 +83,7 @@ export const Colors = {
     '#8FAE4F',
     '#7E9692',
   ],
+  teamRed: '#E36969',
 
   // チャート用（WeeklyBarChart）
   chartBarActive: '#168D83',    // データありの日
@@ -89,6 +91,21 @@ export const Colors = {
   chartToday: '#F07A3E',        // 今日のバーだけアクセント
   chartTrack: '#EDF2F1',        // バーの下地トラック（棒の背景レーン）
 } as const;
+
+/** 友達チャレンジ作成時に保存する識別色。先頭6色は旧データ用 teamPalette と一致する。 */
+export const TeamColorOptions: readonly { id: TeamColorId; label: string; color: string }[] = [
+  { id: 'teal', label: 'ティール', color: Colors.teamPalette[0] },
+  { id: 'blue', label: 'ブルー', color: Colors.teamPalette[1] },
+  { id: 'purple', label: 'パープル', color: Colors.teamPalette[2] },
+  { id: 'pink', label: 'ピンク', color: Colors.teamPalette[3] },
+  { id: 'green', label: 'グリーン', color: Colors.teamPalette[4] },
+  { id: 'gray', label: 'グレー', color: Colors.teamPalette[5] },
+  { id: 'red', label: 'レッド', color: Colors.teamRed },
+] as const;
+
+export function teamColorForId(colorId: TeamColorId | undefined): string | undefined {
+  return TeamColorOptions.find((option) => option.id === colorId)?.color;
+}
 
 // ============================================================
 // ダーク面用カラー（記録中HUD・結果・ホームのヒーローカード）
@@ -136,8 +153,23 @@ export function teamColor(categoryId: string): string {
 }
 
 /** チャレンジ内で重複しない、categoryIdベースの安定したチーム色。 */
-export function teamColorMap(categoryIds: readonly string[]): Record<string, string> {
-  return pickTeamColors(Colors.teamPalette, categoryIds);
+export function teamColorMap(categories: readonly (string | Category)[]): Record<string, string> {
+  const normalized = categories.map((category) => (
+    typeof category === 'string' ? { id: category, label: '', colorId: undefined } : category
+  ));
+  const explicitColors = Object.fromEntries(normalized.map((category) => (
+    [category.id, teamColorForId(category.colorId)]
+  )));
+  const inferredLegacyColors = Object.fromEntries(normalized.map((category) => (
+    [category.id, category.colorId ? undefined : teamColorForId(inferredLegacyTeamColorId(category.label))]
+  )));
+  return pickTeamColors(
+    TeamColorOptions.map((option) => option.color),
+    normalized.map((category) => category.id),
+    explicitColors,
+    Colors.teamPalette,
+    inferredLegacyColors,
+  );
 }
 
 /** 活動詳細マップの相対ラップペース（速い・通常・ゆっくり）。 */
@@ -221,6 +253,11 @@ export const TextStyles = {
     fontWeight: '700',
     color: Colors.textSecondary,
     letterSpacing: 0.2,
+  } as TextStyle,
+  japaneseDecorLabel: {
+    fontFamily: Typography.fontFamily.regular,
+    letterSpacing: 0.2,
+    textTransform: 'none',
   } as TextStyle,
 } as const;
 

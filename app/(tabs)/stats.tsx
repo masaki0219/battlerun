@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Alert, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,6 +24,7 @@ import {
 } from '../../utils/monthlyStats';
 import type { MeasurementType } from '../../types';
 import { decorLabel } from '../../lib/locale';
+import { flushPendingActivities, useRecordStore } from '../../stores/recordStore';
 
 type ActivityFilter = 'all' | 'gps' | 'steps';
 
@@ -44,6 +45,8 @@ const TRAINING_LOAD_SEEN_KEY = '@battlerun_training_load_seen_v1';
 
 /** 記録の振り返り画面。月次はサーバー集計、それ以外は生涯値または直近50件を使う。 */
 export default function StatsScreen() {
+  const { fontScale } = useWindowDimensions();
+  const largeText = fontScale >= 1.6;
   const { activities, loading } = useRecentActivities(50);
   const now = new Date();
   const { months: monthlyStats, loading: monthlyLoading } = useMonthlyStats(now);
@@ -52,6 +55,27 @@ export default function StatsScreen() {
   const [showWeeklyGoal, setShowWeeklyGoal] = useState(false);
   const [showTrainingLoad, setShowTrainingLoad] = useState(false);
   const [selectedMonthKey, setSelectedMonthKey] = useState(() => tokyoMonthKey(now));
+  const pendingActivityCount = useRecordStore((state) => state.pendingActivityCount);
+  const pendingQueueHydrated = useRecordStore((state) => state.pendingQueueHydrated);
+  const pendingQueueSending = useRecordStore((state) => state.pendingQueueSending);
+
+  const retryPendingActivities = async () => {
+    try {
+      const before = useRecordStore.getState().pendingActivityCount;
+      const result = await flushPendingActivities();
+      const remaining = useRecordStore.getState().pendingActivityCount;
+      if (remaining > 0 && result.sent === 0 && result.discarded === 0) {
+        Alert.alert('まだ送信できません', '通信状態を確認してください。記録は端末に保存したまま、30秒ごとに再送します。');
+        return;
+      }
+      if (remaining === 0 && before > 0 && result.sent > 0 && result.discarded === 0) {
+        Alert.alert('再送しました', '未送信の記録をサーバーへ送信しました。');
+      }
+    } catch (error) {
+      console.warn('[StatsScreen] pending activity retry failed:', error);
+      Alert.alert('再送を開始できませんでした', '記録は端末に保存したままです。アプリを開いた状態で、時間をおいてもう一度お試しください。');
+    }
+  };
 
   // 取得済み活動よりサーバー累計が小さい矛盾時は、確実に確認できる側を下限として使う。
   const recentKm = activities.reduce((sum, activity) => sum + nonNegativeMetric(activity.distanceKm), 0);
@@ -138,6 +162,29 @@ export default function StatsScreen() {
         <ActivityIndicator color={Colors.primary} style={{ flex: 1 }} />
       ) : (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+          {pendingQueueHydrated && pendingActivityCount > 0 && (
+            <View style={[styles.pendingCard, largeText && styles.pendingCardLargeText]} accessibilityLiveRegion="polite">
+              <View style={styles.pendingIcon}>
+                <Ionicons name="cloud-upload-outline" size={20} color={Colors.accentDark} />
+              </View>
+              <View style={styles.pendingCopy}>
+                <Text style={styles.pendingTitle}>未送信の記録が{pendingActivityCount}件あります</Text>
+                <Text style={styles.pendingText}>端末に安全に保存しています。オンラインになると自動で再送します。</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.pendingButton, largeText && styles.pendingButtonLargeText]}
+                onPress={() => void retryPendingActivities()}
+                disabled={pendingQueueSending}
+                accessibilityRole="button"
+                accessibilityLabel={`${pendingActivityCount}件の未送信記録を再送`}
+                accessibilityState={{ disabled: pendingQueueSending }}
+              >
+                {pendingQueueSending
+                  ? <ActivityIndicator size="small" color={Colors.accentDark} />
+                  : <Text style={styles.pendingButtonText}>再送する</Text>}
+              </TouchableOpacity>
+            </View>
+          )}
           <View>
             <View style={styles.sectionHead}>
               <Text style={styles.sectionTitle}>今週</Text>
@@ -408,6 +455,26 @@ const styles = StyleSheet.create({
   eyebrow: { fontSize: 10, letterSpacing: 1.8, fontWeight: Typography.fontWeight.bold, color: Colors.textSecondary },
   headerTitle: { fontSize: 26, fontWeight: Typography.fontWeight.extrabold, color: Colors.textPrimary, marginTop: 2 },
   scroll: { paddingHorizontal: Spacing.xl, paddingBottom: 110, gap: Spacing['2xl'] },
+  pendingCard: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    padding: Spacing.md, borderRadius: BorderRadius.md,
+    backgroundColor: Colors.accentLight, borderWidth: 1, borderColor: Colors.accent,
+  },
+  pendingCardLargeText: { flexDirection: 'column', alignItems: 'stretch' },
+  pendingIcon: {
+    width: 36, height: 36, borderRadius: BorderRadius.full,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.surface,
+  },
+  pendingCopy: { flex: 1, minWidth: 0 },
+  pendingTitle: { fontSize: 12, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
+  pendingText: { marginTop: 2, fontSize: 10, lineHeight: 14, color: Colors.textSecondary },
+  pendingButton: {
+    minWidth: 72, minHeight: 44, paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.sm, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.accent,
+  },
+  pendingButtonLargeText: { alignSelf: 'stretch' },
+  pendingButtonText: { fontSize: 11, fontWeight: Typography.fontWeight.bold, color: Colors.accentDark },
 
   sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.md },
   sectionTitle: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
