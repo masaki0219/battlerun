@@ -293,7 +293,12 @@ export interface RecordStore {
   /** 記録中の地図だけに使う点。保留中の正常候補を含み、正式距離には使わない。 */
   displayRoute: RoutePoint[];
   goal: RunGoal | null;
-  startRecording: (type: MeasurementType, goal?: RunGoal | null, warmupSeed?: GpsWarmupSeed | null) => void;
+  startRecording: (
+    type: MeasurementType,
+    goal?: RunGoal | null,
+    warmupSeed?: GpsWarmupSeed | null,
+    scheduledStartAtMs?: number,
+  ) => void;
   pauseRecording: () => void;
   resumeRecording: () => void;
   setAutoPauseEnabled: (enabled: boolean) => void;
@@ -308,11 +313,20 @@ export interface AuthStore {
   authSessionActive: boolean;
   /** 認証済みプロフィールを読み込めなかった場合の復旧可能なエラー。 */
   profileError: string | null;
+  /** Firebase Authは完了したが、公開前のニックネーム確定が必要か。 */
+  profileSetupRequired: boolean;
+  /** ソーシャルプロバイダから得た、未公開のニックネーム候補。 */
+  suggestedProfileName: string;
+  /** 同一メールの既存アカウントへ認証方法を連携している最中か。 */
+  accountLinkingInProgress: boolean;
   // RevenueCatの`pro` entitlementがアクティブかどうか（Firestoreのplanとは別管理）
   proEntitlement: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, name: string) => Promise<void>;
   signOut: () => Promise<void>;
+  completeProfileSetup: (name: string, avatarEmoji: string) => Promise<void>;
+  setSuggestedProfileName: (name: string | null | undefined) => void;
+  setAccountLinkingInProgress: (active: boolean) => void;
   setProEntitlement: (active: boolean) => void;
   setWeeklyGoal: (goal: WeeklyGoal | null) => Promise<void>;
   setRunningPresenceVisible: (visible: boolean) => Promise<void>;

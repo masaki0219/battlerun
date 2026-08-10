@@ -21,6 +21,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isQuietHours } from '../utils/notificationTiming';
 
 const DECLARATION_REMINDERS_KEY = '@battlerun_declaration_reminders_v1';
+export const DECLARATION_REMINDER_MIN_LEAD_MS = 15 * 60_000;
 
 // フォアグラウンドでも通知を表示する
 Notifications.setNotificationHandler({
@@ -153,7 +154,10 @@ export async function scheduleDeclarationReminder(params: {
   battleId: string;
   plannedAt: Date;
 }): Promise<string | null> {
-  if (params.plannedAt <= new Date() || isQuietHours(params.plannedAt)) return null;
+  if (
+    params.plannedAt.getTime() - Date.now() <= DECLARATION_REMINDER_MIN_LEAD_MS
+    || isQuietHours(params.plannedAt)
+  ) return null;
   const reminders = await declarationReminderMap();
   const reminderKey = `${params.battleId}/${params.declarationId}`;
   if (reminders[reminderKey]) return reminders[reminderKey];

@@ -10,6 +10,7 @@ import {
   setDoc,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { cachedPublicProfile } from './publicProfileCache';
 
 export type ReportTargetType = 'user' | 'battle' | 'declaration' | 'presence' | 'activity';
 export type ReportReason = 'harassment' | 'hate' | 'sexual' | 'violence' | 'spam' | 'impersonation' | 'other';
@@ -36,6 +37,7 @@ export interface ReportTarget {
 export interface BlockedUser {
   blockedUid: string;
   displayName: string;
+  avatarEmoji?: string;
   createdAt: string;
 }
 
@@ -90,13 +92,22 @@ export function subscribeBlockedUsers(
   listener: (users: BlockedUser[]) => void,
 ): () => void {
   const blocksQuery = query(collection(db, 'users', userId, 'blocks'), orderBy('createdAt', 'desc'));
+  let generation = 0;
   return onSnapshot(blocksQuery, (snapshot) => {
-    listener(snapshot.docs.map((item) => ({
-      blockedUid: item.id,
-      displayName: (item.data()['displayName'] as string | undefined) ?? 'ユーザー',
-      createdAt: timestampIso(item.data()['createdAt']),
-    })));
+    const currentGeneration = ++generation;
+    void Promise.all(snapshot.docs.map(async (item): Promise<BlockedUser> => {
+      const profile = await cachedPublicProfile(item.id).catch(() => null);
+      return {
+        blockedUid: item.id,
+        displayName: profile?.name ?? (item.data()['displayName'] as string | undefined) ?? 'ユーザー',
+        avatarEmoji: profile?.avatarEmoji,
+        createdAt: timestampIso(item.data()['createdAt']),
+      };
+    })).then((items) => {
+      if (currentGeneration === generation) listener(items);
+    });
   }, (error) => {
+    generation += 1;
     console.warn('[Moderation] ブロック一覧の取得に失敗:', error);
     listener([]);
   });

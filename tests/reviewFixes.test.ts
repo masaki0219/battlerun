@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { comebackTarget, fastestFullKmSplitIndex, formatDistanceKm, remainingLabel } from '../utils/displayStats';
+import { comebackTarget, fastestFullKmSplitIndex, formatRunDistanceKm, formatTotalDistanceKm, remainingLabel } from '../utils/displayStats';
 import { validateDisplayName, DISPLAY_NAME_MAX_LENGTH } from '../lib/validation/displayName';
 import { inferredLegacyTeamColorId, pickOtherTeamColor, pickTeamColor, pickTeamColors } from '../utils/teamColors';
 import { factionBarRatio, prioritizeTeams } from '../utils/teamDisplay';
@@ -22,10 +22,13 @@ import { teamTitleLabel } from '../lib/teamTitle';
   assert.equal(remainingLabel('not-a-date', now), null);
 }
 
-// 距離はGPSの見かけ精度を過剰に出さず、小数1桁へ統一する。
-assert.equal(formatDistanceKm(5.24), '5.2');
-assert.equal(formatDistanceKm(-1), '0.0');
-assert.equal(formatDistanceKm(Number.NaN), '0.0');
+// 合計距離は100m単位、1回のランは10m単位で表示する。
+assert.equal(formatTotalDistanceKm(5.24), '5.2');
+assert.equal(formatTotalDistanceKm(-1), '0.0');
+assert.equal(formatTotalDistanceKm(Number.NaN), '0.0');
+assert.equal(formatRunDistanceKm(5.246), '5.25');
+assert.equal(formatRunDistanceKm(-1), '0.00');
+assert.equal(formatRunDistanceKm(Number.NaN), '0.00');
 assert.equal(teamTitleLabel(1), '優勝チームの一員');
 assert.equal(teamTitleLabel(2), '準優勝チームの一員');
 assert.equal(teamTitleLabel(4), '4位チームの一員');

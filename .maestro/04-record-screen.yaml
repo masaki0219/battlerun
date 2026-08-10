@@ -1,0 +1,100 @@
+# ランタブの開始前状態を確認する。
+#
+# 実際のGPS記録（カウントダウン→記録中HUD→停止ダイアログ→保存）は、シミュレータでは
+# 開始条件を満たせないため対象外にしている。アプリは水平精度が基準を満たすまで
+# 「GPS 準備中…」のままSTARTを受け付けず、simctlの疑似位置ではこの基準を満たせない。
+# よってGPS実走は RELEASE_TEST_CHECKLIST.md のとおり実機で確認する。
+#
+# 代わりに、ここでは実機を使わずに確認できる範囲を押さえる。
+#   - モード切替と目標の選択肢が出ていること
+#   - 位置情報が未準備のあいだはSTARTで記録が始まらず、案内が出ること（誤った開始地点の防止）
+#   - 画面OFFの位置情報ステータスと設定導線が常時出ていること（2026-07-31の修正の回帰）
+#
+# 前提は README.md 参照。
+appId: host.exp.Exponent
+---
+- stopApp
+- openLink: exp://127.0.0.1:8082
+- extendedWaitUntil:
+    visible: 'ZELIO'
+    timeout: 90000
+
+- runFlow:
+    when:
+      visible: '走る距離が、絆になる。'
+    commands:
+      - tapOn: '新規登録はこちら'
+      - evalScript: ${output.email = 'record-' + Date.now() + '@example.com'}
+      - tapOn: 'ニックネーム（12文字以内）'
+      - waitForAnimationToEnd
+      - inputText: '記録画面'
+      - waitForAnimationToEnd
+      - tapOn: 'メールアドレス'
+      - waitForAnimationToEnd
+      - inputText: ${output.email}
+      - waitForAnimationToEnd
+      - tapOn: 'パスワード（6文字以上）'
+      - waitForAnimationToEnd
+      - inputText: 'testpass1234'
+      - waitForAnimationToEnd
+      - tapOn:
+          point: '90%,57%'
+      - waitForAnimationToEnd
+      - tapOn: 'パスワード（6文字以上）'
+      - waitForAnimationToEnd
+      - eraseText
+      - inputText: 'testpass1234'
+      - waitForAnimationToEnd
+      - tapOn: 'アカウントを作成'
+      - extendedWaitUntil:
+          visible: 'チャレンジ'
+          timeout: 90000
+
+- tapOn: 'ラン'
+- extendedWaitUntil:
+    visible: 'タップしてラン開始'
+    timeout: 30000
+
+# モードと目標の選択肢が揃っていること。
+- assertVisible: 'GPSモード'
+- assertVisible: '歩数モード'
+- assertVisible: '目標 目標なし'
+- assertVisible: '目標 3km'
+- assertVisible: '目標 30分'
+
+# 画面OFFの位置情報ステータスと設定導線が常時出ていること。
+- assertVisible: '.*画面OFFの位置情報.*'
+- assertVisible: '画面OFFでも記録する設定を開く'
+
+- takeScreenshot: shots/30-record-idle
+
+# 目標を選ぶと選択状態が変わること。
+- tapOn: '目標 5km'
+- waitForAnimationToEnd
+- takeScreenshot: shots/31-record-goal
+
+# 歩数モードへ切り替えられること。
+- tapOn: '歩数モード'
+- waitForAnimationToEnd
+- takeScreenshot: shots/32-record-steps
+- tapOn: 'GPSモード'
+- waitForAnimationToEnd
+
+# STARTを押す。初回は位置情報の権限ダイアログ、続いて画面OFF設定の確認が出る。
+# どちらも既に済んでいる端末では出ないのでoptionalにする。
+- tapOn: 'ランの記録を開始'
+- waitForAnimationToEnd
+- tapOn:
+    text: 'アプリの使用中は許可'
+    optional: true
+- waitForAnimationToEnd
+- tapOn:
+    text: '画面を開いたまま開始'
+    optional: true
+- waitForAnimationToEnd
+
+# GPSが準備できていないので記録は始まらず、開始前画面に留まって案内が出る。
+# ここが崩れると、精度の悪い地点から記録が始まって距離が狂う。
+- assertVisible: 'タップしてラン開始'
+- assertVisible: '.*GPS.*準備.*'
+- takeScreenshot: shots/33-record-gps-not-ready

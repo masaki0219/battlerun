@@ -15,7 +15,14 @@ import { BorderRadius, Colors, Spacing, Typography } from '../design_tokens';
 const SEEN_RESULTS_KEY = 'battlerun_seen_results';
 
 export default function RootLayout() {
-  const { user, isLoading, authSessionActive, profileError } = useAuthStore();
+  const {
+    user,
+    isLoading,
+    authSessionActive,
+    profileError,
+    profileSetupRequired,
+    accountLinkingInProgress,
+  } = useAuthStore();
   const segments = useSegments();
   const router = useRouter();
   const [onboardingChecked, setOnboardingChecked] = useState(false);
@@ -90,13 +97,23 @@ export default function RootLayout() {
   useEffect(() => {
     if (isLoading || !onboardingChecked) return;
     const inAuth = segments[0] === 'auth';
+    const authScreen = (segments as readonly string[])[1];
+    const inProfileSetup = inAuth && authScreen === 'profile-setup';
+    const inAccountLink = inAuth && authScreen === 'link-account';
     const inOnboarding = segments[0] === 'onboarding';
     const inPublicInfo = segments[0] === 'legal' || segments[0] === 'help' || segments[0] === 'invite';
 
     // Firestoreだけ失敗した認証済みユーザーをログイン画面へ送らない。
     if (authSessionActive && profileError) return;
 
+    // Authだけ完了した初回ユーザーは、検証済みニックネームを作るまでアプリ本体へ入れない。
+    if (authSessionActive && profileSetupRequired) {
+      if (!inProfileSetup && !inPublicInfo) router.replace('/auth/profile-setup');
+      return;
+    }
+
     if (!user) {
+      if (accountLinkingInProgress && inAccountLink) return;
       if (!inAuth && !inOnboarding && !inPublicInfo) {
         if (showOnboarding) {
           router.replace('/onboarding');
@@ -105,9 +122,20 @@ export default function RootLayout() {
         }
       }
     } else if (user && (inAuth || inOnboarding)) {
+      if (accountLinkingInProgress && inAccountLink) return;
       router.replace('/(tabs)');
     }
-  }, [user, isLoading, authSessionActive, profileError, segments, onboardingChecked, showOnboarding]);
+  }, [
+    user,
+    isLoading,
+    authSessionActive,
+    profileError,
+    profileSetupRequired,
+    accountLinkingInProgress,
+    segments,
+    onboardingChecked,
+    showOnboarding,
+  ]);
 
   const inPublicInfo = segments[0] === 'legal' || segments[0] === 'help' || segments[0] === 'invite';
   if (!isLoading && authSessionActive && profileError && !user && !inPublicInfo) {
@@ -136,6 +164,8 @@ export default function RootLayout() {
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="auth/login" />
         <Stack.Screen name="auth/signup" />
+        <Stack.Screen name="auth/profile-setup" />
+        <Stack.Screen name="auth/link-account" />
         <Stack.Screen name="battle/[id]" />
         <Stack.Screen name="battle/result/[id]" />
         <Stack.Screen name="record/summary" />

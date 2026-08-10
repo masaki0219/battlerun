@@ -1,6 +1,6 @@
 # App Store 提出情報（下書き）
 
-最終更新: 2026-08-02
+最終更新: 2026-08-10
 
 App Store Connectへ転記するための下書き。提出直前に、実際のビルド・有効なデモアカウント・連絡担当者情報と照合すること。
 
@@ -20,11 +20,11 @@ GitHub Pagesのデプロイ後、ログアウト状態のSafariで4URLが表示�
 | Appleのデータタイプ | ZELIOで扱う内容 |
 |---|---|
 | Contact Info / Email Address | Firebase Authenticationのメールアドレス |
-| Contact Info / Name | ニックネーム |
+| Contact Info / Name | Apple／Googleが提供する氏名（確定前の候補）、利用者が確定したニックネーム |
 | Health & Fitness / Fitness | 走行・歩行距離、歩数、時間、ペース、活動統計 |
 | Location / Precise Location | GPSルート、水平・垂直精度、高度 |
 | User Content / Other User Content | 宣言メモ、リアクション、応援、チャレンジ名・説明、通報理由・補足・対象内容の控え |
-| Identifiers / User ID | Firebase UID、アプリ内アカウントID |
+| Identifiers / User ID | Firebase UID、アプリ内アカウントID、Apple／Googleの認証識別子 |
 | Identifiers / Device ID | Expo Push Token（通知先端末の識別子） |
 | Purchases / Purchase History | RevenueCat entitlement、商品・購入状態 |
 
@@ -73,6 +73,10 @@ Guideline 1.2 safety features: objectionable text is filtered before profile nam
 
 ZELIO Pro is an auto-renewable monthly subscription. Only the monthly plan is offered in this initial release. Purchase restoration is available from Profile > Restore Purchases.
 
+Authentication supports email/password, Sign in with Apple, and Google Sign-In. A social provider name is only suggested locally; the user must confirm a moderated nickname before any public profile is created. If the same email already exists, the app asks the user to authenticate with the existing method and explicitly consent before linking providers to the same Firebase UID.
+
+Account deletion is available in Profile. The app requires recent authentication using the linked provider. For Sign in with Apple accounts, it obtains a fresh authorization code and revokes the Apple token through the native Firebase iOS SDK before deleting the Firebase account and related app data.
+
 Support URL: https://masaki0219.github.io/app-support/zelio/
 Marketing URL: https://masaki0219.github.io/
 Privacy Policy: https://masaki0219.github.io/app-support/zelio/privacy.html
@@ -89,6 +93,8 @@ Terms of Service: https://masaki0219.github.io/app-support/zelio/terms.html
 - [ ] monthly商品だけが審査対象ビルドに表示され、購入・復元できる
 - [ ] yearly商品は将来用として保持する場合も、App Store Connectで審査提出・販売対象にせず、RevenueCatのCurrent Offeringから外す
 - [ ] App Privacy回答が本ファイルと実際のSDK構成に一致する
+- [ ] Apple／Google新規登録、同一メールのproviderリンク、provider別再認証・アカウント削除をTestFlight実機で確認する
+- [ ] Apple Private Email RelayへFirebase Authenticationの送信元を登録し、非公開メールへの配送を確認する
 - [ ] Guideline 1.2の通報・ブロック・投稿前フィルタ・管理者キューを2アカウントで確認する
 - [ ] EAS production build / TestFlightでGPS、画面ロック、最大2チャレンジ加算・退出、共有形式の復元、Dynamic Type、VoiceOverを確認する
 - [ ] 初回リリースのPro説明・画面・審査ノートに、撤去済みのチャレンジテーマが残っていない

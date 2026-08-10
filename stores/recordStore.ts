@@ -207,8 +207,11 @@ export const useRecordStore = create<RecordState>((set, get) => ({
     type: MeasurementType,
     goal: RunGoal | null = null,
     warmupSeed: GpsWarmupSeed | null = null,
+    scheduledStartAtMs?: number,
   ) => {
-    const nowMs = Date.now();
+    const nowMs = typeof scheduledStartAtMs === 'number' && Number.isFinite(scheduledStartAtMs)
+      ? scheduledStartAtMs
+      : Date.now();
     let gpsProcessingState = createInitialGpsProcessingState();
     let route: RoutePoint[] = [];
     let displayRoute: RoutePoint[] = [];
@@ -317,6 +320,12 @@ export const useRecordStore = create<RecordState>((set, get) => ({
   appendRoutePoint: (point: GpsInputPoint, source: Exclude<GpsPointSource, 'warmup'>) => {
     const state = get();
     if (!state.isRecording || state.pauseKind === 'manual') return;
+    const recordingStartMs = state.startedAt ? new Date(state.startedAt).getTime() : 0;
+    if (
+      Number.isFinite(recordingStartMs)
+      && typeof point.timestamp === 'number'
+      && point.timestamp < recordingStartMs
+    ) return;
 
     const autoPoint = routePointForAutoPause(point);
     const canEvaluateAutoPause = state.autoPauseEnabled

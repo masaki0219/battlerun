@@ -2,12 +2,16 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, DarkColors, Spacing, ComponentSize, BorderRadius } from '../../design_tokens';
+import { Avatar } from './Avatar';
 
 interface Props {
   /** 左アイコン（Ionicons）。emoji を渡す場合は不要 */
   icon?: keyof typeof Ionicons.glyphMap;
   /** アイコンの代わりに絵文字 */
   emoji?: string;
+  /** 人物行では共通Avatarを使う。 */
+  avatarName?: string;
+  avatarEmoji?: string;
   iconColor?: string;
   iconBg?: string;
   title: string;
@@ -32,7 +36,7 @@ interface Props {
  * タイトル/サブ・右アクセサリ（chevron or 値）。履歴・設定・通知の全リスト行に使う。
  */
 export function ListRow({
-  icon, emoji, iconColor, iconBg, title, subtitle, value, right,
+  icon, emoji, avatarName, avatarEmoji, iconColor, iconBg, title, subtitle, value, right,
   showChevron = true, onPress, dark, highlight, danger, titleColor,
 }: Props) {
   const txtPrimary = danger ? Colors.error : titleColor ?? (dark ? DarkColors.textPrimary : Colors.textPrimary);
@@ -43,7 +47,9 @@ export function ListRow({
 
   const body = (
     <View style={[styles.row, highlight && styles.highlight]}>
-      {icon || emoji ? (
+      {avatarName ? (
+        <Avatar name={avatarName} emoji={avatarEmoji} size="sm" />
+      ) : icon || emoji ? (
         <View style={[styles.iconCircle, { backgroundColor: iconBg ?? defaultIconBg }]}>
           {emoji ? (
             <Text style={styles.emoji}>{emoji}</Text>

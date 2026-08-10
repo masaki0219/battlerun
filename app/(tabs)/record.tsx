@@ -22,7 +22,7 @@ import {
 import { useAuthStore } from '../../stores/authStore';
 import { useBattleStore } from '../../stores/battleStore';
 import { useRecentActivities } from '../../hooks/useRecentActivities';
-import type { Activity, GpsWarmupSeed, MeasurementType, RoutePoint, RunGoal } from '../../types';
+import type { Activity, MeasurementType, RoutePoint, RunGoal } from '../../types';
 import { Colors, DarkColors, Spacing, BorderRadius, Shadow, TextStyles } from '../../design_tokens';
 import { MonoLabel } from '../../components/ui/MonoLabel';
 import { StatBlock } from '../../components/ui/StatBlock';
@@ -32,7 +32,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { ProgressBar } from '../../components/ui/ProgressBar';
 import { WeeklyBarChart } from '../../components/viz/WeeklyBarChart';
 import { StreakChip } from '../../components/viz/StreakChip';
-import { weeklyBuckets, streakDays, lastRun, relativeDay, kmSplits } from '../../utils/displayStats';
+import { formatRunDistanceKm, rollingWeekBuckets, streakDays, lastRun, relativeDay, kmSplits } from '../../utils/displayStats';
 import { loadVoiceCoachSettings, saveVoiceCoachSettings } from '../../lib/voiceCoach';
 import { useRunCheers } from '../../hooks/useRunCheers';
 import {
@@ -185,7 +185,7 @@ export default function RecordScreen() {
   // 開始前の下段データ（前回のラン・週間ミニバー・ストリーク）
   const { activities: recentActivities, loading: recentLoading } = useRecentActivities(20);
   const last = lastRun(recentActivities);
-  const weekBuckets = weeklyBuckets(recentActivities);
+  const weekBuckets = rollingWeekBuckets(recentActivities);
   const streak = streakDays(recentActivities);
 
   const [selectedMode, setSelectedMode] = useState<MeasurementType>('gps');
@@ -195,15 +195,22 @@ export default function RecordScreen() {
   const [showVoiceSettings, setShowVoiceSettings] = useState(false);
   const [selectedGoalIdx, setSelectedGoalIdx] = useState(0);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [countdownTargetAt, setCountdownTargetAt] = useState<number | null>(null);
   const [gpsReadiness, setGpsReadiness] = useState<GpsReadiness | null>(null);
   const [gpsWarmupRestartKey, setGpsWarmupRestartKey] = useState(0);
   const [backgroundPermissionGranted, setBackgroundPermissionGranted] = useState<boolean | null>(null);
+  const [foregroundOnlyApproved, setForegroundOnlyApproved] = useState(false);
+  const [showStopSheet, setShowStopSheet] = useState(false);
   const [hudCheerName, setHudCheerName] = useState<string | null>(null);
   const spokenIntervalRef = useRef(0);
   const lastVoiceDistanceRef = useRef(0);
   const lastVoiceElapsedRef = useRef(0);
   const goalAnnouncedRef = useRef(false);
+  const lastKmHapticRef = useRef(0);
+  const lastCountdownHapticRef = useRef<number | null>(null);
   const stopGuardRef = useRef(false);
+  const finishingCountdownRef = useRef(false);
+  const previousGpsReadinessRef = useRef<GpsReadiness | null>(null);
   const warmupSubscriptionRef = useRef<Location.LocationSubscription | null>(null);
   const warmupStartedAtRef = useRef<number | null>(null);
   const warmupReadyCountRef = useRef(0);
@@ -224,6 +231,14 @@ export default function RecordScreen() {
     Pedometer.isAvailableAsync().then(setIsStepAvailable).catch(() => {});
     void loadVoiceCoachSettings().then(setVoiceSettings);
   }, []);
+
+  useEffect(() => {
+    const wasReady = previousGpsReadinessRef.current === 'ready';
+    if (gpsReadiness === 'ready' && !wasReady) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    }
+    previousGpsReadinessRef.current = gpsReadiness;
+  }, [gpsReadiness]);
 
   const voiceGuide = voiceSettings.enabled;
 
@@ -306,8 +321,17 @@ export default function RecordScreen() {
       spokenIntervalRef.current = 0;
       lastVoiceDistanceRef.current = 0;
       lastVoiceElapsedRef.current = 0;
+      lastKmHapticRef.current = 0;
     }
   }, [isRecording]);
+
+  useEffect(() => {
+    if (!isRecording || isPaused || measurementType !== 'gps') return;
+    const completedKm = Math.floor(distanceKm + 0.0001);
+    if (completedKm <= 0 || completedKm <= lastKmHapticRef.current) return;
+    lastKmHapticRef.current = completedKm;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+  }, [distanceKm, isPaused, isRecording, measurementType]);
 
   // 記録開始前から本番と同じBestForNavigationでウォームアップする。
   // distanceIntervalは更新通知条件であり、記録中の3mジッター除去とは別の処理。
@@ -432,7 +456,11 @@ export default function RecordScreen() {
     let cancelled = false;
     const refresh = async () => {
       const permission = await Location.getBackgroundPermissionsAsync().catch(() => null);
-      if (!cancelled) setBackgroundPermissionGranted(permission?.granted === true);
+      if (!cancelled) {
+        const granted = permission?.granted === true;
+        setBackgroundPermissionGranted(granted);
+        if (granted) setForegroundOnlyApproved(false);
+      }
     };
     void refresh();
     const subscription = AppState.addEventListener('change', (state) => {
@@ -447,41 +475,49 @@ export default function RecordScreen() {
     };
   }, [isRecording, selectedMode]);
 
-  // カウントダウン: 3→2→1→開始
+  // カウントダウンは終了時刻を正とする。バックグラウンドでJSタイマーが止まっても、
+  // 復帰時に現在時刻から再計算し、GPS追跡自体は予約時点から開始しておく。
   useEffect(() => {
-    if (countdown === null) return;
-    if (countdown <= 0) {
+    if (countdownTargetAt === null) return;
+    const finishCountdown = () => {
+      if (finishingCountdownRef.current) return;
+      finishingCountdownRef.current = true;
       setCountdown(null);
-      let warmupSeed: GpsWarmupSeed | null = null;
-      if (selectedMode === 'gps') {
-        const point = lastWarmupPointRef.current;
-        const pointAgeMs = point ? Date.now() - point.timestamp : Infinity;
-        if (
-          !point
-          || typeof point.accuracy !== 'number'
-          || point.accuracy <= 0
-          || point.accuracy > START_ACCEPTABLE_ACCURACY_M
-          || pointAgeMs < 0
-          || pointAgeMs > WARMUP_POINT_MAX_AGE_MS
-        ) {
-          Alert.alert('GPSを準備しています', '正確な開始地点を取得できませんでした。空が見える場所でGPS状態が更新されてから、もう一度「スタート」を押してください。');
-          return;
-        }
-        warmupSeed = {
-          point,
-          warmupDurationMs: Math.max(0, Date.now() - (warmupStartedAtRef.current ?? Date.now())),
-          readyAccuracyM: point.accuracy,
-        };
+      setCountdownTargetAt(null);
+      if (selectedMode === 'steps' && !useRecordStore.getState().isRecording) {
+        startRecording(
+          selectedMode,
+          GOAL_OPTIONS[selectedGoalIdx]?.goal ?? null,
+          null,
+          countdownTargetAt,
+        );
       }
-      startRecording(selectedMode, GOAL_OPTIONS[selectedGoalIdx]?.goal ?? null, warmupSeed);
-      if (voiceGuide) Speech.speak('スタート', { language: 'ja-JP', rate: 1.0 });
-      return;
-    }
-    const timer = setTimeout(() => {
-      setCountdown((current) => (current === null ? null : current - 1));
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [countdown, selectedMode, selectedGoalIdx, voiceGuide]);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      Speech.speak('スタート', { language: 'ja-JP', rate: 1.0 });
+      finishingCountdownRef.current = false;
+    };
+    const update = () => {
+      const remaining = Math.max(0, Math.ceil((countdownTargetAt - Date.now()) / 1000));
+      setCountdown(remaining);
+      if (remaining > 0 && remaining !== lastCountdownHapticRef.current) {
+        lastCountdownHapticRef.current = remaining;
+        void Haptics.impactAsync(
+          remaining === 1 ? Haptics.ImpactFeedbackStyle.Heavy : Haptics.ImpactFeedbackStyle.Medium,
+        ).catch(() => {});
+      }
+      if (remaining <= 0) finishCountdown();
+    };
+    update();
+    const timer = setInterval(update, 200);
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') update();
+    });
+    return () => {
+      clearInterval(timer);
+      appStateSubscription.remove();
+      lastCountdownHapticRef.current = null;
+    };
+  }, [countdownTargetAt, selectedMode, selectedGoalIdx, startRecording]);
 
   async function ensureForegroundLocationPermission(): Promise<boolean> {
     const provider = await Location.getProviderStatusAsync().catch(() => null);
@@ -565,6 +601,7 @@ export default function RecordScreen() {
       background = await Location.getBackgroundPermissionsAsync().catch(() => null);
       setBackgroundPermissionGranted(background?.granted === true);
       if (background?.granted) {
+        setForegroundOnlyApproved(false);
         Alert.alert(
           '位置情報の設定が完了しました',
           '「常に許可」に設定できました。準備ができたら「スタート」を押してください。',
@@ -585,38 +622,6 @@ export default function RecordScreen() {
     );
   }
 
-  /**
-   * GPSモードの位置情報権限を、カウントダウンより前に確定させる。
-   * - 使用中の許可が無ければ要求し、拒否ならランを開始しない（時間だけ進む状態を作らない）
-   * - 画面OFFの記録が未設定なら、設定するか画面を開いたまま開始するかを明示する。
-   * - 「設定する」は設定だけを行い、この呼び出しでは記録を開始しない。
-   */
-  async function ensureLocationPermission(): Promise<boolean> {
-    if (!(await ensureForegroundLocationPermission())) return false;
-
-    const background = await Location.getBackgroundPermissionsAsync().catch(() => null);
-    setBackgroundPermissionGranted(background?.granted === true);
-    if (!background?.granted) {
-      const action = await new Promise<'configure' | 'foreground' | 'cancel'>((resolve) => {
-        Alert.alert(
-          '画面OFFでも記録するための設定',
-          '端末の位置情報を「常に許可」にすると、画面をロックしたり他のアプリを開いたりしても計測が続きます。設定後は状態を確認して、「スタート」をもう一度押してください。',
-          [
-            { text: '画面を開いたまま開始', style: 'cancel', onPress: () => resolve('foreground') },
-            { text: '設定する', onPress: () => resolve('configure') },
-          ],
-          { cancelable: true, onDismiss: () => resolve('cancel') },
-        );
-      });
-      if (action === 'configure') {
-        await configureBackgroundLocation();
-        return false;
-      }
-      return action === 'foreground';
-    }
-    return true;
-  }
-
   async function handleStart() {
     if (selectedMode === 'steps') {
       const permission = await Pedometer.requestPermissionsAsync().catch(() => ({ status: 'denied' as const }));
@@ -625,7 +630,8 @@ export default function RecordScreen() {
         return;
       }
     } else {
-      if (!(await ensureLocationPermission())) return;
+      if (!(await ensureForegroundLocationPermission())) return;
+      if (backgroundPermissionGranted !== true && !foregroundOnlyApproved) return;
       const warmupPoint = lastWarmupPointRef.current;
       const warmupAgeMs = warmupPoint ? Date.now() - warmupPoint.timestamp : Infinity;
       if (
@@ -634,141 +640,175 @@ export default function RecordScreen() {
         || warmupAgeMs < 0
         || warmupAgeMs > WARMUP_POINT_MAX_AGE_MS
       ) {
-        Alert.alert(
-          'GPSを準備しています',
-          '正確な開始地点を取得中です。空が見える場所で「GPS 準備OK」または「開始できます」と表示されてから「スタート」を押してください。',
-        );
+        setGpsWarmupRestartKey((value) => value + 1);
         return;
       }
     }
+    const targetAt = Date.now() + 3_000;
+    finishingCountdownRef.current = false;
+    setCountdownTargetAt(targetAt);
     setCountdown(3);
+    if (selectedMode === 'gps') {
+      // 予約時点から追跡を起動し、開始時刻より前の点はrecordStore側で捨てる。
+      // これによりカウントダウン中に画面を閉じても、終了時刻以降のGPS点を受け取れる。
+      startRecording(
+        selectedMode,
+        GOAL_OPTIONS[selectedGoalIdx]?.goal ?? null,
+        null,
+        targetAt,
+      );
+    }
   }
 
-  async function handleStop() {
+  function cancelCountdown() {
+    setCountdown(null);
+    setCountdownTargetAt(null);
+    finishingCountdownRef.current = false;
+    if (useRecordStore.getState().isRecording) reset();
+  }
+
+  function handleStop() {
     if (stopGuardRef.current || !isRecording) return;
     stopGuardRef.current = true;
-    // 保存が主目的の操作なので default(無指定)、破壊的なのは破棄のみ。
-    // 並びも「停止して保存 → 破棄する → キャンセル」とし、保存を最上段に置く。
-    Alert.alert('記録を停止しますか？', '', [
-      {
-        text: '停止して保存',
-        onPress: async () => {
-          if (!user) {
-            stopGuardRef.current = false;
-            Alert.alert('エラー', 'ログインが必要です');
-            return;
-          }
-          setIsSaving(true);
-          let stoppedActivity: Activity | null = null;
-          try {
-            // 通信を待つ前に計測を止める。保存先チャレンジはCallableがサーバー側で確定する。
-            const activity = await stopRecording();
-            stoppedActivity = activity;
-            if (voiceGuide) {
-              Speech.speak(
-                `記録を終了しました。${activity.distanceKm.toFixed(1)}キロメートルです`,
-                { language: 'ja-JP', rate: 1.0 },
-              );
-            }
-            const submitted = await saveActivityToFirestore({
-              activity,
-            });
-            if (!submitted) {
-              reset();
-              Alert.alert(
-                '記録を保存できませんでした',
-                '有効な距離が計測されていないため、この記録は保存されませんでした。',
-              );
-              return;
-            }
-            const savedDistanceKm = submitted.distanceKm;
-            const savedDurationSeconds = submitted.durationSeconds;
-            const splits = activity.measurementType === 'gps' ? kmSplits(activity.route ?? []) : [];
+    setShowStopSheet(true);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+  }
+
+  function cancelStopSheet() {
+    if (isSaving) return;
+    setShowStopSheet(false);
+    stopGuardRef.current = false;
+  }
+
+  async function saveAndStop() {
+    if (!user) {
+      cancelStopSheet();
+      Alert.alert('エラー', 'ログインが必要です');
+      return;
+    }
+    setShowStopSheet(false);
+    setIsSaving(true);
+    let stoppedActivity: Activity | null = null;
+    try {
+      // 通信を待つ前に計測を止める。保存先チャレンジはCallableがサーバー側で確定する。
+      const activity = await stopRecording();
+      stoppedActivity = activity;
+      if (voiceGuide) {
+        Speech.speak(
+          `記録を終了しました。${formatRunDistanceKm(activity.distanceKm)}キロメートルです`,
+          { language: 'ja-JP', rate: 1.0 },
+        );
+      }
+      const submitted = await saveActivityToFirestore({ activity });
+      if (!submitted) {
+        reset();
+        Alert.alert(
+          '記録を保存できませんでした',
+          '有効な距離が計測されていないため、この記録は保存されませんでした。',
+        );
+        return;
+      }
+      const savedDistanceKm = submitted.distanceKm;
+      const savedDurationSeconds = submitted.durationSeconds;
+      const splits = activity.measurementType === 'gps' ? kmSplits(activity.route ?? []) : [];
+      reset();
+      router.push({
+        pathname: '/record/summary' as any,
+        params: {
+          activityId: submitted.activityId,
+          distanceKm: savedDistanceKm.toFixed(2),
+          durationSeconds: String(savedDurationSeconds),
+          steps: String(submitted.steps ?? activity.steps ?? 0),
+          pace: formatPace(savedDistanceKm, savedDurationSeconds),
+          splits: JSON.stringify(splits),
+          declarationAchieved: submitted.declarationAchieved ? '1' : '',
+        },
+      });
+    } catch (e: unknown) {
+      if (e instanceof ActivitySaveError && e.kind === 'queued') {
+        reset();
+        Alert.alert(
+          '端末に保存しました',
+          '通信できなかったため、記録を端末に保管しました。オンライン復帰時に自動で再送します。開催中のチャレンジには、結果確定前に再送できた場合に加算されます。',
+        );
+      } else if (e instanceof ActivitySaveError && e.kind === 'rejected') {
+        reset();
+        Alert.alert(
+          '記録を保存できませんでした',
+          '記録データがサーバーの検証条件を満たさなかったため、再送対象には残していません。',
+        );
+      } else {
+        if (stoppedActivity) {
+          // ローカル保存自体が失敗した場合はメモリ上の記録を破棄せず、一時停止へ戻す。
+          useRecordStore.setState({
+            isRecording: true,
+            isPaused: true,
+            pauseKind: 'manual',
+            pausedAt: new Date().toISOString(),
+            pausedTotalMs: stoppedActivity.pausedMs ?? 0,
+            locationMode: 'idle',
+            gpsWarning: false,
+            segmentPending: true,
+          });
+        }
+        Alert.alert(
+          '端末への保存に失敗しました',
+          '記録を端末の再送キューへ保存できなかったため、一時停止状態に戻しました。空き容量を確認して、もう一度停止してください。',
+        );
+      }
+      console.error('saveActivityToFirestore error:', e);
+    } finally {
+      setIsSaving(false);
+      stopGuardRef.current = false;
+    }
+  }
+
+  function confirmDiscard() {
+    setShowStopSheet(false);
+    Alert.alert(
+      'この記録を破棄しますか？',
+      '距離・ルート・歩数は保存されず、元に戻せません。',
+      [
+        { text: '戻る', style: 'cancel', onPress: () => { stopGuardRef.current = false; } },
+        {
+          text: '破棄する',
+          style: 'destructive',
+          onPress: () => {
+            Speech.stop();
             reset();
-            // Navigate to summary
-            router.push({
-              pathname: '/record/summary' as any,
-              params: {
-                activityId: submitted.activityId,
-                distanceKm: savedDistanceKm.toFixed(2),
-                durationSeconds: String(savedDurationSeconds),
-                steps: String(submitted.steps ?? activity.steps ?? 0),
-                pace: formatPace(savedDistanceKm, savedDurationSeconds),
-                splits: JSON.stringify(splits),
-                declarationAchieved: submitted.declarationAchieved ? '1' : '',
-              },
-            });
-          } catch (e: unknown) {
-            if (e instanceof ActivitySaveError && e.kind === 'queued') {
-              reset();
-              Alert.alert(
-                '端末に保存しました',
-                '通信できなかったため、記録を端末に保管しました。オンライン復帰時に自動で再送します。開催中のチャレンジには、結果確定前に再送できた場合に加算されます。',
-              );
-            } else if (e instanceof ActivitySaveError && e.kind === 'rejected') {
-              reset();
-              Alert.alert(
-                '記録を保存できませんでした',
-                '記録データがサーバーの検証条件を満たさなかったため、再送対象には残していません。',
-              );
-            } else {
-              if (stoppedActivity) {
-                // ローカル保存自体が失敗した場合はメモリ上の記録を破棄せず、一時停止へ戻す。
-                useRecordStore.setState({
-                  isRecording: true,
-                  isPaused: true,
-                  pauseKind: 'manual',
-                  pausedAt: new Date().toISOString(),
-                  pausedTotalMs: stoppedActivity.pausedMs ?? 0,
-                  locationMode: 'idle',
-                  gpsWarning: false,
-                  segmentPending: true,
-                });
-              }
-              Alert.alert(
-                '端末への保存に失敗しました',
-                '記録を端末の再送キューへ保存できなかったため、一時停止状態に戻しました。空き容量を確認して、もう一度停止してください。',
-              );
-            }
-            console.error('saveActivityToFirestore error:', e);
-          } finally {
-            setIsSaving(false);
             stopGuardRef.current = false;
-          }
+          },
         },
-      },
-      {
-        text: '破棄する',
-        style: 'destructive',
-        onPress: () => {
-          Alert.alert(
-            'この記録を破棄しますか？',
-            '距離・ルート・歩数は保存されず、元に戻せません。',
-            [
-              { text: '戻る', style: 'cancel', onPress: () => { stopGuardRef.current = false; } },
-              {
-                text: '破棄する',
-                style: 'destructive',
-                onPress: () => {
-                  Speech.stop();
-                  reset();
-                  stopGuardRef.current = false;
-                },
-              },
-            ],
-          );
-        },
-      },
-      {
-        text: 'キャンセル',
-        style: 'cancel',
-        onPress: () => { stopGuardRef.current = false; },
-      },
-    ]);
+      ],
+    );
   }
 
   const lastPoint = displayRoute[displayRoute.length - 1];
   const liveDisplaySegments = displayRouteSegments(displayRoute);
+  const gpsQualityReady = gpsReadiness === 'ready' || gpsReadiness === 'acceptable';
+  const gpsBackgroundChoiceReady = backgroundPermissionGranted === true || foregroundOnlyApproved;
+  const startDisabled = selectedMode === 'gps' && (!gpsQualityReady || !gpsBackgroundChoiceReady);
+  const startHint = selectedMode !== 'gps'
+    ? 'タップしてラン開始'
+    : !gpsBackgroundChoiceReady
+      ? '下で画面OFFの設定、または画面を開いたまま使う方法を選んでください'
+      : !gpsQualityReady
+        ? 'GPSの準備ができるとスタートできます'
+        : 'タップしてラン開始';
+
+  async function handleGpsStatusPress() {
+    if (gpsReadiness === 'no-permission') {
+      if (await ensureForegroundLocationPermission()) {
+        setGpsWarmupRestartKey((value) => value + 1);
+      }
+      return;
+    }
+    if (gpsReadiness === 'approximate' || gpsReadiness === 'services-disabled') {
+      await Linking.openSettings().catch(() => {});
+      return;
+    }
+    setGpsWarmupRestartKey((value) => value + 1);
+  }
 
   function renderDeclarationGuide() {
     if (!declarationBattle) return null;
@@ -874,11 +914,13 @@ export default function RecordScreen() {
             <View style={s.startStack}>
               <Animated.View style={[s.startRing, { transform: [{ rotate: ringRotate }] }]} />
               <TouchableOpacity
-                style={s.startBtn}
+                style={[s.startBtn, startDisabled && s.startBtnDisabled]}
                 onPress={handleStart}
+                disabled={startDisabled}
                 activeOpacity={0.85}
                 accessibilityRole="button"
                 accessibilityLabel="ランの記録を開始"
+                accessibilityState={{ disabled: startDisabled }}
               >
                 <Text
                   style={s.startLabel}
@@ -891,12 +933,17 @@ export default function RecordScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
-            <Text style={s.startHint}>タップしてラン開始</Text>
+            <Text style={s.startHint}>{startHint}</Text>
             {fontScale >= 1.6 && renderDeclarationGuide()}
 
             {/* GPS readiness */}
             {gpsReadiness !== null && (
-              <View style={s.gpsChip}>
+              <TouchableOpacity
+                style={s.gpsChip}
+                onPress={() => { void handleGpsStatusPress(); }}
+                accessibilityRole="button"
+                accessibilityLabel="GPS状態を更新または設定"
+              >
                 <View
                   style={[
                     s.gpsDot,
@@ -916,7 +963,8 @@ export default function RecordScreen() {
                   {gpsReadiness === 'services-disabled' && '端末の位置情報サービスがOFFです'}
                   {gpsReadiness === 'unavailable' && 'GPS信号を取得できません'}
                 </Text>
-              </View>
+                <Ionicons name="refresh-outline" size={13} color={Colors.textTertiary} />
+              </TouchableOpacity>
             )}
 
             {selectedMode === 'gps' && (
@@ -939,25 +987,39 @@ export default function RecordScreen() {
                       ? '画面OFFの位置情報を確認中…'
                       : backgroundPermissionGranted
                         ? '画面OFFの位置情報：許可済み'
-                        : '画面OFFの位置情報：未設定'}
+                        : foregroundOnlyApproved
+                          ? '画面を開いたまま記録'
+                          : '画面OFFの位置情報：未設定'}
                   </Text>
                   <Text style={s.backgroundStatusHint}>
                     {backgroundPermissionGranted === null
                       ? '端末の権限状態を確認しています'
                       : backgroundPermissionGranted
                         ? '記録開始後にも実際の動作状態を表示します'
-                        : '未設定では、この画面を開いたままにしてください'}
+                        : foregroundOnlyApproved
+                          ? '自動ロックを抑止して前景で記録します'
+                          : '下のどちらかを選ぶとSTARTを使えます'}
                   </Text>
                 </View>
                 {backgroundPermissionGranted === false && (
-                  <TouchableOpacity
-                    style={s.backgroundSettingsButton}
-                    onPress={() => { void configureBackgroundLocation(); }}
-                    accessibilityRole="button"
-                    accessibilityLabel="画面OFFでも記録する設定を開く"
-                  >
-                    <Text style={s.backgroundSettingsButtonText}>設定</Text>
-                  </TouchableOpacity>
+                  <View style={s.backgroundActions}>
+                    <TouchableOpacity
+                      style={s.backgroundSecondaryButton}
+                      onPress={() => setForegroundOnlyApproved(true)}
+                      accessibilityRole="button"
+                      accessibilityLabel="画面を開いたまま記録する"
+                    >
+                      <Text style={s.backgroundSecondaryButtonText}>画面を開いたまま</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={s.backgroundSettingsButton}
+                      onPress={() => { void configureBackgroundLocation(); }}
+                      accessibilityRole="button"
+                      accessibilityLabel="画面OFFでも記録する設定を開く"
+                    >
+                      <Text style={s.backgroundSettingsButtonText}>常に許可を設定</Text>
+                    </TouchableOpacity>
+                  </View>
                 )}
               </View>
             )}
@@ -1038,7 +1100,7 @@ export default function RecordScreen() {
             </View>
           )}
 
-          {/* 前回のラン・今週 */}
+          {/* 前回のラン・直近7日 */}
           <View style={s.preData}>
             {recentLoading ? (
               <>
@@ -1053,7 +1115,7 @@ export default function RecordScreen() {
                   onPress={() => router.push(`/activity/${last.id}` as any)}
                   activeOpacity={0.65}
                   accessibilityRole="button"
-                  accessibilityLabel={`前回のラン、距離${last.distanceKm.toFixed(1)}キロ、時間${formatTime(last.durationSeconds)}、${relativeDay(last.startedAt)}`}
+                  accessibilityLabel={`前回のラン、距離${formatRunDistanceKm(last.distanceKm)}キロ、時間${formatTime(last.durationSeconds)}、${relativeDay(last.startedAt)}`}
                 >
                   <View style={[s.lastRunContent, fontScale >= 2 && s.lastRunContentLarge]}>
                     <View style={s.lastRunIcon}>
@@ -1064,7 +1126,7 @@ export default function RecordScreen() {
                       />
                     </View>
                     <View style={s.lastRunMetrics}>
-                      <Text style={s.lastRunMetric}>距離 {last.distanceKm.toFixed(1)}km</Text>
+                      <Text style={s.lastRunMetric}>距離 {formatRunDistanceKm(last.distanceKm)}km</Text>
                       <Text style={s.lastRunMetric}>時間 {formatTime(last.durationSeconds)}</Text>
                     </View>
                     <View style={s.lastRunRight}>
@@ -1075,10 +1137,10 @@ export default function RecordScreen() {
                 </TouchableOpacity>
 
                 <View style={s.weekHead}>
-                  <Text style={TextStyles.sectionTitle}>今週</Text>
+                  <Text style={TextStyles.sectionTitle}>直近7日</Text>
                   <StreakChip days={streak} />
                 </View>
-                <WeeklyBarChart days={weekBuckets} height={40} compact />
+                <WeeklyBarChart days={weekBuckets} height={40} compact periodLabel="直近7日" />
               </>
             ) : (
               <EmptyState
@@ -1094,7 +1156,7 @@ export default function RecordScreen() {
         {countdown !== null && (
           <Pressable
             style={s.countdownOverlay}
-            onPress={() => setCountdown(null)}
+            onPress={cancelCountdown}
             accessibilityRole="button"
             accessibilityLabel="カウントダウンをキャンセル"
           >
@@ -1317,18 +1379,59 @@ export default function RecordScreen() {
             <View style={s.hudControl}>
               <TouchableOpacity
                 style={s.stopBtn}
-                onPress={handleStop}
+                onLongPress={handleStop}
+                delayLongPress={650}
+                onAccessibilityTap={handleStop}
                 activeOpacity={0.8}
                 accessibilityRole="button"
-                accessibilityLabel="ランの記録を停止"
+                accessibilityLabel="ランの記録を停止して保存メニューを開く"
+                accessibilityHint="長押しすると停止確認を開きます"
               >
                 <View style={s.stopSquare} />
               </TouchableOpacity>
-              <Text style={s.stopLabel}>停止</Text>
+              <Text style={s.stopLabel}>長押しで停止</Text>
             </View>
           </>
         )}
       </View>
+
+      <Modal visible={showStopSheet} transparent animationType="slide" onRequestClose={cancelStopSheet}>
+        <View style={s.sheetRoot}>
+          <Pressable style={s.sheetBackdrop} onPress={cancelStopSheet} />
+          <SafeAreaView style={s.stopConfirmSheet} edges={['bottom']}>
+            <View style={s.sheetHandle} />
+            <Text style={s.stopConfirmTitle}>ランを終了しますか？</Text>
+            <Text style={s.stopConfirmBody}>距離・時間を確認して、記録を保存します。</Text>
+            <TouchableOpacity
+              style={s.stopSaveButton}
+              onPress={() => { void saveAndStop(); }}
+              accessibilityRole="button"
+              accessibilityLabel="停止して記録を保存"
+            >
+              <Ionicons name="checkmark-circle" size={22} color={Colors.textOnPrimary} />
+              <Text style={s.stopSaveButtonText}>停止して保存</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.stopDiscardButton} onPress={confirmDiscard} accessibilityRole="button">
+              <Text style={s.stopDiscardButtonText}>保存せず破棄</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.stopCancelButton} onPress={cancelStopSheet} accessibilityRole="button">
+              <Text style={s.stopCancelButtonText}>記録を続ける</Text>
+            </TouchableOpacity>
+          </SafeAreaView>
+        </View>
+      </Modal>
+
+      {countdown !== null && (
+        <Pressable
+          style={s.countdownOverlay}
+          onPress={cancelCountdown}
+          accessibilityRole="button"
+          accessibilityLabel="カウントダウンをキャンセル"
+        >
+          <Text style={s.countdownNum}>{countdown}</Text>
+          <Text style={s.countdownHint}>タップでキャンセル</Text>
+        </Pressable>
+      )}
 
     </View>
   );
@@ -1516,11 +1619,12 @@ const s = StyleSheet.create({
     shadowColor: Colors.accentDark, shadowOffset: { width: 0, height: 14 },
     shadowOpacity: 0.34, shadowRadius: 28, elevation: 12,
   },
+  startBtnDisabled: { backgroundColor: Colors.textTertiary, shadowOpacity: 0, elevation: 0 },
   startLabel: {
     width: '90%', fontSize: 38, fontWeight: '900', color: Colors.textOnAccent,
     letterSpacing: 2, textAlign: 'center',
   },
-  startHint: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
+  startHint: { width: '88%', maxWidth: 360, fontSize: 13, lineHeight: 18, textAlign: 'center', color: Colors.textSecondary, fontWeight: '600' },
 
   goalRow: {
     flexDirection: 'row' as const,
@@ -1552,7 +1656,7 @@ const s = StyleSheet.create({
   gpsChipText: { fontSize: 11, fontWeight: '700' as const, color: Colors.textSecondary },
   backgroundStatusCard: {
     width: '88%', maxWidth: 360,
-    flexDirection: 'row' as const, alignItems: 'center' as const, gap: 10,
+    flexDirection: 'row' as const, alignItems: 'flex-start' as const, flexWrap: 'wrap' as const, gap: 10,
     paddingHorizontal: 13, paddingVertical: 11,
     borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.border,
     backgroundColor: Colors.surface,
@@ -1565,18 +1669,23 @@ const s = StyleSheet.create({
   backgroundStatusTitle: { fontSize: 12, fontWeight: '800' as const, color: Colors.textPrimary },
   backgroundStatusHint: { marginTop: 2, fontSize: 10, lineHeight: 14, color: Colors.textSecondary },
   backgroundSettingsButton: {
-    minWidth: 52, minHeight: 34, paddingHorizontal: 10,
+    flex: 1, minHeight: 38, paddingHorizontal: 10,
     borderRadius: BorderRadius.full, backgroundColor: Colors.primary,
     alignItems: 'center' as const, justifyContent: 'center' as const,
   },
   backgroundSettingsButtonText: { fontSize: 11, fontWeight: '800' as const, color: Colors.textOnPrimary },
+  backgroundActions: { width: '100%', flexDirection: 'row', gap: Spacing.sm, marginTop: 2 },
+  backgroundSecondaryButton: { flex: 1, minHeight: 38, paddingHorizontal: 8, borderRadius: BorderRadius.full, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center' },
+  backgroundSecondaryButtonText: { fontSize: 10, fontWeight: '800', color: Colors.textSecondary, textAlign: 'center' },
 
   countdownOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: `${DarkColors.background}F2`,
+    backgroundColor: DarkColors.countdownOverlay,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
     gap: 16,
+    zIndex: 20,
+    elevation: 20,
   },
   countdownNum: {
     fontSize: 140, fontWeight: '900' as const, color: DarkColors.textPrimary,
@@ -1707,6 +1816,15 @@ const s = StyleSheet.create({
     backgroundColor: DarkColors.stop,
   },
   stopLabel: { fontSize: 12, color: DarkColors.textTertiary, fontWeight: '600', letterSpacing: 0.5 },
+  stopConfirmSheet: { backgroundColor: Colors.surface, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl, paddingHorizontal: Spacing.xl, paddingTop: Spacing.sm },
+  stopConfirmTitle: { fontSize: 22, fontWeight: '900', color: Colors.textPrimary, textAlign: 'center' },
+  stopConfirmBody: { marginTop: Spacing.sm, fontSize: 13, lineHeight: 19, color: Colors.textSecondary, textAlign: 'center' },
+  stopSaveButton: { minHeight: 64, marginTop: Spacing.xl, borderRadius: BorderRadius.lg, backgroundColor: Colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
+  stopSaveButtonText: { fontSize: 18, fontWeight: '900', color: Colors.textOnPrimary },
+  stopDiscardButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: Spacing.sm },
+  stopDiscardButtonText: { fontSize: 13, fontWeight: '700', color: Colors.error },
+  stopCancelButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.sm },
+  stopCancelButtonText: { fontSize: 14, fontWeight: '700', color: Colors.textSecondary },
 
   // Voice coach bottom sheet
   sheetRoot: { flex: 1, justifyContent: 'flex-end' },

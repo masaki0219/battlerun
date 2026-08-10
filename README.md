@@ -19,6 +19,7 @@ npx expo start
 | キー | 説明 |
 |---|---|
 | `EXPO_PUBLIC_FIREBASE_*` | Firebase プロジェクト設定 |
+| `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` | Firebaseと連携するGoogle Web OAuthクライアントID |
 | `EXPO_PUBLIC_REVENUECAT_API_KEY` | RevenueCat iOS APIキー |
 
 ---
@@ -105,7 +106,14 @@ Expo Push通知を送信する（リアクション・バトル終了・称号�
 
 ---
 
-現在の認証UIはメールアドレスとパスワードに対応しています。
+## 認証（メール／Apple／Google）
+
+メールアドレスとパスワードに加え、iOSはApple／Google、AndroidはGoogleに対応します。
+ソーシャル初回ログイン時は認証サービスの表示名を直接公開せず、既存の禁止語・12文字制限を通すニックネーム確定画面を挟みます。同一メールの既存アカウントがある場合は、既存の方法で本人確認してFirebase UIDを維持したまま認証方法をリンクします。
+
+ネイティブ認証はExpo Goに含まれないため、development buildまたはTestFlight／ストア版で確認してください。設定には`GoogleService-Info.plist`、`google-services.json`、`app.json`のconfig plugin、`EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`が必要です。Androidは利用するEAS／Play署名証明書のSHA-1をFirebaseのAndroidアプリへ登録し、更新後の`google-services.json`を反映してください。
+
+Appleの非公開メールへFirebase Authenticationのメールを届ける場合は、Apple DeveloperでFirebaseの送信元ドメイン／メールアドレスをPrivate Email Relayへ登録します。アカウント削除ではproviderごとに再認証し、Appleは認可コードをFirebase iOS SDKへ渡してトークンを失効してから削除します。
 
 ---
 

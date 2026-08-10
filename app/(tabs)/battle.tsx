@@ -44,7 +44,7 @@ import {
   selectedBattleStorageKey,
   sortActiveBattlesForDisplay,
 } from '../../utils/battleSelection';
-import { Colors, Typography, Spacing, BorderRadius, Shadow, TeamColorOptions } from '../../design_tokens';
+import { Colors, Typography, Spacing, BorderRadius, Shadow, TeamColorOptions, teamColorMap } from '../../design_tokens';
 import type { Battle, Category, CategoryStats, RunningPresence, TeamColorId } from '../../types';
 import type { ReportTarget } from '../../lib/moderation';
 import { inviteWebUrl, normalizeInviteCode, PENDING_INVITE_CODE_KEY } from '../../lib/invite';
@@ -715,6 +715,9 @@ export default function BattleScreen() {
               contributions={processContributions}
               currentUserId={user?.id}
               blockedUserIds={blockedUserIds}
+              teamColor={displayedCategoryId
+                ? teamColorMap(displayedBattle.categories)[displayedCategoryId]
+                : undefined}
               onPressMore={() => router.push(`/battle/${displayedBattle.id}` as any)}
             />
           </View>

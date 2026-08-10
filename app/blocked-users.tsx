@@ -54,7 +54,7 @@ export default function BlockedUsersScreen() {
           <View style={styles.list}>
             {blockedUsers.map((item, index) => (
               <View key={item.blockedUid} style={[styles.row, index > 0 && styles.divider]}>
-                <Avatar name={item.displayName} size="sm" />
+                <Avatar name={item.displayName} emoji={item.avatarEmoji} size="sm" />
                 <Text style={styles.name} numberOfLines={1}>{item.displayName}</Text>
                 <TouchableOpacity
                   style={styles.unblockButton}

@@ -279,7 +279,7 @@ async function run() {
   );
   await check(
     'users/{uid}: アプリ内アバターアイコンは更新できる',
-    updateDoc(doc(aliceDb, 'users/alice'), { avatarEmoji: '🐶' }),
+    updateDoc(doc(aliceDb, 'users/alice'), { avatarEmoji: '🏃' }),
     'succeed',
   );
   await check(
@@ -304,7 +304,7 @@ async function run() {
   );
   await check(
     'publicProfiles: アプリ内アバターアイコンは更新できる',
-    updateDoc(doc(aliceDb, 'publicProfiles/alice'), { avatarEmoji: '🐱' }),
+    updateDoc(doc(aliceDb, 'publicProfiles/alice'), { avatarEmoji: '🌱' }),
     'succeed',
   );
   await check(

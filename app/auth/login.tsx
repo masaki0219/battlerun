@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, TouchableOpacity,
-  KeyboardAvoidingView, Platform, Alert,
+  KeyboardAvoidingView, Platform, Alert, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,6 +11,7 @@ import { auth } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import { authErrorMessage } from '../../lib/authErrors';
 import { Button } from '../../components/ui/Button';
+import { SocialAuthButtons } from '../../components/auth/SocialAuthButtons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../design_tokens';
 
 export default function LoginScreen() {
@@ -46,13 +47,18 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.logo}>ZELIO</Text>
-          <Text style={styles.tagline}>走る距離が、絆になる。</Text>
-        </View>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboard}>
+        <ScrollView
+          contentContainerStyle={styles.container}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.header}>
+            <Text style={styles.logo}>ZELIO</Text>
+            <Text style={styles.tagline}>走る距離が、絆になる。</Text>
+          </View>
 
-        <View style={styles.form}>
+          <View style={styles.form}>
           <TextInput
             style={styles.input}
             placeholder="メールアドレス"
@@ -93,22 +99,25 @@ export default function LoginScreen() {
 
           <Button label="ログイン" onPress={handleLogin} loading={isLoading} style={styles.btn} />
 
-          <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotBtn}>
-            <Text style={styles.forgotText}>パスワードを忘れた方はこちら</Text>
-          </TouchableOpacity>
+            <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotBtn}>
+              <Text style={styles.forgotText}>パスワードを忘れた方はこちら</Text>
+            </TouchableOpacity>
 
-          <Text style={styles.or}>アカウントをお持ちでない方</Text>
-          <Button label="新規登録はこちら" onPress={() => router.push('/auth/signup')} variant="ghost" />
-          <View style={styles.legalRow}>
-            <TouchableOpacity onPress={() => router.push('/legal/terms')} accessibilityRole="link">
-              <Text style={styles.legalText}>利用規約</Text>
-            </TouchableOpacity>
-            <Text style={styles.legalDivider}>・</Text>
-            <TouchableOpacity onPress={() => router.push('/legal/privacy')} accessibilityRole="link">
-              <Text style={styles.legalText}>プライバシーポリシー</Text>
-            </TouchableOpacity>
+            <SocialAuthButtons mode="sign-in" />
+
+            <Text style={styles.or}>アカウントをお持ちでない方</Text>
+            <Button label="新規登録はこちら" onPress={() => router.push('/auth/signup')} variant="ghost" />
+            <View style={styles.legalRow}>
+              <TouchableOpacity onPress={() => router.push('/legal/terms')} accessibilityRole="link">
+                <Text style={styles.legalText}>利用規約</Text>
+              </TouchableOpacity>
+              <Text style={styles.legalDivider}>・</Text>
+              <TouchableOpacity onPress={() => router.push('/legal/privacy')} accessibilityRole="link">
+                <Text style={styles.legalText}>プライバシーポリシー</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -116,8 +125,9 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
-  container: { flex: 1, justifyContent: 'center', paddingHorizontal: Spacing['2xl'] },
-  header: { alignItems: 'center', marginBottom: Spacing['4xl'] },
+  keyboard: { flex: 1 },
+  container: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: Spacing['2xl'], paddingVertical: Spacing['2xl'] },
+  header: { alignItems: 'center', marginBottom: Spacing['2xl'] },
   logo: { fontSize: Typography.fontSize['2xl'], fontWeight: Typography.fontWeight.extrabold, color: Colors.primary },
   tagline: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary, marginTop: Spacing.sm },
   form: { gap: Spacing.md },

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert,
+  View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Platform,
 } from 'react-native';
+import type { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '../ui/Avatar';
 import { Colors, Spacing, BorderRadius, Shadow, Typography } from '../../design_tokens';
@@ -9,6 +10,16 @@ import { declarationTimeLabel } from '../../utils/declarations';
 import { DECLARATION_NOTE_MAX_LENGTH, validateDeclarationNote } from '../../lib/validation/declaration';
 import type { RunDeclaration } from '../../types';
 import type { ReportTarget } from '../../lib/moderation';
+
+// 旧development buildでも宣言一覧を開けるよう、ネイティブピッカーは遅延ロードする。
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let NativeDateTimePicker: React.ComponentType<any> | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  NativeDateTimePicker = require('@react-native-community/datetimepicker').default;
+} catch {
+  NativeDateTimePicker = null;
+}
 
 interface OwnDeclarationProps {
   declaration?: RunDeclaration;
@@ -20,19 +31,32 @@ interface OwnDeclarationProps {
 
 type TimeOption = { key: string; label: string; date: Date; disabled: boolean };
 
-function buildTimeOptions(now: Date): TimeOption[] {
-  const fixed = [
-    { key: 'morning', label: '朝', hour: 7 },
-    { key: 'noon', label: '昼', hour: 12 },
-    { key: 'evening', label: '夕方', hour: 18 },
-    { key: 'night', label: '夜', hour: 20 },
-  ].map((item) => {
-    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate(), item.hour, 0, 0, 0);
-    return { key: item.key, label: `${item.label} ${item.hour}:00`, date, disabled: date <= now };
-  });
-  const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 0);
+function endOfToday(now: Date): Date {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+}
+
+function nextQuarterHour(now: Date): Date {
+  const date = new Date(now);
+  date.setSeconds(0, 0);
+  date.setMinutes(Math.ceil((now.getMinutes() + (now.getSeconds() > 0 ? 1 : 0)) / 15) * 15);
+  if (date <= now) date.setMinutes(date.getMinutes() + 15);
+  return date;
+}
+
+function timeLabel(date: Date): string {
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+export function buildTimeOptions(now: Date): TimeOption[] {
+  const endOfDay = endOfToday(now);
   const soon = new Date(Math.min(now.getTime() + 5 * 60_000, endOfDay.getTime()));
-  return [{ key: 'soon', label: 'まもなく', date: soon, disabled: soon <= now }, ...fixed];
+  const quarter = nextQuarterHour(now);
+  const later = new Date(quarter.getTime() + 60 * 60_000);
+  return [
+    { key: 'soon', label: 'まもなく', date: soon, disabled: soon <= now },
+    { key: 'quarter', label: `次の区切り ${timeLabel(quarter)}`, date: quarter, disabled: quarter > endOfDay },
+    { key: 'later', label: `1時間後 ${timeLabel(later)}`, date: later, disabled: later > endOfDay },
+  ];
 }
 
 export function DeclarationCard({
@@ -45,6 +69,8 @@ export function DeclarationCard({
   const [cancelling, setCancelling] = useState(false);
   const [editing, setEditing] = useState(false);
   const [validationMessage, setValidationMessage] = useState('');
+  const [customDate, setCustomDate] = useState(() => nextQuarterHour(new Date()));
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const currentOption: TimeOption | null = declaration && editing
     ? {
         key: 'current',
@@ -58,6 +84,7 @@ export function DeclarationCard({
   function beginEditing() {
     if (!declaration || declaration.status !== 'planned') return;
     setSelectedKey('current');
+    setCustomDate(new Date(declaration.plannedAt));
     setNote(declaration.note ?? '');
     setValidationMessage('');
     setEditing(true);
@@ -127,7 +154,32 @@ export function DeclarationCard({
     );
   }
 
-  const selected = formOptions.find((item) => item.key === selectedKey) ?? formOptions[0];
+  const selected = selectedKey === 'custom'
+    ? { key: 'custom', label: timeLabel(customDate), date: customDate, disabled: customDate <= new Date() }
+    : formOptions.find((item) => item.key === selectedKey) ?? formOptions[0];
+
+  function selectCustomDate(date: Date) {
+    setCustomDate(date);
+    setSelectedKey('custom');
+    setValidationMessage('');
+  }
+
+  function handleTimePicked(event: DateTimePickerEvent, date?: Date) {
+    if (Platform.OS === 'android') setShowTimePicker(false);
+    if (event.type !== 'set' || !date) return;
+    const picked = new Date(
+      customDate.getFullYear(), customDate.getMonth(), customDate.getDate(),
+      date.getHours(), date.getMinutes(), 0, 0,
+    );
+    if (picked <= new Date() || picked > endOfToday(new Date())) return;
+    selectCustomDate(picked);
+  }
+
+  function adjustCustomDate(minutes: number) {
+    const adjusted = new Date(selected.date.getTime() + minutes * 60_000);
+    if (adjusted <= new Date() || adjusted > endOfToday(new Date())) return;
+    selectCustomDate(adjusted);
+  }
 
   async function submit() {
     const validation = validateDeclarationNote(note);
@@ -135,7 +187,10 @@ export function DeclarationCard({
       setValidationMessage(validation.reason ?? 'ひとことを確認してください');
       return;
     }
-    if (!selected || selected.disabled) return;
+    if (!selected || selected.disabled || selected.date <= new Date()) {
+      setValidationMessage('これからの時刻を選んでください。');
+      return;
+    }
     setSaving(true);
     setValidationMessage('');
     try {
@@ -183,7 +238,58 @@ export function DeclarationCard({
             </TouchableOpacity>
           );
         })}
+        <TouchableOpacity
+          style={[styles.timeChip, selectedKey === 'custom' && styles.timeChipActive]}
+          onPress={() => {
+            if (selectedKey !== 'custom') setCustomDate(nextQuarterHour(new Date()));
+            setShowTimePicker((visible) => !visible);
+          }}
+          disabled={saving}
+          accessibilityRole="button"
+          accessibilityLabel="宣言する時間を選ぶ"
+        >
+          <Text style={[styles.timeText, selectedKey === 'custom' && styles.timeTextActive]}>
+            {selectedKey === 'custom' ? `選択中 ${timeLabel(customDate)}` : '時間を選ぶ'}
+          </Text>
+        </TouchableOpacity>
       </View>
+
+      {showTimePicker && NativeDateTimePicker && (
+        <View style={styles.pickerWrap}>
+          <NativeDateTimePicker
+            value={customDate}
+            mode="time"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            locale="ja"
+            is24Hour
+            minuteInterval={15}
+            minimumDate={new Date(Date.now() + 60_000)}
+            maximumDate={endOfToday(new Date())}
+            accentColor={Colors.accent}
+            onChange={handleTimePicked}
+          />
+          {Platform.OS === 'ios' && (
+            <TouchableOpacity style={styles.pickerDone} onPress={() => setShowTimePicker(false)}>
+              <Text style={styles.pickerDoneText}>この時刻にする</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+      {showTimePicker && !NativeDateTimePicker && (
+        <Text style={styles.validation}>このビルドでは時間選択を利用できません。アプリを更新してください。</Text>
+      )}
+
+      {(selectedKey === 'custom' || selectedKey === 'current') && (
+        <View style={styles.adjustRow}>
+          <TouchableOpacity style={styles.adjustChip} onPress={() => adjustCustomDate(-15)} disabled={saving}>
+            <Text style={styles.adjustText}>−15分</Text>
+          </TouchableOpacity>
+          <Text style={styles.selectedTime}>{timeLabel(selected.date)}</Text>
+          <TouchableOpacity style={styles.adjustChip} onPress={() => adjustCustomDate(15)} disabled={saving}>
+            <Text style={styles.adjustText}>＋15分</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <View style={styles.noteWrap}>
         <TextInput
@@ -219,7 +325,8 @@ export function DeclarationCard({
           <Text style={styles.stopEditingText}>編集をやめる</Text>
         </TouchableOpacity>
       )}
-      <Text style={styles.reminderHint}>リマインドは1回だけ。あとから急かす通知はありません。</Text>
+      <Text style={styles.scopeHint}>公開範囲：このチャレンジの参加者</Text>
+      <Text style={styles.reminderHint}>15分以内の予定は通知せず、それより先は1回だけリマインドします。</Text>
     </View>
   );
 }
@@ -336,6 +443,13 @@ const styles = StyleSheet.create({
   timeText: { fontSize: 11, fontWeight: Typography.fontWeight.bold, color: Colors.textSecondary },
   timeTextActive: { color: Colors.textOnAccent },
   timeTextDisabled: { color: Colors.textTertiary },
+  pickerWrap: { marginTop: Spacing.sm, borderRadius: BorderRadius.md, backgroundColor: Colors.surface, overflow: 'hidden' },
+  pickerDone: { minHeight: 40, alignItems: 'center', justifyContent: 'center', borderTopWidth: 1, borderTopColor: Colors.borderLight },
+  pickerDoneText: { fontSize: 12, color: Colors.primaryDark, fontWeight: Typography.fontWeight.bold },
+  adjustRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.md, marginTop: Spacing.sm },
+  adjustChip: { minHeight: 34, paddingHorizontal: Spacing.md, borderRadius: BorderRadius.full, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.surface },
+  adjustText: { fontSize: 11, color: Colors.primaryDark, fontWeight: Typography.fontWeight.bold },
+  selectedTime: { minWidth: 52, textAlign: 'center', fontSize: 14, color: Colors.textPrimary, fontWeight: Typography.fontWeight.extrabold, fontVariant: ['tabular-nums'] },
   noteWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.border, marginTop: Spacing.md },
   noteInput: { flex: 1, paddingHorizontal: Spacing.md, paddingVertical: 10, fontSize: 13, color: Colors.textPrimary },
   noteCount: { fontSize: 9, color: Colors.textTertiary, marginRight: Spacing.sm },
@@ -345,6 +459,7 @@ const styles = StyleSheet.create({
   stopEditingButton: { minHeight: 38, alignItems: 'center', justifyContent: 'center', marginTop: Spacing.xs },
   stopEditingText: { fontSize: 11, color: Colors.textSecondary, fontWeight: Typography.fontWeight.bold },
   reminderHint: { fontSize: 9, color: Colors.textSecondary, textAlign: 'center', marginTop: Spacing.sm },
+  scopeHint: { fontSize: 9, color: Colors.textSecondary, textAlign: 'center', marginTop: Spacing.sm, fontWeight: Typography.fontWeight.bold },
   listSectionTitle: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.md },
   listCard: { backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: Spacing.md, ...Shadow.sm },
   listRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.md },

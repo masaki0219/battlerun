@@ -41,6 +41,26 @@ TestFlight ビルドでの通し検証用チェックリスト。サーバー集
 - [ ] 開催中の公開バトルが最低1つ存在する（[OPERATIONS.md](./OPERATIONS.md) 参照）
 - [ ] Firebase コンソール・RevenueCat ダッシュボードへのアクセス権がある
 - [ ] RevenueCat サンドボックス課金用の Apple ID（Sandbox Tester）を用意済み
+- [ ] FirebaseのiOS／Androidアプリ設定、Google OAuthクライアント、AndroidのEAS／Play署名SHA-1が登録済み
+- [ ] Apple Private Email RelayへFirebase Authenticationの送信元を登録済み
+
+---
+
+## シナリオ0: Apple／Google認証
+
+| # | 手順 | 期待結果 | 確認場所 |
+|---|---|---|---|
+| 0-1 | 新規Apple IDで「Appleでサインイン」し、メールを非公開にする | Auth成立後すぐアプリ本体へ入らず、ニックネーム確定画面が開く。Appleの氏名は候補に留まり、確定前は`users`／`publicProfiles`が作成されない | iOS実機 / Firebase |
+| 0-2 | 禁止語または13文字以上のニックネームで確定する | クライアントで拒否され、Firestoreにも公開されない | iOS実機 / Firebase |
+| 0-3 | 有効なニックネームを確定する | `users/{uid}`と`publicProfiles/{uid}`が同一名で作成され、ホームへ進む | iOS実機 / Firebase |
+| 0-4 | 新規Googleアカウントで続行する | Googleアカウント選択後、同じニックネーム確定フローを経て登録できる | iOS／Android実機 / Firebase |
+| 0-5 | メール／パスワードで既存アカウントを作り、同じメールのGoogleで続行する | 既存アカウント確認画面が開き、パスワード確認後にGoogleが同じFirebase UIDへリンクされ、既存の活動・プランが維持される | 実機 / Firebase Auth / Firestore |
+| 0-6 | AppleとGoogleの同一メール競合を作り、既存providerで確認する | 明示同意後に同じUIDへリンクされ、別UID／空プロフィールが作られない | iOS実機 / Firebase Auth |
+| 0-7 | 既存アカウント確認で別メールのproviderを選ぶ | メール不一致として拒否され、誤ったアカウントへリンクされない | 実機 / Firebase Auth |
+| 0-8 | Apple／Googleでログアウト後、別アカウントを選んで再ログインする | アカウント選択UIが開き、前回アカウントへ無断で固定されない | 実機 |
+| 0-9 | Appleの非公開メール宛にパスワード変更等のFirebaseメールを送る | Private Email Relay経由で実メールへ届く | iOS実機 / メール受信箱 |
+
+**Expo Goで検証可能か**: 不可。Apple entitlement、GoogleネイティブSDK、Firebase iOS SDKのトークン失効を含むためdevelopment buildまたはTestFlightが必須。
 
 ---
 
@@ -147,6 +167,9 @@ TestFlight ビルドでの通し検証用チェックリスト。サーバー集
 | 7-5 | 削除したuidの `users/{uid}/notifications`、`users/{uid}/badges` を確認 | サブコレクションが空になっている | Firebaseコンソール |
 | 7-6 | 削除したuidの `users/{uid}` 本体を確認 | ドキュメントが存在しない | Firebaseコンソール |
 | 7-7 | アバターアイコンを設定済みの状態で削除 | `publicProfiles/{uid}` を含むプロフィール情報が削除されている | Firebaseコンソール（Firestore） |
+| 7-8 | Appleログインのアカウントを削除 | Appleで再認証し、Firebase iOS SDKでAppleトークンを失効してからAuthユーザーが削除される | iOS実機 / Firebase Auth / Apple通知 |
+| 7-9 | Googleログインのアカウントを削除 | Googleで再認証・アクセス解除後にAuthユーザーが削除される | iOS／Android実機 / Firebase Auth / Googleアカウント設定 |
+| 7-10 | Androidのメール／パスワードアカウントを削除 | アプリ内Modalでパスワードを確認でき、削除が完了する | Android実機 / Firebase Auth |
 
 **注意**: `onUserDeleted` の `collectionGroup('participants')` 検索は、参加ドキュメントの `userId` フィールドに依存する。本リリース準備で導入したフィールドのため、**このリリース以降に参加したデータのみ対象**（導入前の参加データは対象外）。
 

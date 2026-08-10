@@ -1,10 +1,10 @@
 # HANDOFF
 
-最終更新: 2026-08-10
+最終更新: 2026-08-11
 
 ## プロジェクトの目的
 
-仲間と合計距離を競うチーム対抗ランニング・ウォーキングアプリ。React Native / Expo で実装し、Firebase（Firestore）をバックエンド、RevenueCat を課金に使う。GPS によるアクティビティ記録とバトル（対戦）機能が中心。認証は現状メール/パスワードのみ（Apple／GoogleのFirebaseプロバイダはユーザー報告で有効化済みだが、クライアントのサインイン処理は未実装）。
+仲間と合計距離を競うチーム対抗ランニング・ウォーキングアプリ。React Native / Expo で実装し、Firebase（Firestore）をバックエンド、RevenueCat を課金に使う。GPS によるアクティビティ記録とバトル（対戦）機能が中心。認証はメール／パスワード、Apple、Googleに対応する。
 
 ## 現在の状態
 
@@ -16,6 +16,8 @@
 
 Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*` 等）は従来値を維持している。
 
+距離表示は、週間・月間・累計・チーム合計などの**合計値を0.1km（100m）単位**、1回のランとそのチャレンジ加算値を**0.01km（10m）単位**に統一している。
+
 **デプロイ方針（2026-07-20 ユーザー許可済み）**: 実装に伴う Firebase Functions / Firestore ルールは、必須テストとビルドが成功した後、Codexが `zelio-run` へデプロイしてよい。都度の再確認は不要。対象プロジェクトを明示し、完了・失敗を報告すること。commit / push / reset / rebase は従来どおり別途ユーザー許可が必要。
 
 `inst_v3/BattleRunホーム画面作成.zip`（Figma Make のホーム画面デザイン・最終版）を反映し、パレットをディープパイン系に刷新した。レイアウトの作り直しはホームタブとランタブの2画面に限定し、他画面は `design_tokens.ts` 経由で色だけ追従している。
@@ -23,6 +25,80 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 ※ 同フォルダの `BattleRunホーム画面作成 (コピー).zip` は旧版。パレット（`theme.css`）は同一だが、ヒーローが2陣営のVSゲージで、チーム内ランキングが無い。**最終版はこちら（コピーでない方）**。
 
 ## 最後に完了したこと
+
+### 2026-08-10 ラン宣言・ソーシャル表示・記録体験・管理画面を一括改善
+
+- ラン宣言を「まもなく／次の15分区切り／1時間後＋時間ピッカー＋±15分」のハイブリッドへ変更し、当日内だけを許可した。15分以内と静音時間帯はリマインダーを登録せず、宣言の公開範囲も画面に明記した。
+- 公開プロフィールの絵文字を76種類・5カテゴリへ拡張し、登録時にも選べるようにした。チーム内ランキング、最近の活動、ブロック一覧、活動詳細を共通`Avatar`へ統一し、宣言の無期限独自キャッシュを5分TTL／200件上限の共通キャッシュへ置換した。他人の最近の活動から相対時刻を消し、活動詳細でも開始・終了時刻を本人以外へ表示しない。
+- 記録／統計の棒グラフだけを「直近7日・今日が右端」へ変更し、週間目標は月曜始まりのまま維持した。結果画面へ距離カウントアップ、順位スプリング、自己ベスト／順位上昇の紙吹雪と触覚を追加し、VSゲージの伸長・逆転フラッシュ、開始／カウントダウン／1km／宣言達成の触覚も追加した。Reduce Motion設定を尊重する。
+- GPS開始前に権限・精度・画面OFF可否を見える化し、「常に許可」または「画面を開いたまま」をSTART前に明示選択する構成へ変更した。カウントダウンは`targetAt`基準にし、GPSは予約時点から追跡を起動して開始時刻以前の点を破棄するため、バックグラウンド復帰後も開始時刻がずれない。停止は650ms長押し＋アプリ内ボトムシートへ変更し、停止保存ボタンを高さ64px以上にした。
+- 管理画面を開催中／開催前／終了へ分け、残り時間、今すぐ開始、結果リンクを状態別に表示した。今すぐ終了は現在順位（称号候補）を確認し、チャレンジ名の完全入力と不可逆通知の警告が揃わないと実行できない。共有文の発見URLは公開前のZELIOサポートページへ変更した。
+- Firestoreクライアント利用箇所を全件棚卸しし、新しい76絵文字を`firestore.rules`へ同期した。`npx tsc --noEmit`、全unit、`git diff --check`、Firebase Emulatorのルール118件、Firebase側rules dry-runが成功。2026-08-11にユーザーの明示承認を受け、本番`zelio-run`へruleset `c9d835d5-fc04-4361-8daf-364f03325e26`をデプロイ済み。インデックス／Functions変更はない。
+- 2026-08-11に現行差分を`feat/ui-consolidation`へcommit／push済み。`gh auth status`はネットワーク制限下だと有効なKeychainトークンを「invalid」と誤判定するため、GitHub認証確認とpushはネットワーク許可環境で行う。
+- iOSのロック画面Live Activityは`expo-notifications`の通常通知では継続更新できないため未実装。ActivityKitのWidget Extensionとネイティブモジュールを追加する別タスクが必要。低精度GPSでの強制開始も、記録へ精度ラベルを保存・検証するサーバー仕様が無い状態では不正確な記録を許すため今回は追加していない。
+
+### 2026-08-10 合計距離と1回のランで表示精度を分離
+
+- `formatTotalDistanceKm()`（小数1桁）と`formatRunDistanceKm()`（小数2桁）を分け、合計値は100m単位、個別ランは10m単位という表示ルールを明示した。保存値・GPS計測・Firestore集計ロジックは変更していない。
+- 個別ランの記録完了画面、活動詳細、前回ラン、統計の履歴／最長ラン、チャレンジ詳細の最近の活動、チーム加算、共有カード／共有文、読み上げを小数2桁へ統一した。週間・月間・年間・生涯累計・チーム順位などは小数1桁のまま。
+- 確認成功: `npm run test:unit`、`npx tsc --noEmit`、`git diff --check`。表示フォーマッタと共有文の期待値テストも追加・更新した。
+
+### 2026-08-10 Xcodeビルド失敗の原因特定と `ios/` 再生成（ユーザー許可済み）
+
+- ユーザーのXcode Archiveビルドが失敗。DerivedDataのビルドログとローカル`ios/`を調べ、同じ構成で再現ビルドして原因を確定した。
+- **直接原因**: `ios/Podfile.lock`（2026-08-02生成）が`ExpoWebBrowser`を`../node_modules/expo-web-browser/ios`から取る宣言を保持していたが、同日の認証実装で`expo-auth-session`を削除した際にその依存の`expo-web-browser`も消えていた。Xcodeが存在しないSwiftソース5件をコンパイルしようとして`Build input files cannot be found`で停止する。
+- **併発していた問題**: 再生成前の`ios/`は認証実装より前の状態で、`RNFBApp` / `RNFBAuth` / `NitroModules` / `NitroGoogleSignin` / `FirebaseCore` / `FirebaseAuth` / `GoogleSignIn`が**すべて0件**、ターゲット内に`GoogleService-Info.plist`が無く、Podfileに静的リンク指定も無かった。`expo-web-browser`だけ直してもApple／Googleログインは動かない状態だった。
+- ユーザー許可を得て`npx expo prebuild --platform ios --clean`＋CocoaPods導入を実行。Pod総数291→331、`ExpoWebBrowser`参照0件、上記Firebase/Google系Podがすべて導入され、静的リンク指定・`GoogleService-Info.plist`・Apple Sign In entitlement・Google逆引きURLスキームも反映された。署名なしDebugシミュレータ向け`xcodebuild`が**BUILD SUCCEEDED**（error 0件）。生成`.app`内で`FIRApp` / `FIRAuth` / `GIDSignIn`が静的リンクされ、動的Firebase依存0件であることも実測した。
+- **再生成に伴いXcode側で必要な操作**: (1) プロジェクト名が`ZELIO`→`Zelio`へ変わったため`ios/Zelio.xcworkspace`／scheme `Zelio`を開く。(2) `DEVELOPMENT_TEAM`がクリアされたのでSigning & Capabilitiesで選び直す（再生成前は`32MR9M4M9K`）。Bundle ID `com.masaki.zelio`と表示名`ZELIO`は維持。(3) Archiveするなら Apple Developer の App ID で「Sign In with Apple」capability を有効化する（entitlementは入ったがApp ID側が未対応だとprovisioningで失敗する。今回のログはその手前で停止しており未到達）。
+- `ios/`はgitignore済みでリポジトリ差分は変わっていない。検証用derived dataは削除済み。
+
+### 2026-08-10 リリース確認シナリオの自動化を拡大し、実機必須項目を絞り込み
+
+- `RELEASE_TEST_CHECKLIST.md` が「TestFlight必須」としていたシナリオのうち、**Pushが端末へ届くかどうか以外のサーバー判断**をエミュレータ上のE2Eへ移した。実機で見るべき範囲を配送・実トークン・実GPSへ絞るのが目的。アプリのUI実装は変更していない。
+- **`tests/releaseScenarios.e2e.ts`（`npm run test:e2e:scenarios`）を追加**。5シナリオとも成功。
+  - シナリオ2（帰属ループ）: 他人のリアクションは通知を作り、自分のリアクションとブロック中の相手は作らない。通知タイトルへ相手の表示名が入る。
+  - シナリオ3（競争ループ）: 初回スキャンは通知せずスナップショットのみ保存、順位入れ替わりで通知、変動なしの再実行と1日3回上限で抑止。
+  - シナリオ4（バトル終了）: 上位2陣営へ称号（3位は対象外）、称号へチーム表示名とバトル名、参加者全員へ終了通知1件、再実行で称号も通知も重複しない。
+  - 参加制約: 同時参加は最大2件で3件目を拒否、距離0なら退出可、記録後は退出不可。
+  - シナリオ7（アカウント削除）: Authユーザー削除で users / publicProfiles / 活動 / 通知 / 月次統計 / バッジ / participant が消える。
+- テスト可能にするため `rankChangeScheduler` のスケジューラ本体を `runRankChangeScan()` としてnamed exportへ切り出した（`onSchedule`の登録はそのまま。**挙動は変えていない**）。`aggregateActivity`が`runActivityAggregationWithDiagnostics`を公開しているのと同じ形。
+- **Maestroフローを2本から4本へ拡大**し、4/4成功。`03-app-screens.yaml`（チャレンジ詳細のVSゲージ・チームランキング・安全メニュー、統計、通知センター、バッジ、ヘルプ）と `04-record-screen.yaml`（モード切替、目標選択、画面OFF位置情報の導線、**GPS未準備のあいだはSTARTで記録が始まらない安全挙動**）を追加した。全フローが冒頭でログイン状態を検出して揃えるので、順序や開始状態に依存しない。
+- 自動化できなかったもの: **GPS実走**（アプリは水平精度が基準を満たすまでSTARTを受け付けず、`simctl location`の疑似位置ではこの基準を満たせない）、**Apple／Googleログイン**（Expo Goがネイティブモジュールを読み込まない）、Push実配送、RevenueCat購入／復元、バックグラウンド記録。いずれも実機必須項目として残る。
+- 実装の性質としてUI上の気づきが1件: 公開チャレンジのカードはタイトル・残り日数・**参加するボタン**・チーム順位が1つのアクセシビリティ要素へまとまっており、「参加する」だけを個別に指定して押せない。VoiceOver利用者から見て参加ボタンが独立した操作対象にならないため、実機のVoiceOver確認時に見ておく（`.maestro/README.md`へ記録）。
+- 確認成功: `npm run test:e2e:scenarios`、`npm run test:ui`（4/4）、`npm run test:e2e`、`npm run typecheck`、テストTS型検査、全unit、Functions build、`npm run test:rules`（118 PASS / 0 FAIL）、`npm run test:aggregation`。画面遷移テスト用の`lib/firebase.ts`一時改変は復元済み（SHA-256一致）。既存Metro（8081）は停止していない。
+
+### 2026-08-10 記録反映のフルE2Eと画面遷移テストを新規追加
+
+- 従来カバーできていなかった2領域へ自動テストを追加した。アプリの実装コードは変更していない（追加は`tests/`と`.maestro/`、`package.json`のスクリプトのみ）。本番`zelio-run`へは接続していない。
+- **記録反映のフルE2E（`tests/recordReflection.e2e.ts`、`npm run test:e2e`）**: Firestore／Auth／Functionsエミュレータを同時に起動し、デプロイ時と同じCallableプロトコルで`submitActivity`をHTTP呼び出しする。既存の`activityAggregation.integration.ts`は集計関数を直接呼ぶためCallableとトリガー配線を通らなかった。3シナリオとも成功。
+  - 開催中チャレンジ: 1kmのGPS点列を送るとサーバーが0.999kmへ再計算し、participant・チーム合計・チーム平均・順位2→1・`aggregationImpacts`・個人累計・月次統計・自己ベスト・ルート分割保存まで反映される。
+  - 期間外: `battleCreditStatus=not-eligible` / `reason=outside-period`でチーム距離は0のまま、個人記録には残る。
+  - 同一localIdの再送: 活動・チーム距離・回数のいずれも二重加算しない。
+- **画面遷移テスト（`.maestro/`、`npm run test:ui`）**: Maestro 2.8.0をiOSシミュレータ＋Expo Go＋ローカルエミュレータで動かし、2フローとも全ステップ成功（2/2 Flows Passed）。`01-auth-screens.yaml`はログイン⇄利用規約／プライバシーポリシー／新規登録の往復とExpo Goでのソーシャルログイン非対応表示、`02-signup-and-tabs.yaml`は新規登録→アプリ本体→4タブ巡回→チャレンジ一覧のチーム名・距離→プロフィール→ログアウトまで。登録はFirestoreルール有効のまま通っている。
+- Maestroは公式tap `mobile-dev-inc/tap/maestro` から導入した。Homebrewの`maestro`は同名の別製品（AIエージェント）なので指定を誤らないこと。取り消しは`brew uninstall maestro && brew untap mobile-dev-inc/tap`。
+- 画面遷移テストは`lib/firebase.ts`へエミュレータ接続の一時ブロックを足して実施し、**確認後に`git checkout`で復元済み**（SHA-256一致を確認）。恒久化していないので、次回も同じ一時改変が要る。手順と落とし穴は`.maestro/README.md`に記録した（テキストは完全一致・`inputText`は非同期・空欄への`eraseText`禁止・iOSの強力なパスワードシートとRN Alertは座標タップが必要・`back`は効かない・`openLink`前に`stopApp`）。
+- 実施中に判明した注意点: エミュレータはprojectIdごとに名前空間が分かれるため、シードはアプリと同じ`zelio-run`へ入れる必要がある。`Category`の表示名キーは`name`ではなく`label`。
+- 確認成功: `npm run test:e2e`、`npm run test:ui`（2/2）、`npm run typecheck`、テストTS型検査、全unit、`git diff --check`。既存ユーザーのMetro（ポート8081）は停止せず、テストは8082で実施した。
+
+### 2026-08-10 現行差分の全自動確認を再実行（コード変更なし）
+
+- ユーザー依頼「全てをテストして」に対し、リポジトリで実行可能な確認をすべて実行した。**コード・設定・ドキュメント本文の変更は行っていない**（本セクションの追記のみ）。デプロイ、commit、pushも行っていない。
+- 成功: `npm run typecheck`、`npm run test:unit`（全17スイート）、テストTS型検査（`tests/tsconfig.json`）、`npm run test:rules`（**118 PASS / 0 FAIL**）、`npm run test:aggregation`、Functions build、GPS replay（既定・config上書き・`--compare-v2`）、Expo Doctor 18/18、iOS／Android両方の`expo export`、Expo config introspect、Firebase設定ファイルのlint、ハードコードhex検査0件、`git diff --check`。
+- ネイティブ経路はスクラッチ領域の複製で検証し、リポジトリの`ios/`とユーザーのXcode署名設定へは触れていない。iOS prebuild → `pod install`（**133 pods**）→ 署名なしDebugシミュレータ向け`xcodebuild`が**BUILD SUCCEEDED**（error 0件）。`SwiftUICore`リンク失敗は再現しなかった。Android prebuildも成功した。検証後にスクラッチ（9.0GB）は削除済み。
+- ネイティブ生成物を実測確認した: Podfileへ`$RNFirebaseDisableSPM` / `$RNFirebaseAsStaticFramework`が挿入され、`.app`内に`GoogleService-Info.plist`・Google逆引きURLスキーム・Apple Sign Inのentitlement（`com.apple.developer.applesignin`）が入り、`FIRAuth` / `FIRApp` / `GIDSignIn`が**静的リンク**されている（動的Firebase依存0件）。Android側は`android/app/google-services.json`と`com.google.gms.google-services`プラグイン、`applicationId com.masaki.zelio`を確認した。
+- `npm audit --omit=dev`はroot 35件（high 12 / moderate 23）で前回から増減なし、Functions 8件（moderateのみ。前回記録の9件から1件減）。
+- 実行できなかったもの: **Androidネイティブビルド**（このMacにAndroid SDKが無い。`ANDROID_HOME`未設定・`adb`/`sdkmanager`なし）。物理端末E2E、EAS build、実走GPS、RevenueCat購入／復元、Push実配送も従来どおり未実施。
+- **新たに判明した未解決2件**は「未解決・要確認」へ追記した（新規認証コードの自動テスト0件、公開プライバシーポリシーがHosting／GitHub Pagesとも未同期）。
+
+### 2026-08-10 Apple／Google認証をリリース仕様まで実装（未commit・未push）
+
+- ログイン／登録画面へApple公式ボタンとGoogle公式ネイティブボタンを追加した。Appleはstate＋nonce付きID token、Googleは明示的アカウント選択でID tokenを取得し、Firebase JS Authのcredentialへ交換する。Expo Goではネイティブモジュールを読み込まず、development build／ストア版が必要なことを表示する。
+- ソーシャル初回ログインではFirebase Authのprovider表示名をFirestoreへ自動公開せず、既存の表示名検証を通すニックネーム確定画面を必須にした。既存メールアカウントと衝突した場合は、短命credentialをメモリだけに保持し、パスワード／既存providerで本人確認してから`linkWithCredential`するため、Firebase UIDと既存データを維持する。
+- 退会は連携providerごとに直前再認証する。GoogleはOAuth grantを失効し、Appleは新しいauthorization codeをFirebase iOS SDKの`revokeToken`へ渡してからFirebase Authユーザーを削除する。メール認証のパスワード再入力はiOS専用APIをやめ、iOS／Android共通モーダルへ変更した。
+- Firebase `zelio-run`へiOS／Androidアプリを登録し、`GoogleService-Info.plist`／`google-services.json`、Apple entitlement、iOS Google URL scheme、RNFirebase静的リンク用config pluginを追加した。Google Web client IDはgitignore済み`.env.local`とEAS 3プロファイルへ設定した。AndroidはEAS/Play署名鍵がまだ無く、Firebase登録SHAも0件なので、署名鍵作成後にSHA-1登録と`google-services.json`再取得が必要。
+- プライバシーポリシー、App Store提出メモ、README、リリースチェックリストへ認証provider、初回ニックネーム、明示リンク、退会時の失効、Apple private email relay、Android SHA手順を追記した。アプリ内画面とHosting用HTMLは**リポジトリ内のファイルだけ**更新済みで、Firebase Hostingへは未デプロイ。App Store Connectが参照する外部GitHub Pages版も未同期（2026-08-10の確認で両方とも公開本文が8月2日版のままであることを実測した）。
+- 追加依存は`react-native-nitro-google-signin`、`react-native-nitro-modules`、`@react-native-firebase/app`、`@react-native-firebase/auth`。未使用だった`expo-auth-session`は削除した。`npm audit --omit=dev`は追加前と同じhigh 12 / moderate 23（合計35）で増加なし。
+- 確認成功: `npm run typecheck`、全unit、Expo Doctor 18/18、iOS Expo export、Expo config introspect、設定JSON／plist lint、`git diff --check`。一時生成したiOSプロジェクトでprebuild、Pod 134件導入、署名なしDebugシミュレータ向け`xcodebuild`まで成功し、従来の`SwiftUICore`リンク失敗は再現しなかった。Androidはprebuild成功、ローカルAPK compileはMacにAndroid SDKが無いためコードコンパイル前で停止した。Functions／Rules変更とデプロイはなく、クライアント差分も未配布。
 
 ### 2026-08-10 v3レビュー／メタレビューを実コードで再判定し、リリース前修正を実装
 
@@ -35,7 +111,7 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 - 確認成功: `npx tsc --noEmit`、テストTS型検査、全unit、Functions build、Firestore Rules全件、Expo Doctor 18/18、iOS Expo export、ハードコードhex検査0件、`git diff --check`。Rulesは一時Temurin 21 JREと`zelio-run`名のローカルエミュレータで検証し、本番書き込みは0件。
 - Functionsの依存ロック更新を含むため、ユーザー指示を受けて全24 Functionsを`zelio-run`へデプロイした。エラー0件で、デプロイ後の一覧でも24/24件すべて`ACTIVE`。Firestore Rules／インデックス／Hostingは変更・デプロイしていない。クライアント差分はEAS／TestFlightへ未配布。
 - GitHub CLIを再認証し、現行差分を`feat/ui-consolidation`へcommit／pushして既存draft PR #1へ反映した。現行差分のAX5目視、GPS v3実走、バックグラウンド、画面ロック、オフライン再送、RevenueCat購入／復元、Push実配送はTestFlight／物理端末で未確認のため、リリース可とはまだ判定しない。
-- Firebase ConsoleでApple／Googleプロバイダを有効化しただけではアプリのログイン経路は増えない。現行コードにはApple／Googleボタン、ネイティブ認証、Firebase credential交換、既存メールアカウントとのリンク／競合処理、再認証・Appleトークン失効処理がない。`expo-apple-authentication`は依存済みだが、`ios.usesAppleSignIn`とconfig pluginも未設定。Googleは公式Expo案内に沿ったネイティブSDK、FirebaseのiOS/Android構成ファイル、iOS URL scheme、Android署名SHA-1を整え、新しいEASビルドで検証する必要がある。Appleの非公開メールへFirebaseメールを届けるprivate email relay登録と、法務文面／App Privacyの認証プロバイダ追記も必要。現状のプロフィール自動生成はproviderの`displayName`を未検証のまま公開できるため、ソーシャル初回ログインでは既存の表示名検証を通すニックネーム確定画面を先に挟む。
+- この時点では、Firebase ConsoleでApple／Googleプロバイダを有効化しただけでクライアント経路が未実装であることを確認した。後続の「Apple／Google認証をリリース仕様まで実装」で、ネイティブ認証、credential交換、初回ニックネーム、明示リンク、provider再認証／失効、法務文面まで対応済み。
 
 ### 2026-08-09 v2メタレビューを実コードで再判定し、局所修正を実装・本番Functions/Rulesへ反映
 
@@ -456,9 +532,10 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 
 ## 次にやること
 
-1. **Apple／Googleログインをクライアントへ実装し、初回ニックネーム検証、既存メールアカウントとのリンク、削除前のprovider再認証／Appleトークン失効まで含めて実機検証する。**
+1. **EAS iOS development buildを作成し、物理端末で`RELEASE_TEST_CHECKLIST.md`シナリオ0（Apple／Google認証9項目）と今回のGPSカウントダウン／長押し停止／宣言ピッカーを通す。**
 
 ## その次の候補
+- `lib/socialAuth.ts` の純粋ロジック（エラーコード分岐、idToken欠落時throw、pending linkの10分失効）を`tests/`へ載せられる形へ切り出し、ユニットテストを追加する
 - 現行差分とApple／Googleログインを含むTestFlightビルドを作成し、`RELEASE_TEST_CHECKLIST.md`を2台の物理端末で全項目通して、GPS実走（バックグラウンド／画面ロック／オフライン復帰）、RevenueCat購入／復元、Push実配送、AX5全画面を確認する
 - 同一端末・同一コースでGPS v3を最低5回実走し、既知距離の中央値誤差±2%以内・単発±5%以内・10分静止20m未満と、90度/Uターンを削りすぎないことを確認する
 - シミュレータまたは実機で参加中チャレンジ切替（0〜3件、長いタイトル、最大文字サイズ、再起動、終了時フォールバック）を目視確認する
@@ -470,7 +547,6 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 - `RELEASE_TEST_CHECKLIST.md` の通し確認（Day-0、GPS保存、再送、ランキング反映、アカウント削除を2アカウントの実機で）を行う
 - 旧 `battlerun-75eb6` プロジェクトの削除（または凍結）を検討する
 - ローカル `ios/` は表示名等が旧設定のまま。ローカルでネイティブビルドする場合は `npx expo prebuild --platform ios --clean` で再生成する
-- masaki0219/app-support（GitHub Pages）の docs/battlerun/ 配下サポートページをZelio表記へ同期する
 - `feat/ui-consolidation` を `main` へマージするか判断する（origin へは push 済み）
 - 使われていないブランチ `feat/ui-refresh` / `feat/ui-redesign` を整理する
 - バックグラウンドGPS を EAS development build で確認する（Expo Go ではフォアグラウンドのみ）
@@ -478,13 +554,15 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 
 ## 未解決・要確認
 
-- **Apple／GoogleログインはFirebase側だけ有効でクライアント未実装（2026-08-10）**: Appleは`ios.usesAppleSignIn`、config plugin、Apple App ID capability、nonce付きID token→Firebase credential、初回だけ返る氏名の保存、private email relay登録、削除時の再認証／トークン失効が必要。GoogleはネイティブSDKとconfig plugin、Firebase構成ファイル、iOS URL scheme、AndroidのEAS/Play署名SHA-1、ID token→Firebase credentialが必要。providerの表示名を直接公開せず既存フィルターを通す初回ニックネーム画面、既存メールアカウントと同一メールになった場合の安全なリンク方針、法務文面とApp Privacyも更新・テストする。
-- ~~外部法務ページの同期が必要~~ **GitHub Pagesは解決済み（2026-08-02）**: `masaki0219/app-support` のPrivacy / Terms / Supportを内蔵アバター仕様へ更新し、Pagesデプロイ成功と公開本文を確認した。App Store ConnectのApp Privacy変更だけは人手で必要。
+- **Apple／Google認証の外部設定と物理端末E2Eが未完了（2026-08-10）**: iOSクライアントのprebuild／compileは成功したが、EAS buildとApple／Google実アカウントでの全フローは未確認。Apple Developerでprivate email relayの送信元／ドメインを確認し、App Store ConnectのApp Privacyを更新する。Android同時リリースの場合はEAS/Play署名鍵を作成し、SHA-1をFirebaseへ登録して`google-services.json`を再取得する（現状EAS Android credentialsなし、Firebase SHA 0件）。このMacにはAndroid SDKが無いためAndroid APKのローカルcompileも未完了。
+- **公開プライバシーポリシーの同期は【ユーザー担当】（2026-08-10）**: ローカル `public/legal/privacy.html` とアプリ内画面は8月10日版（Apple／Google記述あり）へ更新済み。公開先（`masaki0219/app-support` のGitHub Pages と Firebase Hosting）への反映はユーザーが行う。**エージェント側からは対応不要・再指摘不要。**
+- **新規認証コードに自動テストが0件（2026-08-10）**: `lib/socialAuth.ts`（251行）、`app/auth/link-account.tsx`（322行）、`app/auth/profile-setup.tsx`（170行）、`components/auth/*.tsx`（217行）の計985行に対し、`tests/unit.test.ts` が読み込むスイートは17件のままで、社会的ログイン関連の参照が1件もない。型チェックとネイティブビルドは通るが、`socialAuthErrorMessage()` のエラーコード分岐、`googleCredentialBundle()` のidToken欠落時throw、`getPendingAccountLink()` の10分失効といった純粋ロジックは一度も実行検証されていない。これらは`expo-constants`／`react-native`／`firebase/auth`をimportするため、現行のts-node直実行構成へ載せるにはモジュール分割かモックが要る。Maestroの画面遷移テストでも、Expo GoではApple／Googleのネイティブモジュールを読み込まないため「開発ビルドまたはストア版で利用できます」の表示までしか確認できない。
+- **画面遷移テストのエミュレータ接続が恒久化されていない（2026-08-10）**: `lib/firebase.ts`にエミュレータ接続コードが無いため、`npm run test:ui`を流すたびに一時ブロックの追加と`git checkout`での復元が要る。`EXPO_PUBLIC_USE_FIREBASE_EMULATOR`ガード付きで恒久化するかは未判断。恒久化しない限り、復元忘れで本番接続のまま配布する事故余地が残る。
 - ~~旧Storage画像の確認・削除が必要~~ **解決済み（2026-08-02）**: 本番bucketの `avatars/` は0件・0 bytesで、削除対象はなかった。新規アクセスはStorageルールで全面拒否済み。
 - ~~UGCの通報・ブロックが未実装~~ **解決済み（2026-07-31）**: 投稿前フィルター、投稿別の通報、ユーザーブロック、相互インタラクション/通知遮断、管理者通報キュー、公開連絡先、運用手順まで実装・デプロイ済み。実際に原則24時間以内の一次対応を継続する運用と、提出前の2アカウント実機確認は人手で必要。
 - ~~軍事系ユーザー文言が残る~~ **解決済み（2026-08-01）**: テーマ撤去と同時に、出撃・初陣・兵・隊長・歩兵・援軍に当たる表示、通知、バッジ、fixtureを中立表現へ変更した。
 - **GPS距離フィルタv3の物理端末検証が未実施（2026-08-04）**: 既知距離の誤差/再現性、10分静止の増加、iOS/Androidの権限表示、画面ON/OFF、foreground/background切替、OS強制停止・ウォッチドッグ復帰、オートポーズの停止/低速歩行をEAS development buildの実機で確認する。v2ログとのreplay比較も行う。しきい値は暫定で、この確認前に「解決」と断定しない。
-- **ネイティブ dev build がローカルで通らない（2026-07-29）**: `npx expo run:ios` が `cannot link directly with 'SwiftUICore'` で失敗する（`useFrameworks: static` 環境）。EASビルドで再現するかは未確認。ローカルで実機確認する場合はここが先に必要。
+- ~~ネイティブ dev build がローカルで通らない~~ **iOS compileは解決（2026-08-10）**: 一時生成プロジェクトでRNFirebaseをCocoaPods静的frameworkとして統合し、Pod 134件導入後の署名なしDebugシミュレータ向け`xcodebuild`が成功した。従来の`cannot link directly with 'SwiftUICore'`は再現しなかった。EAS署名付きbuildと物理端末動作は別途確認する。
 
 - **ランニング基本機能・Sprint 1〜4（T-11まで）の実機確認が未実施（2026-07-20）**: 記録系Functions、自己ベスト・月次統計集計、出撃宣言・ライブ応援Functions、関連ルールは `zelio-run` へデプロイ済み。実機/シミュレータでの目視（一時停止HUD・オートポーズ・音声コーチ・週間目標・自己ベスト祝福/一覧・月間/年間統計・出撃宣言・通知タップ・宣言/ライブ応援プッシュ・ライブプレゼンス3分失効・HUD触覚/音声・宣言達成・過負荷カード・オフライン再送・カウントダウン・目標バー・ラップ表示・削除フロー）は未実施。新規活動の月次加算と削除時の減算も実データでは未確認。バックグラウンドのオートポーズは EAS development build が必要。
 - 今回の新規3件と関連4件（`submitActivity` を含む）はNode.js 22で `zelio-run` へデプロイ済み。Support / Invite / Privacy のHosting変更は今回の対象外で、引き続きローカルのみ。

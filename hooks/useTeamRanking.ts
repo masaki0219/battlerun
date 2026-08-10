@@ -6,6 +6,7 @@ import { cachedPublicProfile } from '../lib/publicProfileCache';
 export interface TeamRankingMember {
   userId: string;
   displayName: string;
+  avatarEmoji?: string;
   totalDistanceKm: number;
   /** 陣営内の順位（1始まり） */
   rank: number | null;
@@ -21,6 +22,8 @@ export interface TeamRanking {
   teamSize: number;
   /** 自分の距離 */
   myKm: number;
+  /** Top圏外の自分の行にも使う公開アイコン。 */
+  myAvatarEmoji?: string;
   /** ひとつ上の順位との距離差。自分が1位・未参加なら null */
   gapToNextKm: number | null;
   loading: boolean;
@@ -31,7 +34,7 @@ export interface TeamRanking {
 type TeamRankingData = Omit<TeamRanking, 'loading' | 'error' | 'retry'>;
 
 const EMPTY: TeamRankingData = {
-  top: [], myRank: 0, teamSize: 0, myKm: 0, gapToNextKm: null,
+  top: [], myRank: 0, teamSize: 0, myKm: 0, myAvatarEmoji: undefined, gapToNextKm: null,
 };
 
 /**
@@ -98,12 +101,16 @@ export function useTeamRanking(
             return {
               userId: p.userId,
               displayName: profile?.name ?? 'メンバー',
+              avatarEmoji: profile?.avatarEmoji,
               totalDistanceKm: p.totalDistanceKm,
               rank: allZero ? null : 1 + team.filter((member) => member.totalDistanceKm > p.totalDistanceKm).length,
               isMe: p.userId === myUserId,
             };
           }),
         );
+        const myProfile = myIndex >= 0
+          ? await cachedPublicProfile(myUserId).catch(() => null)
+          : null;
 
         if (currentGeneration === generation) {
           setState({
@@ -113,6 +120,7 @@ export function useTeamRanking(
               : 0,
             teamSize: team.length,
             myKm,
+            myAvatarEmoji: myProfile?.avatarEmoji,
             gapToNextKm,
           });
           setResolvedKey(effectKey);

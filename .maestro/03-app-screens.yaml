@@ -1,0 +1,104 @@
+# ログイン後の主要画面を一巡する。チャレンジ詳細、統計、通知センター、バッジ、ヘルプ。
+# 前提は 02-signup-and-tabs.yaml と同じ（README参照）。
+# 冒頭で未ログインなら登録し、ログイン済みならそのまま使う。
+appId: host.exp.Exponent
+---
+- stopApp
+- openLink: exp://127.0.0.1:8082
+- extendedWaitUntil:
+    visible: 'ZELIO'
+    timeout: 90000
+
+# 未ログインなら登録してからアプリ本体へ入る（パスワード欄の回避手順は02と同じ理由）。
+- runFlow:
+    when:
+      visible: '走る距離が、絆になる。'
+    commands:
+      - tapOn: '新規登録はこちら'
+      - evalScript: ${output.email = 'screens-' + Date.now() + '@example.com'}
+      - tapOn: 'ニックネーム（12文字以内）'
+      - waitForAnimationToEnd
+      - inputText: '画面巡回'
+      - waitForAnimationToEnd
+      - tapOn: 'メールアドレス'
+      - waitForAnimationToEnd
+      - inputText: ${output.email}
+      - waitForAnimationToEnd
+      - tapOn: 'パスワード（6文字以上）'
+      - waitForAnimationToEnd
+      - inputText: 'testpass1234'
+      - waitForAnimationToEnd
+      - tapOn:
+          point: '90%,57%'
+      - waitForAnimationToEnd
+      - tapOn: 'パスワード（6文字以上）'
+      - waitForAnimationToEnd
+      - eraseText
+      - inputText: 'testpass1234'
+      - waitForAnimationToEnd
+      - tapOn: 'アカウントを作成'
+      - extendedWaitUntil:
+          visible: 'チャレンジ'
+          timeout: 90000
+
+# ── チャレンジ詳細 ──────────────────────────────────────────────
+# 公開チャレンジのカードは、タイトル・残り日数・参加ボタン・チーム順位が
+# 1つのアクセシビリティ要素へまとまっている。カード全体をタップして詳細を開く。
+- tapOn: 'チャレンジ'
+- extendedWaitUntil:
+    visible: '.*朝ラン組 vs よる歩き隊.*'
+    timeout: 30000
+- tapOn: '.*朝ラン組 vs よる歩き隊.*'
+- extendedWaitUntil:
+    visible: 'チームランキング'
+    timeout: 30000
+- assertVisible: 'チャレンジ / 開催中'
+- assertVisible: 'VS'
+- assertVisible: '.*リード.*'
+- assertVisible: 'チャレンジの安全メニュー'
+- takeScreenshot: shots/20-battle-detail
+- tapOn: '戻る'
+- extendedWaitUntil:
+    visible: '参加するチャレンジを選ぶ'
+    timeout: 30000
+
+# ── 統計タブ ───────────────────────────────────────────────────
+- tapOn: '記録'
+- waitForAnimationToEnd
+- takeScreenshot: shots/21-stats
+
+# ── 通知センター ───────────────────────────────────────────────
+- tapOn: 'プロフィール'
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element: '.*通知センター.*'
+    direction: DOWN
+    centerElement: true
+- tapOn: '.*通知センター.*'
+- waitForAnimationToEnd
+- takeScreenshot: shots/22-notifications
+- tapOn: '戻る'
+- waitForAnimationToEnd
+
+# ── バッジ一覧 ─────────────────────────────────────────────────
+- scrollUntilVisible:
+    element: '.*表示中の称号.*'
+    direction: DOWN
+    centerElement: true
+- tapOn: '.*表示中の称号.*'
+- waitForAnimationToEnd
+- takeScreenshot: shots/23-badges
+- tapOn: '戻る'
+- waitForAnimationToEnd
+
+# ── ヘルプ ─────────────────────────────────────────────────────
+- scrollUntilVisible:
+    element: '.*ヘルプ・お問い合わせ.*'
+    direction: DOWN
+    centerElement: true
+- tapOn: '.*ヘルプ・お問い合わせ.*'
+- waitForAnimationToEnd
+- takeScreenshot: shots/24-help
+- tapOn: '戻る'
+- waitForAnimationToEnd
+- assertVisible: 'ヘルプ・アプリ情報'

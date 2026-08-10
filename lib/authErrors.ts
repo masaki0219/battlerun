@@ -15,6 +15,9 @@ const MESSAGES: Record<string, string> = {
   'auth/weak-password': 'パスワードは6文字以上で設定してください。',
   'auth/operation-not-allowed': 'この方法でのログインは現在利用できません。',
   'auth/requires-recent-login': '安全のため、もう一度ログインしてからお試しください。',
+  'auth/user-mismatch': '同じメールアドレスのアカウントを選んでください。',
+  'auth/credential-already-in-use': 'このログイン方法は別のアカウントで既に使用されています。',
+  'auth/provider-already-linked': 'このログイン方法は既に連携されています。',
 };
 
 export function authErrorMessage(error: unknown, fallback = '時間をおいて、もう一度お試しください。'): string {

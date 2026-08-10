@@ -60,6 +60,29 @@ export function weeklyBuckets(activities: Activity[], now: Date = new Date()): W
   return buckets.map(({ label, km, isToday }) => ({ label, km, isToday }));
 }
 
+/** 直近7日の日別合計km。今日を常に右端に置き、古い日から並べる。 */
+export function rollingWeekBuckets(activities: Activity[], now: Date = new Date()): WeeklyBucket[] {
+  const today = startOfDay(now);
+  const buckets = Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(today);
+    day.setDate(today.getDate() - (6 - index));
+    return {
+      time: day.getTime(),
+      label: WEEKDAY[day.getDay()],
+      km: 0,
+      isToday: index === 6,
+    };
+  });
+  const indexByDay = new Map(buckets.map((bucket, index) => [bucket.time, index]));
+  for (const activity of activities) {
+    const started = parseDate(activity.startedAt);
+    if (!started) continue;
+    const index = indexByDay.get(startOfDay(started).getTime());
+    if (index != null) buckets[index].km += activity.distanceKm || 0;
+  }
+  return buckets.map(({ label, km, isToday }) => ({ label, km, isToday }));
+}
+
 /** 今週の起点（月曜）を「4月15日〜」形式で返す。週間カードの見出し用 */
 export function weekStartLabel(now: Date = new Date()): string {
   const from = calendarWeekStart(now);
@@ -185,10 +208,16 @@ export function lastRun(activities: Activity[]): Activity | null {
 
 export type RankingType = 'average' | 'total';
 
-/** 距離の表示精度をアプリ内で小数1桁へ揃える。異常値は安全に0へ丸める。 */
-export function formatDistanceKm(distanceKm: number): string {
+/** 週間・月間・累計・チーム合計など、合計距離を100m単位で表示する。 */
+export function formatTotalDistanceKm(distanceKm: number): string {
   const safeDistance = Number.isFinite(distanceKm) ? Math.max(0, distanceKm) : 0;
   return safeDistance.toFixed(1);
+}
+
+/** 1回のランの距離を10m単位で表示する。異常値は安全に0へ丸める。 */
+export function formatRunDistanceKm(distanceKm: number): string {
+  const safeDistance = Number.isFinite(distanceKm) ? Math.max(0, distanceKm) : 0;
+  return safeDistance.toFixed(2);
 }
 
 /** rankingType に応じた比較値（total=合計 / average=1人あたり平均）。 */
@@ -199,8 +228,8 @@ export function statValue(s: CategoryStats, rankingType: RankingType): number {
 /** 表示用の距離ラベル（total=「12.3km」/ average=「12.3km/人」）。 */
 export function statLabel(s: CategoryStats, rankingType: RankingType): string {
   return rankingType === 'total'
-    ? `${s.totalDistanceKm.toFixed(1)}km`
-    : `${s.avgDistanceKm.toFixed(1)}km/人`;
+    ? `${formatTotalDistanceKm(s.totalDistanceKm)}km`
+    : `${formatTotalDistanceKm(s.avgDistanceKm)}km/人`;
 }
 
 /** 比較値の降順にソートした新配列を返す（元配列は変更しない）。 */

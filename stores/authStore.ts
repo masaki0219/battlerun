@@ -5,9 +5,18 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged,
 } from 'firebase/auth';
-import { deleteField, doc, setDoc, getDoc, serverTimestamp, writeBatch, onSnapshot, updateDoc } from 'firebase/firestore';
+import { deleteField, doc, getDoc, serverTimestamp, writeBatch, onSnapshot, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
+import { signOutGoogleSession } from '../lib/socialAuth';
+import { DISPLAY_NAME_MAX_LENGTH, validateDisplayName } from '../lib/validation/displayName';
 import type { AuthStore, PersonalRecords, User, UserTitle } from '../types';
+import { isAvatarEmoji } from '../lib/avatarEmojis';
+
+let emailSignUpInProgress = false;
+
+function profileNameSuggestion(value: string | null | undefined): string {
+  return (value ?? '').trim().slice(0, DISPLAY_NAME_MAX_LENGTH);
+}
 
 function personalRecordsFrom(value: unknown): PersonalRecords | undefined {
   if (!value || typeof value !== 'object') return undefined;
@@ -43,6 +52,9 @@ export const useAuthStore = create<AuthStore>((set) => ({
   isLoading: true,
   authSessionActive: false,
   profileError: null,
+  profileSetupRequired: false,
+  suggestedProfileName: '',
+  accountLinkingInProgress: false,
   proEntitlement: false,
 
   signIn: async (email, password) => {
@@ -57,33 +69,90 @@ export const useAuthStore = create<AuthStore>((set) => ({
   },
 
   signUp: async (email, password, name) => {
+    const nameCheck = validateDisplayName(name);
+    if (!nameCheck.ok) throw new Error(nameCheck.reason);
+    const normalizedName = name.trim();
     set({ isLoading: true, profileError: null });
+    emailSignUpInProgress = true;
     try {
       const result = await createUserWithEmailAndPassword(auth, email, password);
       const batch = writeBatch(db);
       batch.set(doc(db, 'users', result.user.uid), {
-        name,
+        name: normalizedName,
         plan: 'free',
         runningPresenceVisible: false,
         createdAt: new Date(),
       });
       batch.set(doc(db, 'publicProfiles', result.user.uid), {
-        name,
+        name: normalizedName,
         avatarEmoji: null,
         updatedAt: serverTimestamp(),
       });
       await batch.commit();
+      emailSignUpInProgress = false;
       // isLoading は onAuthStateChanged が user をセットしたタイミングで false になる
     } catch (error) {
-      set({ isLoading: false });
+      emailSignUpInProgress = false;
+      set({
+        isLoading: false,
+        profileSetupRequired: auth.currentUser !== null,
+        suggestedProfileName: profileNameSuggestion(normalizedName),
+      });
       throw error;
     }
   },
 
   signOut: async () => {
+    const hadGoogleProvider = auth.currentUser?.providerData.some(
+      (provider) => provider.providerId === 'google.com',
+    ) === true;
     await firebaseSignOut(auth);
-    set({ user: null, authSessionActive: false, profileError: null });
+    if (hadGoogleProvider) await signOutGoogleSession();
+    set({
+      user: null,
+      authSessionActive: false,
+      profileError: null,
+      profileSetupRequired: false,
+      suggestedProfileName: '',
+      accountLinkingInProgress: false,
+    });
   },
+
+  completeProfileSetup: async (name, avatarEmoji) => {
+    const nameCheck = validateDisplayName(name);
+    if (!nameCheck.ok) throw new Error(nameCheck.reason);
+    if (!isAvatarEmoji(avatarEmoji)) throw new Error('アイコンを選んでください');
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('ログインが必要です');
+
+    set({ isLoading: true, profileError: null });
+    try {
+      const normalizedName = name.trim();
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'users', currentUser.uid), {
+        name: normalizedName,
+        avatarEmoji,
+        plan: 'free',
+        runningPresenceVisible: false,
+        createdAt: serverTimestamp(),
+      });
+      batch.set(doc(db, 'publicProfiles', currentUser.uid), {
+        name: normalizedName,
+        avatarEmoji,
+        updatedAt: serverTimestamp(),
+      });
+      await batch.commit();
+    } catch (error) {
+      set({ isLoading: false, profileSetupRequired: true });
+      throw error;
+    }
+  },
+
+  setSuggestedProfileName: (name) => set({
+    suggestedProfileName: profileNameSuggestion(name),
+  }),
+
+  setAccountLinkingInProgress: (active) => set({ accountLinkingInProgress: active }),
 
   setProEntitlement: (active) => set({ proEntitlement: active }),
 
@@ -109,30 +178,52 @@ export function initAuthListener(): () => void {
     unsubscribeUser?.();
     unsubscribeUser = null;
     if (firebaseUser) {
-      useAuthStore.setState({ authSessionActive: true, profileError: null });
+      useAuthStore.setState({
+        user: null,
+        authSessionActive: true,
+        profileError: null,
+        profileSetupRequired: false,
+        isLoading: true,
+      });
       try {
         const userRef = doc(db, 'users', firebaseUser.uid);
         const snap = await getDoc(userRef);
 
-        // 認証ユーザーに対応するFirestoreプロフィールが無い場合は初期化する。
+        // ソーシャル初回ログインではprovider名をそのまま公開せず、検証画面を必ず挟む。
+        // メール新規登録中はsignUp側のbatch作成を待ち、画面の一瞬の切替を避ける。
         if (!snap.exists()) {
-          const name = firebaseUser.displayName
-            ?? firebaseUser.email?.split('@')[0]
-            ?? 'ユーザー';
-          await setDoc(doc(db, 'users', firebaseUser.uid), {
-            name,
-            plan: 'free',
-            runningPresenceVisible: false,
-            createdAt: new Date(),
+          const currentSuggestion = useAuthStore.getState().suggestedProfileName;
+          if (!currentSuggestion) {
+            useAuthStore.getState().setSuggestedProfileName(firebaseUser.displayName);
+          }
+
+          unsubscribeUser = onSnapshot(userRef, (userSnap) => {
+            if (generation !== authGeneration) return;
+            if (!userSnap.exists()) {
+              useAuthStore.setState({
+                user: null,
+                authSessionActive: true,
+                profileError: null,
+                profileSetupRequired: !emailSignUpInProgress,
+                isLoading: emailSignUpInProgress,
+              });
+              return;
+            }
+            applyUserSnapshot(firebaseUser.uid, userSnap.data());
+          }, (error) => {
+            if (generation !== authGeneration) return;
+            console.error('[Auth] Firestoreユーザー購読失敗:', error);
+            useAuthStore.setState({
+              authSessionActive: true,
+              profileSetupRequired: false,
+              profileError: profileLoadErrorMessage(error),
+              isLoading: false,
+            });
           });
-          await setDoc(doc(db, 'publicProfiles', firebaseUser.uid), {
-            name,
-            avatarEmoji: null,
-            updatedAt: serverTimestamp(),
-          });
+          return;
         }
 
-        const current = (await getDoc(userRef)).data()!;
+        const current = snap.data();
         if (generation !== authGeneration) return;
         // 旧写真機能のURLはログイン時にプロフィールから除去し、固定アイコンへ統一する。
         // avatarUrl はどの画面からも読まれないため、この掃除はログインの前提条件ではない。
@@ -154,42 +245,24 @@ export function initAuthListener(): () => void {
 
         // plan・称号・累計値を含むサーバー更新をリアルタイムでUIへ反映する。
         unsubscribeUser = onSnapshot(userRef, (userSnap) => {
+          if (generation !== authGeneration) return;
           if (!userSnap.exists()) {
-            // Auth セッションは有効なまま。削除・権限エラーをログアウト表示に誤変換しない。
             useAuthStore.setState({
-              profileError: 'プロフィール情報が見つかりません。通信状態を確認して再試行してください。',
+              user: null,
+              authSessionActive: true,
+              profileError: null,
+              profileSetupRequired: true,
               isLoading: false,
             });
             return;
           }
-          const data = userSnap.data();
-          const weeklyGoalData = data['weeklyGoal'];
-          const weeklyGoal = weeklyGoalData
-            && (weeklyGoalData.type === 'distance' || weeklyGoalData.type === 'days')
-            && typeof weeklyGoalData.value === 'number'
-            ? { type: weeklyGoalData.type, value: weeklyGoalData.value }
-            : null;
-          const user: User = {
-            id: firebaseUser.uid,
-            authId: firebaseUser.uid,
-            name: data['name'] as string,
-            avatarEmoji: typeof data['avatarEmoji'] === 'string' ? data['avatarEmoji'] : undefined,
-            plan: data['plan'] as 'free' | 'pro',
-            role: data['role'] as 'admin' | undefined,
-            createdAt: (data['createdAt'] as any)?.toDate?.()?.toISOString() ?? '',
-            titles: (data['titles'] as UserTitle[] | undefined) ?? [],
-            battleIds: (data['battleIds'] as string[] | undefined) ?? [],
-            totalDistanceKm: (data['totalDistanceKm'] as number | undefined) ?? undefined,
-            activityCount: (data['activityCount'] as number | undefined) ?? undefined,
-            weeklyGoal,
-            personalRecords: personalRecordsFrom(data['personalRecords']),
-            runningPresenceVisible: data['runningPresenceVisible'] === true,
-          };
-          useAuthStore.setState({ user, authSessionActive: true, profileError: null, isLoading: false });
+          applyUserSnapshot(firebaseUser.uid, userSnap.data());
         }, (error) => {
+          if (generation !== authGeneration) return;
           console.error('[Auth] Firestoreユーザー購読失敗:', error);
           useAuthStore.setState({
             authSessionActive: true,
+            profileSetupRequired: false,
             profileError: profileLoadErrorMessage(error),
             isLoading: false,
           });
@@ -198,6 +271,7 @@ export function initAuthListener(): () => void {
         console.error('[Auth] Firestoreユーザー取得失敗:', e);
         useAuthStore.setState({
           authSessionActive: true,
+          profileSetupRequired: false,
           profileError: profileLoadErrorMessage(e),
           isLoading: false,
         });
@@ -207,6 +281,9 @@ export function initAuthListener(): () => void {
         user: null,
         authSessionActive: false,
         profileError: null,
+        profileSetupRequired: false,
+        suggestedProfileName: '',
+        accountLinkingInProgress: false,
         isLoading: false,
       });
     }
@@ -215,4 +292,37 @@ export function initAuthListener(): () => void {
     unsubscribeUser?.();
     unsubscribeAuth();
   };
+}
+
+function applyUserSnapshot(firebaseUid: string, data: Record<string, any>): void {
+  const weeklyGoalData = data['weeklyGoal'];
+  const weeklyGoal = weeklyGoalData
+    && (weeklyGoalData.type === 'distance' || weeklyGoalData.type === 'days')
+    && typeof weeklyGoalData.value === 'number'
+    ? { type: weeklyGoalData.type, value: weeklyGoalData.value }
+    : null;
+  const user: User = {
+    id: firebaseUid,
+    authId: firebaseUid,
+    name: data['name'] as string,
+    avatarEmoji: typeof data['avatarEmoji'] === 'string' ? data['avatarEmoji'] : undefined,
+    plan: data['plan'] as 'free' | 'pro',
+    role: data['role'] as 'admin' | undefined,
+    createdAt: data['createdAt']?.toDate?.()?.toISOString() ?? '',
+    titles: (data['titles'] as UserTitle[] | undefined) ?? [],
+    battleIds: (data['battleIds'] as string[] | undefined) ?? [],
+    totalDistanceKm: (data['totalDistanceKm'] as number | undefined) ?? undefined,
+    activityCount: (data['activityCount'] as number | undefined) ?? undefined,
+    weeklyGoal,
+    personalRecords: personalRecordsFrom(data['personalRecords']),
+    runningPresenceVisible: data['runningPresenceVisible'] === true,
+  };
+  useAuthStore.setState({
+    user,
+    authSessionActive: true,
+    profileError: null,
+    profileSetupRequired: false,
+    suggestedProfileName: '',
+    isLoading: false,
+  });
 }

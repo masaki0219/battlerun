@@ -119,6 +119,7 @@ export const DarkColors = {
   surfaceDeep: '#0C2D2A',                   // ダーク面のさらに沈んだ帯（ヒーロー内のインサイト行）
   chip: 'rgba(255,255,255,0.10)',           // ダーク面のチップ・ピル背景
   modalBackdrop: 'rgba(11,39,36,0.48)',      // ボトムシート背面のオーバーレイ
+  countdownOverlay: 'rgba(11,39,36,0.95)',   // カウントダウン全面オーバーレイ
   marker: 'rgba(255,255,255,0.75)',         // ダーク面のゲージ境界線
   decor: '#1D5C55',                         // 装飾リング（太）
   decorLine: '#57938B',                     // 装飾リング（細）

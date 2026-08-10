@@ -19,6 +19,8 @@ interface Props {
   compact?: boolean;
   /** 「今週合計 ◯km」行の表示。default は compact の逆。カード側が合計を大きく出すなら false */
   showTotal?: boolean;
+  /** 合計行と空表示の期間名。カレンダー週では「今週」、移動窓では「直近7日」。 */
+  periodLabel?: string;
 }
 
 const MIN_BAR = 3;
@@ -28,7 +30,9 @@ const MIN_BAR = 3;
  * バトルタブ・ランタブ・stats で共用。マウント時に高さを 0→実値へアニメーション。
  * 各バーは下地トラック（レーン）の中で伸びる。今日のバーだけ accent。
  */
-export function WeeklyBarChart({ days, maxKm, height = 64, compact = false, showTotal }: Props) {
+export function WeeklyBarChart({
+  days, maxKm, height = 64, compact = false, showTotal, periodLabel = '今週',
+}: Props) {
   const peak = Math.max(1, maxKm ?? Math.max(...days.map((d) => d.km), 0));
   const totalKm = days.reduce((sum, d) => sum + d.km, 0);
   const allZero = totalKm <= 0;
@@ -49,7 +53,7 @@ export function WeeklyBarChart({ days, maxKm, height = 64, compact = false, show
       {withTotal ? (
         <View style={styles.headerRow}>
           <Text style={styles.totalText}>
-            今週合計 <Text style={styles.totalNum}>{totalKm.toFixed(1)}</Text>km
+            {periodLabel}合計 <Text style={styles.totalNum}>{totalKm.toFixed(1)}</Text>km
           </Text>
         </View>
       ) : null}
@@ -79,7 +83,7 @@ export function WeeklyBarChart({ days, maxKm, height = 64, compact = false, show
 
         {allZero ? (
           <View style={styles.emptyOverlay} pointerEvents="none">
-            <Text style={styles.emptyText}>今週最初のランを記録しよう</Text>
+            <Text style={styles.emptyText}>{periodLabel}の最初のランを記録しよう</Text>
           </View>
         ) : null}
       </View>

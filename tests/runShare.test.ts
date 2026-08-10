@@ -17,6 +17,7 @@ assert.equal(parseRunSharePreference('0'), false);
 assert.equal(parseRunSharePreference('1'), true);
 assert.equal(serializeRunSharePreference(false), '0');
 assert.equal(runSharePreferenceKey('alice'), '@zelio_run_share_include_route:alice');
+assert.equal(ZELIO_DISCOVERY_URL, 'https://masaki0219.github.io/app-support/zelio/');
 
 {
   const message = buildRunShareMessage({
@@ -24,9 +25,9 @@ assert.equal(runSharePreferenceKey('alice'), '@zelio_run_share_include_route:ali
     durationSeconds: 1600,
     pace: "5'04\"",
     dateLabel: '7月31日',
-    impactLabel: '「朝ラン対決」に5.3km貢献',
+    impactLabel: '「朝ラン対決」に5.26km貢献',
   });
-  assert.match(message, /7月31日のラン: 5\.3km/);
+  assert.match(message, /7月31日のラン: 5\.26km/);
   assert.match(message, /タイム 26:40 ・ 平均ペース 5'04"\/km/);
   assert.match(message, /朝ラン対決/);
   assert.match(message, /#ZELIO/);
@@ -39,7 +40,7 @@ assert.equal(runSharePreferenceKey('alice'), '@zelio_run_share_include_route:ali
     durationSeconds: -1,
     pace: "--'--\"",
   });
-  assert.match(message, /^今日のラン: 0\.0km\nタイム 00:00\n/);
+  assert.match(message, /^今日のラン: 0\.00km\nタイム 00:00\n/);
   assert.doesNotMatch(message, /平均ペース/);
 }
 

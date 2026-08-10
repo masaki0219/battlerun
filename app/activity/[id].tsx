@@ -18,12 +18,14 @@ import { KmSplitsCard } from '../../components/run/KmSplitsCard';
 import { RunShareCard } from '../../components/run/RunShareCard';
 import { SafetyActionsModal } from '../../components/moderation/SafetyActionsModal';
 import { useBlockedUsers } from '../../hooks/useBlockedUsers';
-import { estimatedCalories, formatDistanceKm, kmSplits } from '../../utils/displayStats';
+import { estimatedCalories, formatRunDistanceKm, kmSplits } from '../../utils/displayStats';
 import { buildRouteVisualization, type RoutePaceBand } from '../../utils/routeSplits';
 import { buildRunShareMessage, formatShareDuration } from '../../utils/runShare';
 import { shareRunResult } from '../../lib/runSharing';
 import { isPro } from '../../lib/pro';
 import { useRunSharePreference } from '../../hooks/useRunSharePreference';
+import { Avatar } from '../../components/ui/Avatar';
+import { cachedPublicProfile } from '../../lib/publicProfileCache';
 
 const ROUTE_PACE_COLOR: Record<RoutePaceBand, string> = {
   fast: RoutePaceColors.fast,
@@ -59,6 +61,7 @@ interface ActivityData {
   id: string;
   userId: string;
   displayName: string;
+  avatarEmoji?: string;
   battleIds: string[];
   distanceKm: number;
   steps: number | null;
@@ -137,10 +140,13 @@ export default function ActivityDetailScreen() {
         const impactMap = (d['aggregationImpacts'] as Record<string, { creditedDistanceKm?: number }> | undefined) ?? {};
         const activityDistanceKm = (d['distanceKm'] as number) ?? 0;
 
+        const activityUserId = d['userId'] as string;
+        const profile = await cachedPublicProfile(activityUserId).catch(() => null);
         setActivity({
           id: snap.id,
-          userId: d['userId'] as string,
-          displayName: (d['displayName'] as string) ?? 'メンバー',
+          userId: activityUserId,
+          displayName: profile?.name ?? (d['displayName'] as string) ?? 'メンバー',
+          avatarEmoji: profile?.avatarEmoji,
           battleIds,
           distanceKm: activityDistanceKm,
           steps: (d['steps'] as number | null) ?? null,
@@ -229,7 +235,7 @@ export default function ActivityDetailScreen() {
       : null;
     const primaryContribution = battleContributions[0] ?? null;
     const impactLabel = primaryContribution
-      ? `「${primaryContribution.battleTitle}」に${primaryContribution.creditedDistanceKm.toFixed(1)}km貢献`
+      ? `「${primaryContribution.battleTitle}」に${formatRunDistanceKm(primaryContribution.creditedDistanceKm)}km貢献`
       : null;
     const message = buildRunShareMessage({
       distanceKm: activity.distanceKm,
@@ -322,8 +328,9 @@ export default function ActivityDetailScreen() {
     : null;
   const primaryContribution = battleContributions[0] ?? null;
   const shareImpactLabel = primaryContribution
-    ? `「${primaryContribution.battleTitle}」に${primaryContribution.creditedDistanceKm.toFixed(1)}km貢献${battleContributions.length > 1 ? `・ほか${battleContributions.length - 1}件` : ''}`
+    ? `「${primaryContribution.battleTitle}」に${formatRunDistanceKm(primaryContribution.creditedDistanceKm)}km貢献${battleContributions.length > 1 ? `・ほか${battleContributions.length - 1}件` : ''}`
     : null;
+  const isOwnActivity = user?.id === activity.userId;
   let mapRegion: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number } | null = null;
   if (hasRoute) {
     const lats = activity.route.map((p) => p.lat);
@@ -386,10 +393,17 @@ export default function ActivityDetailScreen() {
       </View>
 
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+        <View style={s.runnerRow}>
+          <Avatar name={activity.displayName} emoji={activity.avatarEmoji} size="md" />
+          <View style={s.runnerCopy}>
+            <Text style={s.runnerName}>{isOwnActivity ? 'あなたのラン' : `${activity.displayName}さんのラン`}</Text>
+            <Text style={s.runnerDate}>{dateStr}</Text>
+          </View>
+        </View>
         {/* ── Hero stats ── */}
         <View style={s.heroCard}>
           <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-            <Text style={s.heroBig}>{formatDistanceKm(activity.distanceKm)}</Text>
+            <Text style={s.heroBig}>{formatRunDistanceKm(activity.distanceKm)}</Text>
             <Text style={s.heroUnit}>KM</Text>
           </View>
           <View style={s.statRow}>
@@ -417,8 +431,10 @@ export default function ActivityDetailScreen() {
             )}
           </View>
           <View style={s.timeRow}>
-            <Ionicons name="time-outline" size={12} color={Colors.textTertiary} />
-            <Text style={s.timeText}>{startTimeStr} 〜 {endTimeStr}</Text>
+            <Ionicons name={isOwnActivity ? 'time-outline' : 'shield-checkmark-outline'} size={12} color={DarkColors.textTertiary} />
+            <Text style={s.timeText}>
+              {isOwnActivity ? `${startTimeStr} 〜 ${endTimeStr}` : '開始・終了時刻は本人だけに表示されます'}
+            </Text>
             {calories != null && <Text style={s.timeText}>・推定 {calories} kcal（体重60kg換算）</Text>}
           </View>
         </View>
@@ -495,7 +511,7 @@ export default function ActivityDetailScreen() {
                 <Ionicons name="flash" size={18} color={Colors.accent} />
                 <View style={{ flex: 1 }}>
                   <Text style={s.battleTitle}>{c.battleTitle}</Text>
-                  <Text style={s.battleContrib}>+{formatDistanceKm(c.creditedDistanceKm)}km 貢献</Text>
+                  <Text style={s.battleContrib}>+{formatRunDistanceKm(c.creditedDistanceKm)}km 貢献</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
               </TouchableOpacity>
@@ -585,7 +601,7 @@ export default function ActivityDetailScreen() {
           currentUserId={user.id}
           target={{
             type: 'activity', id: activity.id, targetUid: activity.userId,
-            contentSnapshot: `${activity.displayName} / ${formatDistanceKm(activity.distanceKm)}km`,
+            contentSnapshot: `${activity.displayName} / ${formatRunDistanceKm(activity.distanceKm)}km`,
           }}
           targetDisplayName={activity.displayName}
           onClose={() => setShowSafety(false)}
@@ -608,6 +624,10 @@ const s = StyleSheet.create({
   blockedTitle: { marginTop: 12, fontSize: 15, fontWeight: '700', color: Colors.textPrimary },
   blockedDetail: { marginTop: 5, fontSize: 11, color: Colors.textSecondary },
   scroll: { paddingBottom: 48 },
+  runnerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: Colors.surface },
+  runnerCopy: { flex: 1, minWidth: 0 },
+  runnerName: { fontSize: 15, fontWeight: '800', color: Colors.textPrimary },
+  runnerDate: { marginTop: 2, fontSize: 11, color: Colors.textSecondary },
 
   heroCard: {
     backgroundColor: DarkColors.background,

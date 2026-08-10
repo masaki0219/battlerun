@@ -6,7 +6,7 @@ import {
 } from '../../design_tokens';
 import type { RouteVisualization, RoutePaceBand } from '../../utils/routeSplits';
 import { decorLabel } from '../../lib/locale';
-import { formatDistanceKm } from '../../utils/displayStats';
+import { formatRunDistanceKm } from '../../utils/displayStats';
 
 const ROUTE_PACE_COLOR: Record<RoutePaceBand, string> = {
   fast: RoutePaceColors.fast,
@@ -49,7 +49,7 @@ export const RunShareCard = forwardRef<View, RunShareCardProps>(function RunShar
       ref={ref}
       collapsable={false}
       style={s.card}
-      accessibilityLabel={`${formatDistanceKm(safeDistance)}キロ、時間${durationLabel}の共有画像プレビュー`}
+      accessibilityLabel={`${formatRunDistanceKm(safeDistance)}キロ、時間${durationLabel}の共有画像プレビュー`}
     >
       {showMap ? (
         <MapView
@@ -105,7 +105,7 @@ export const RunShareCard = forwardRef<View, RunShareCardProps>(function RunShar
         </View>
 
         <View style={s.distanceRow}>
-          <Text allowFontScaling={false} style={s.distance}>{formatDistanceKm(safeDistance)}</Text>
+          <Text allowFontScaling={false} style={s.distance}>{formatRunDistanceKm(safeDistance)}</Text>
           <Text allowFontScaling={false} style={s.distanceUnit}>KM</Text>
         </View>
 

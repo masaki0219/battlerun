@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
-  ScrollView, ActivityIndicator, Modal, FlatList, Pressable, Linking, Switch,
+  ScrollView, ActivityIndicator, Modal, FlatList, Pressable, Linking, Switch, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -28,6 +28,15 @@ import { httpsCallable } from 'firebase/functions';
 import { registerPushToken } from '../../lib/notifications';
 import Constants from 'expo-constants';
 import { teamTitleLabel } from '../../lib/teamTitle';
+import {
+  requestAppleCredential,
+  requestGoogleCredential,
+  revokeAppleAuthorizationCode,
+  revokeGoogleAccess,
+  SocialAuthError,
+  socialAuthErrorMessage,
+} from '../../lib/socialAuth';
+import { AVATAR_EMOJI_CATEGORIES } from '../../lib/avatarEmojis';
 
 function TitleBadge({ title, selected }: { title: UserTitle; selected: boolean }) {
   const rankLabel = teamTitleLabel(title.rank);
@@ -78,12 +87,6 @@ function ProfileRow({ icon, title, detail, onPress }: {
   );
 }
 
-const ANIMAL_EMOJIS = [
-  '🐱','🐶','🐻','🐼','🐨','🐯','🦁','🐸',
-  '🐰','🐹','🦊','🐺','🐮','🐷','🐧','🐬',
-  '🦄','🦔','🦋','🦦','🐙','🦈','🐘','🦒',
-];
-
 function nonNegativeStat(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
 }
@@ -94,10 +97,15 @@ export default function ProfileScreen() {
   const [deleting, setDeleting] = useState(false);
   const [presenceSaving, setPresenceSaving] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [avatarCategoryId, setAvatarCategoryId] = useState(AVATAR_EMOJI_CATEGORIES[0].id);
+  const [showDeletePasswordPrompt, setShowDeletePasswordPrompt] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
   const [proMonthlyPlan, setProMonthlyPlan] = useState<ProPackageInfo | null>(null);
   const [proPlanLoading, setProPlanLoading] = useState(false);
   const [proPlanReloadKey, setProPlanReloadKey] = useState(0);
   const [serverStats, setServerStats] = useState<{ totalDistanceKm: number; activityCount: number } | null>(null);
+  const avatarCategory = AVATAR_EMOJI_CATEGORIES.find((category) => category.id === avatarCategoryId)
+    ?? AVATAR_EMOJI_CATEGORIES[0];
 
   // 自分の戦績（累計距離・ラン回数・ストリーク）
   const { activities } = useRecentActivities(50);
@@ -235,15 +243,14 @@ export default function ProfileScreen() {
     );
   }
 
-  async function doDeleteAccount(password: string) {
+  async function deleteFirebaseAccountAfter(task: () => Promise<void>) {
     if (!user) return;
     setDeleting(true);
     try {
       const currentUser = auth.currentUser;
-      if (!currentUser?.email) throw new Error('認証情報が見つかりません');
+      if (!currentUser) throw new Error('認証情報が見つかりません');
 
-      const credential = EmailAuthProvider.credential(currentUser.email, password);
-      await reauthenticateWithCredential(currentUser, credential);
+      await task();
 
       // Firebase Auth ユーザー削除（onAuthStateChanged が user: null をセットする）。
       // Firestore側のデータ（users/{uid}本体・activities・participants・通知・バッジ）は
@@ -253,13 +260,70 @@ export default function ProfileScreen() {
       router.replace('/auth/login');
     } catch (error: unknown) {
       const code = (error as { code?: string }).code;
+      const socialMessage = socialAuthErrorMessage(error);
+      if (socialMessage === null) {
+        return;
+      }
       if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
         Alert.alert('エラー', 'パスワードが正しくありません');
+      } else if (socialMessage) {
+        Alert.alert('アカウントを削除できませんでした', socialMessage);
       } else {
         Alert.alert('エラー', 'アカウントの削除に失敗しました。もう一度お試しください。');
       }
     } finally {
       setDeleting(false);
+    }
+  }
+
+  async function doDeleteWithPassword(password: string) {
+    const currentUser = auth.currentUser;
+    if (!currentUser?.email) {
+      Alert.alert('エラー', 'メール認証情報が見つかりません。');
+      return;
+    }
+    await deleteFirebaseAccountAfter(async () => {
+      const credential = EmailAuthProvider.credential(currentUser.email!, password);
+      await reauthenticateWithCredential(currentUser, credential);
+    });
+  }
+
+  async function doDeleteWithGoogle() {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    await deleteFirebaseAccountAfter(async () => {
+      const bundle = await requestGoogleCredential();
+      await reauthenticateWithCredential(currentUser, bundle.credential);
+      const accountId = bundle.googleAccountId ?? bundle.email;
+      if (accountId) await revokeGoogleAccess(accountId);
+    });
+  }
+
+  async function doDeleteWithApple() {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    await deleteFirebaseAccountAfter(async () => {
+      const bundle = await requestAppleCredential();
+      await reauthenticateWithCredential(currentUser, bundle.credential);
+      if (!bundle.appleAuthorizationCode) {
+        throw new SocialAuthError(
+          'social/apple-missing-authorization-code',
+          'Appleからトークン失効用の認可コードを取得できませんでした。もう一度お試しください。',
+        );
+      }
+      await revokeAppleAuthorizationCode(bundle.appleAuthorizationCode);
+    });
+  }
+
+  function beginProviderReauthentication() {
+    const providers = auth.currentUser?.providerData.map((provider) => provider.providerId) ?? [];
+    if (providers.includes('apple.com')) {
+      void doDeleteWithApple();
+    } else if (providers.includes('google.com')) {
+      void doDeleteWithGoogle();
+    } else {
+      setDeletePassword('');
+      setShowDeletePasswordPrompt(true);
     }
   }
 
@@ -272,27 +336,7 @@ export default function ProfileScreen() {
         {
           text: '削除する',
           style: 'destructive',
-          onPress: () => {
-            Alert.prompt(
-              'パスワードを確認',
-              '本人確認のためパスワードを入力してください。',
-              [
-                { text: 'キャンセル', style: 'cancel' },
-                {
-                  text: '削除',
-                  style: 'destructive',
-                  onPress: (password: string | undefined) => {
-                    if (!password) {
-                      Alert.alert('エラー', 'パスワードを入力してください');
-                      return;
-                    }
-                    doDeleteAccount(password);
-                  },
-                },
-              ],
-              'secure-text',
-            );
-          },
+          onPress: beginProviderReauthentication,
         },
       ],
     );
@@ -547,8 +591,30 @@ export default function ProfileScreen() {
           <Pressable style={styles.modalSheet} onPress={() => {}}>
             <View style={styles.modalHandle} />
             <Text style={styles.modalTitle}>アイコンを選ぶ</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.avatarCategories}
+            >
+              {AVATAR_EMOJI_CATEGORIES.map((category) => {
+                const selected = category.id === avatarCategory.id;
+                return (
+                  <TouchableOpacity
+                    key={category.id}
+                    style={[styles.avatarCategoryChip, selected && styles.avatarCategoryChipSelected]}
+                    onPress={() => setAvatarCategoryId(category.id)}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected }}
+                  >
+                    <Text style={[styles.avatarCategoryText, selected && styles.avatarCategoryTextSelected]}>
+                      {category.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
             <FlatList
-              data={ANIMAL_EMOJIS}
+              data={[...avatarCategory.emojis]}
               numColumns={6}
               keyExtractor={(item) => item}
               renderItem={({ item }) => (
@@ -564,6 +630,56 @@ export default function ProfileScreen() {
               )}
               contentContainerStyle={styles.emojiGrid}
             />
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Alert.promptはAndroid非対応のため、パスワード再認証は共通Modalで行う。 */}
+      <Modal
+        visible={showDeletePasswordPrompt}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDeletePasswordPrompt(false)}
+      >
+        <Pressable style={styles.deleteModalOverlay} onPress={() => setShowDeletePasswordPrompt(false)}>
+          <Pressable style={styles.deleteModalCard} onPress={() => {}}>
+            <Text style={styles.deleteModalTitle}>パスワードを確認</Text>
+            <Text style={styles.deleteModalBody}>本人確認のため、現在のパスワードを入力してください。</Text>
+            <TextInput
+              style={styles.deletePasswordInput}
+              value={deletePassword}
+              onChangeText={setDeletePassword}
+              placeholder="パスワード"
+              placeholderTextColor={Colors.textTertiary}
+              secureTextEntry
+              autoCapitalize="none"
+              autoComplete="current-password"
+              textContentType="password"
+              returnKeyType="done"
+              onSubmitEditing={() => {
+                if (!deletePassword) return;
+                setShowDeletePasswordPrompt(false);
+                void doDeleteWithPassword(deletePassword);
+              }}
+            />
+            <View style={styles.deleteModalActions}>
+              <TouchableOpacity
+                style={styles.deleteModalCancel}
+                onPress={() => setShowDeletePasswordPrompt(false)}
+              >
+                <Text style={styles.deleteModalCancelText}>キャンセル</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.deleteModalConfirm, !deletePassword && styles.deleteModalConfirmDisabled]}
+                disabled={!deletePassword}
+                onPress={() => {
+                  setShowDeletePasswordPrompt(false);
+                  void doDeleteWithPassword(deletePassword);
+                }}
+              >
+                <Text style={styles.deleteModalConfirmText}>削除する</Text>
+              </TouchableOpacity>
+            </View>
           </Pressable>
         </Pressable>
       </Modal>
@@ -717,7 +833,83 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: Spacing.lg,
   },
+  deleteModalOverlay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.xl,
+    backgroundColor: DarkColors.modalBackdrop,
+  },
+  deleteModalCard: {
+    width: '100%',
+    maxWidth: 420,
+    gap: Spacing.lg,
+    padding: Spacing.xl,
+    borderRadius: BorderRadius.xl,
+    backgroundColor: Colors.surface,
+  },
+  deleteModalTitle: {
+    color: Colors.textPrimary,
+    fontSize: Typography.fontSize.xl,
+    fontWeight: Typography.fontWeight.bold,
+    textAlign: 'center',
+  },
+  deleteModalBody: {
+    color: Colors.textSecondary,
+    fontSize: Typography.fontSize.sm,
+    lineHeight: Typography.fontSize.sm * Typography.lineHeight.normal,
+    textAlign: 'center',
+  },
+  deletePasswordInput: {
+    minHeight: 50,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.background,
+    color: Colors.textPrimary,
+    fontSize: Typography.fontSize.md,
+  },
+  deleteModalActions: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+  },
+  deleteModalCancel: {
+    flex: 1,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  deleteModalCancelText: {
+    color: Colors.textPrimary,
+    fontSize: Typography.fontSize.md,
+    fontWeight: Typography.fontWeight.semibold,
+  },
+  deleteModalConfirm: {
+    flex: 1,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.error,
+  },
+  deleteModalConfirmDisabled: {
+    opacity: 0.5,
+  },
+  deleteModalConfirmText: {
+    color: Colors.textOnPrimary,
+    fontSize: Typography.fontSize.md,
+    fontWeight: Typography.fontWeight.bold,
+  },
   emojiGrid: { paddingVertical: Spacing.sm },
+  avatarCategories: { gap: Spacing.sm, paddingBottom: Spacing.md },
+  avatarCategoryChip: { minHeight: 34, paddingHorizontal: Spacing.md, borderRadius: BorderRadius.full, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.surfaceGray },
+  avatarCategoryChipSelected: { backgroundColor: Colors.primary },
+  avatarCategoryText: { fontSize: 11, color: Colors.textSecondary, fontWeight: Typography.fontWeight.bold },
+  avatarCategoryTextSelected: { color: Colors.textOnPrimary },
   emojiCell: {
     flex: 1, aspectRatio: 1,
     alignItems: 'center', justifyContent: 'center',

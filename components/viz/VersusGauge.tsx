@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, Animated, StyleSheet, useWindowDimensions } from 'react-native';
+import { View, Text, Animated, StyleSheet, useWindowDimensions, AccessibilityInfo } from 'react-native';
 import { Colors, DarkColors, Spacing, BorderRadius, Animation } from '../../design_tokens';
 
 interface Side {
@@ -35,14 +35,62 @@ export function VersusGauge({ left, right, size = 'md', dark = false, unit = 'km
   const total = left.km + right.km;
   const ratio = total > 0 ? left.km / total : 0.5;
 
-  const anim = useRef(new Animated.Value(ratio)).current;
+  const anim = useRef(new Animated.Value(0.5)).current;
+  const flash = useRef(new Animated.Value(0)).current;
+  const previousRatioRef = useRef(ratio);
+  const reduceMotionRef = useRef(true);
   useEffect(() => {
+    let mounted = true;
+    void AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+      if (!mounted) return;
+      reduceMotionRef.current = enabled;
+      if (enabled) {
+        anim.setValue(ratio);
+      } else {
+        anim.setValue(0.5);
+        Animated.timing(anim, {
+          toValue: ratio,
+          duration: Animation.countUpDuration,
+          useNativeDriver: false,
+        }).start();
+      }
+    });
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', (enabled) => {
+      reduceMotionRef.current = enabled;
+      if (enabled) {
+        anim.stopAnimation();
+        flash.stopAnimation();
+        anim.setValue(ratio);
+        flash.setValue(0);
+      }
+    });
+    return () => {
+      mounted = false;
+      subscription.remove();
+    };
+  }, []);
+  useEffect(() => {
+    const previousRatio = previousRatioRef.current;
+    const leadershipChanged = total > 0
+      && ((previousRatio < 0.5 && ratio >= 0.5) || (previousRatio >= 0.5 && ratio < 0.5));
+    previousRatioRef.current = ratio;
+    if (reduceMotionRef.current) {
+      anim.setValue(ratio);
+      return;
+    }
     Animated.timing(anim, {
       toValue: ratio,
       duration: Animation.countUpDuration,
       useNativeDriver: false,
     }).start();
-  }, [ratio]);
+    if (leadershipChanged) {
+      flash.setValue(0);
+      Animated.sequence([
+        Animated.timing(flash, { toValue: 0.5, duration: 140, useNativeDriver: true }),
+        Animated.timing(flash, { toValue: 0, duration: 520, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [ratio, total, anim, flash]);
 
   const leftWidth = anim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
   const sepLeft = anim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
@@ -119,6 +167,10 @@ export function VersusGauge({ left, right, size = 'md', dark = false, unit = 'km
           />
           <Animated.View
             style={[styles.separator, { left: sepLeft, backgroundColor: sepColor }]}
+          />
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.flash, { opacity: flash, backgroundColor: ratio >= 0.5 ? leftColor : rightColor }]}
           />
         </View>
         {isLg && !largeText ? (
@@ -232,6 +284,7 @@ const styles = StyleSheet.create({
     width: 2,
     marginLeft: -1,
   },
+  flash: { ...StyleSheet.absoluteFillObject },
   vsBadge: {
     position: 'absolute',
     top: '50%',

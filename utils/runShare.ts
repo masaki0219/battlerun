@@ -1,6 +1,7 @@
 import { LEGAL_URLS } from '../lib/legal';
+import { formatRunDistanceKm } from './displayStats';
 
-export const ZELIO_DISCOVERY_URL = LEGAL_URLS.marketing;
+export const ZELIO_DISCOVERY_URL = LEGAL_URLS.support;
 
 export interface RunShareMessageInput {
   distanceKm: number;
@@ -35,7 +36,7 @@ export function buildRunShareMessage(input: RunShareMessageInput): string {
   if (pace) statParts.push(`平均ペース ${pace}/km`);
 
   const lines = [
-    `${title}のラン: ${safeDistance.toFixed(1)}km`,
+    `${title}のラン: ${formatRunDistanceKm(safeDistance)}km`,
     statParts.join(' ・ '),
   ];
   if (input.impactLabel?.trim()) lines.push(input.impactLabel.trim());

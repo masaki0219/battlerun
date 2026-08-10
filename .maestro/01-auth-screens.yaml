@@ -1,0 +1,60 @@
+# 未ログイン状態の画面遷移。法務ページとログイン⇄新規登録の往復を確認する。
+# 前提: Firebaseエミュレータ起動済み、Expo Goで exp://<host>:8082 を開いた状態。
+# iOSのエッジスワイプ戻りはMaestroから安定しないため、ヘッダーの「戻る」を明示的に押す。
+appId: host.exp.Exponent
+---
+# 前回のフローが残した画面から始めないよう、一度終了してから開き直す。
+# openLinkだけでは起動中アプリの画面状態が残る。
+- stopApp
+- openLink: exp://127.0.0.1:8082
+- extendedWaitUntil:
+    visible: 'ZELIO'
+    timeout: 90000
+
+# 他のフローがログイン状態を残していても未ログインから始められるようにする。
+# 認証はAsyncStorageに永続化されるので、stopAppだけではログイン画面へ戻らない。
+- runFlow:
+    when:
+      visible: 'プロフィール'
+    commands:
+      - tapOn: 'プロフィール'
+      - scrollUntilVisible:
+          element: '.*ログアウト.*'
+          direction: DOWN
+          centerElement: true
+      - tapOn: '.*ログアウト.*'
+      # 確認ダイアログはタイトルもボタンも「ログアウト」なので座標で押す（README参照）。
+      - tapOn:
+          point: '68%,56%'
+      - extendedWaitUntil:
+          visible: '走る距離が、絆になる。'
+          timeout: 60000
+
+- assertVisible: 'ZELIO'
+- assertVisible: '走る距離が、絆になる。'
+- takeScreenshot: shots/01-login
+
+# Expo Goではネイティブ認証モジュールを読み込まないので、その旨が出ていること。
+- assertVisible: 'Apple／Googleログインは開発ビルドまたはストア版で利用できます。'
+
+# ログイン → 利用規約 → 戻る
+- tapOn: '利用規約'
+- assertVisible: '1. 適用'
+- takeScreenshot: shots/02-terms
+- tapOn: '戻る'
+- assertVisible: '走る距離が、絆になる。'
+
+# ログイン → プライバシーポリシー → 戻る
+- tapOn: 'プライバシーポリシー'
+- assertVisible: '1. 取得する情報'
+- takeScreenshot: shots/03-privacy
+- tapOn: '戻る'
+- assertVisible: '走る距離が、絆になる。'
+
+# ログイン → 新規登録 → 戻る
+- tapOn: '新規登録はこちら'
+- assertVisible: '新規アカウント作成'
+- takeScreenshot: shots/04-signup
+# 新規登録画面はヘッダーの戻るではなく本文中の導線でログインへ戻る。
+- tapOn: 'ログインに戻る'
+- assertVisible: '走る距離が、絆になる。'

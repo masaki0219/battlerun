@@ -12,7 +12,13 @@
     "test": "npm run test:unit",
     "test:unit": "ts-node --project tests/tsconfig.json tests/unit.test.ts",
     "test:aggregation": "firebase emulators:exec --only firestore \"ts-node --project tests/tsconfig.json tests/activityAggregation.integration.ts\"",
+    "test:e2e": "cd functions && npm run build && cd .. && firebase emulators:exec --project demo-zelio --only firestore,auth,functions \"ts-node --project tests/tsconfig.json tests/recordReflection.e2e.ts\"",
+    "test:e2e:scenarios": "cd functions && npm run build && cd .. && firebase emulators:exec --project demo-zelio --only firestore,auth,functions \"ts-node --project tests/tsconfig.json tests/releaseScenarios.e2e.ts\"",
     "gps:replay": "ts-node scripts/replay-gps-log.ts",
+    "test:ui:emulators": "firebase emulators:start --project demo-zelio --only firestore,auth,functions",
+    "test:ui:seed": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GCLOUD_PROJECT=zelio-run ts-node --project tests/tsconfig.json tests/seedUiEmulator.ts",
+    "test:ui:app": "EXPO_PUBLIC_USE_FIREBASE_EMULATOR=1 expo start --go --ios --port 8082",
+    "test:ui": "maestro test .maestro/",
     "test:rules": "firebase emulators:exec --only firestore \"ts-node --project tests/tsconfig.json tests/firestore-rules.test.ts\""
   },
   "dependencies": {
@@ -21,9 +27,10 @@
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-clipboard/clipboard": "^1.16.3",
     "@react-native-community/datetimepicker": "8.4.4",
+    "@react-native-firebase/app": "^26.1.0",
+    "@react-native-firebase/auth": "^26.1.0",
     "expo": "~54.0.35",
     "expo-apple-authentication": "~8.0.8",
-    "expo-auth-session": "~7.0.11",
     "expo-background-fetch": "~14.0.9",
     "expo-build-properties": "~1.0.10",
     "expo-clipboard": "~8.0.8",
@@ -51,6 +58,8 @@
     "react-native": "0.81.5",
     "react-native-gesture-handler": "~2.28.0",
     "react-native-maps": "1.20.1",
+    "react-native-nitro-google-signin": "^1.3.0",
+    "react-native-nitro-modules": "^0.36.5",
     "react-native-purchases": "^10.1.1",
     "react-native-reanimated": "~4.1.1",
     "react-native-safe-area-context": "~5.6.0",
@@ -69,5 +78,14 @@
     "ts-node": "^10.9.2",
     "typescript": "~5.9.2"
   },
-  "private": true
+  "private": true,
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": [
+          "react-native-nitro-google-signin"
+        ]
+      }
+    }
+  }
 }

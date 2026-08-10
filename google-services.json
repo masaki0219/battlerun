@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "498018792767",
+    "project_id": "zelio-run",
+    "storage_bucket": "zelio-run.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:498018792767:android:0fe562710367db97cf8f8a",
+        "android_client_info": {
+          "package_name": "com.masaki.zelio"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "498018792767-gh4h3vnpq7nn2ui7ll6u2rhjg1lk1lej.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCT3C7QAGMK9kiGDb3xlWNi977jwDMqIG8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "498018792767-gh4h3vnpq7nn2ui7ll6u2rhjg1lk1lej.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "498018792767-vtutsv1gp1jvvljjpkhdkjstjv6k772b.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.masaki.zelio"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

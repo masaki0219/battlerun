@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '../ui/Card';
+import { Avatar } from '../ui/Avatar';
 import { Colors, Typography, Spacing, BorderRadius } from '../../design_tokens';
 import type { TeamRanking } from '../../hooks/useTeamRanking';
 import type { ProcessContribution } from '../../utils/processContributions';
@@ -13,13 +14,15 @@ interface Props {
   /** 「Top10を見る」の遷移先（バトル詳細） */
   onPressMore?: () => void;
   blockedUserIds?: ReadonlySet<string>;
+  /** チャレンジ内で一貫して使う所属チーム色 */
+  teamColor?: string;
 }
 
 /**
  * 自分の陣営内でのメンバーランキング（上位3名＋自分の行）。表示専用。
  * 自分が上位に入っている場合は、その行をハイライトして重複表示しない。
  */
-export function TeamRankingCard({ ranking, contributions = {}, currentUserId, onPressMore, blockedUserIds }: Props) {
+export function TeamRankingCard({ ranking, contributions = {}, currentUserId, onPressMore, blockedUserIds, teamColor }: Props) {
   if (ranking.error) {
     return (
       <Card style={styles.card} padding={Spacing.md}>
@@ -73,15 +76,14 @@ export function TeamRankingCard({ ranking, contributions = {}, currentUserId, on
   };
 
   return (
-    <Card style={styles.card} padding={Spacing.md}>
+    <Card
+      style={[styles.card, teamColor ? { borderLeftWidth: 4, borderLeftColor: teamColor } : null]}
+      padding={Spacing.md}
+    >
       {top.map((m) => (
         <View key={m.userId} style={[styles.row, m.isMe && styles.rowMe]}>
           <Text style={[styles.rank, m.isMe && styles.textMe]}>{m.rank ?? '—'}</Text>
-          <View style={[styles.avatar, m.isMe && styles.avatarMe]}>
-            <Text style={[styles.avatarText, m.isMe && styles.avatarTextMe]}>
-              {m.displayName.slice(0, 1)}
-            </Text>
-          </View>
+          <Avatar name={m.displayName} emoji={m.avatarEmoji} size="xs" />
           <View style={styles.nameColumn}>
             <Text style={[styles.name, m.isMe && styles.textMe]} numberOfLines={1}>
               {m.isMe ? 'あなた' : m.displayName}
@@ -98,9 +100,7 @@ export function TeamRankingCard({ ranking, contributions = {}, currentUserId, on
           <View style={styles.divider} />
           <View style={[styles.row, styles.rowMe]}>
             <Text style={[styles.rank, styles.textMe]}>{myRank}</Text>
-            <View style={[styles.avatar, styles.avatarMe]}>
-              <Text style={[styles.avatarText, styles.avatarTextMe]}>あ</Text>
-            </View>
+            <Avatar name="あなた" emoji={ranking.myAvatarEmoji} size="xs" />
             <View style={styles.nameColumn}>
               <Text style={[styles.name, styles.textMe]}>あなた</Text>
               {currentUserId ? processBadges(currentUserId) : null}
@@ -157,17 +157,6 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     fontVariant: ['tabular-nums'],
   },
-  avatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: Colors.surfaceAlt,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarMe: { backgroundColor: Colors.primary },
-  avatarText: { fontSize: Typography.fontSize.xs, fontWeight: Typography.fontWeight.bold, color: Colors.textSecondary },
-  avatarTextMe: { color: Colors.textOnPrimary },
   nameColumn: {
     flex: 1,
     minWidth: 0,

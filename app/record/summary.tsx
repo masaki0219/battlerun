@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert,
+  AccessibilityInfo, Animated, Easing,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { collection, doc, getDocs, onSnapshot, orderBy, query } from 'firebase/firestore';
@@ -9,11 +11,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import { isPro } from '../../lib/pro';
-import { Colors, DarkColors, BorderRadius, TextStyles } from '../../design_tokens';
+import { Colors, DarkColors, BorderRadius, TextStyles, Animation } from '../../design_tokens';
 import { MonoLabel } from '../../components/ui/MonoLabel';
 import { KmSplitsCard } from '../../components/run/KmSplitsCard';
 import { RunShareCard } from '../../components/run/RunShareCard';
-import { estimatedCalories, type KmSplit } from '../../utils/displayStats';
+import { estimatedCalories, formatRunDistanceKm, type KmSplit } from '../../utils/displayStats';
 import { buildRouteVisualization } from '../../utils/routeSplits';
 import { buildRunShareMessage, formatShareDuration } from '../../utils/runShare';
 import type { PersonalRecordKey, RoutePoint } from '../../types';
@@ -56,6 +58,51 @@ function personalRecordKeys(value: unknown): PersonalRecordKey[] {
   ));
 }
 
+const CONFETTI_COLORS = [Colors.primary, Colors.accent, Colors.accentYellow, Colors.info, Colors.success];
+
+function CelebrationConfetti({ active, reduceMotion }: { active: boolean; reduceMotion: boolean }) {
+  const progress = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!active || reduceMotion) {
+      progress.setValue(1);
+      return;
+    }
+    progress.setValue(0);
+    Animated.timing(progress, {
+      toValue: 1,
+      duration: 1_400,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [active, reduceMotion, progress]);
+  if (!active || reduceMotion) return null;
+  return (
+    <View style={s.confettiLayer} pointerEvents="none" accessibilityElementsHidden>
+      {Array.from({ length: 16 }, (_, index) => {
+        const drift = (index % 2 === 0 ? 1 : -1) * (18 + (index % 4) * 8);
+        return (
+          <Animated.View
+            key={index}
+            style={[
+              s.confettiPiece,
+              {
+                left: `${4 + (index % 8) * 13}%` as `${number}%`,
+                backgroundColor: CONFETTI_COLORS[index % CONFETTI_COLORS.length],
+                transform: [
+                  { translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [0, drift] }) },
+                  { translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [-20 - (index % 3) * 14, 250 + (index % 5) * 20] }) },
+                  { rotate: progress.interpolate({ inputRange: [0, 1], outputRange: ['0deg', `${240 + index * 35}deg`] }) },
+                ],
+                opacity: progress.interpolate({ inputRange: [0, 0.75, 1], outputRange: [1, 1, 0] }),
+              },
+            ]}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
 export default function RecordingSummaryScreen() {
   const params = useLocalSearchParams<{
     activityId: string;
@@ -93,12 +140,46 @@ export default function RecordingSummaryScreen() {
   const [newRecords, setNewRecords] = useState<PersonalRecordKey[]>([]);
   const [activityRoute, setActivityRoute] = useState<RoutePoint[]>([]);
   const [sharing, setSharing] = useState(false);
+  const [reduceMotion, setReduceMotion] = useState<boolean | null>(null);
+  const [animatedDistance, setAnimatedDistance] = useState(distanceKm);
+  const distanceAnim = useRef(new Animated.Value(distanceKm)).current;
+  const rankAnim = useRef(new Animated.Value(1)).current;
+  const celebrationKeysRef = useRef(new Set<string>());
   const {
     includeRouteInShare,
     preferenceLoaded: sharePreferenceLoaded,
     setIncludeRouteInShare,
   } = useRunSharePreference(user?.id);
   const shareCardRef = useRef<View>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    void AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+      if (mounted) setReduceMotion(enabled);
+    });
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
+    return () => {
+      mounted = false;
+      subscription.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (reduceMotion === null || reduceMotion) {
+      distanceAnim.setValue(distanceKm);
+      setAnimatedDistance(distanceKm);
+      return;
+    }
+    distanceAnim.setValue(0);
+    const listenerId = distanceAnim.addListener(({ value }) => setAnimatedDistance(value));
+    Animated.timing(distanceAnim, {
+      toValue: distanceKm,
+      duration: Math.max(Animation.countUpDuration, 900),
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+    return () => distanceAnim.removeListener(listenerId);
+  }, [distanceKm, reduceMotion, distanceAnim]);
 
   useEffect(() => {
     if (!user || !activityId) return;
@@ -208,6 +289,7 @@ export default function RecordingSummaryScreen() {
   const primaryImpact = impacts[0] ?? null;
   const primaryCreditedDistanceKm = primaryImpact?.creditedDistanceKm ?? distanceKm;
   const rankChanged = primaryImpact && primaryImpact.rankBefore !== primaryImpact.rankAfter;
+  const rankImproved = !!primaryImpact && primaryImpact.rankBefore > primaryImpact.rankAfter;
   const hasMultipleImpacts = impacts.length > 1;
   const emptyImpactTitle = battleCreditStatus === 'not-eligible'
     ? 'チャレンジに加算されませんでした'
@@ -223,6 +305,33 @@ export default function RecordingSummaryScreen() {
         : battleCreditStatus === 'eligible'
           ? '活動詳細で反映状況を確認してください'
           : 'チャレンジに参加して記録を競おう';
+
+  useEffect(() => {
+    if (!rankChanged || reduceMotion === null) return;
+    if (reduceMotion) {
+      rankAnim.setValue(1);
+      return;
+    }
+    rankAnim.setValue(0);
+    Animated.spring(rankAnim, {
+      toValue: 1,
+      damping: 11,
+      stiffness: 150,
+      mass: 0.7,
+      useNativeDriver: true,
+    }).start();
+  }, [primaryImpact?.battleId, primaryImpact?.rankAfter, rankChanged, reduceMotion, rankAnim]);
+
+  useEffect(() => {
+    const keys = [
+      ...newRecords.map((record) => `record:${record}`),
+      ...(rankImproved && primaryImpact ? [`rank:${primaryImpact.battleId}:${primaryImpact.rankAfter}`] : []),
+      ...(declarationAchieved ? ['declaration-achieved'] : []),
+    ];
+    if (keys.length === 0 || keys.every((key) => celebrationKeysRef.current.has(key))) return;
+    keys.forEach((key) => celebrationKeysRef.current.add(key));
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+  }, [declarationAchieved, newRecords, rankImproved, primaryImpact?.battleId, primaryImpact?.rankAfter]);
 
   async function handleShareRun() {
     if (sharing || !sharePreferenceLoaded) return;
@@ -250,6 +359,7 @@ export default function RecordingSummaryScreen() {
 
   return (
     <SafeAreaView style={s.root} edges={['top', 'bottom']}>
+      <CelebrationConfetti active={newRecords.length > 0 || rankImproved} reduceMotion={reduceMotion !== false} />
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
 
         {/* ── Hero dark card ─────────────────────────────── */}
@@ -262,7 +372,7 @@ export default function RecordingSummaryScreen() {
           </View>
 
           <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 14 }}>
-            <Text style={s.heroBigNum}>{distanceKm.toFixed(1)}</Text>
+            <Text style={s.heroBigNum}>{formatRunDistanceKm(animatedDistance)}</Text>
             <Text style={s.heroUnit}>KM</Text>
           </View>
 
@@ -309,7 +419,7 @@ export default function RecordingSummaryScreen() {
 
         {newRecords.length > 0 && (
           <View style={s.section}>
-            <View style={s.badgeCard}>
+            <Animated.View style={[s.badgeCard, reduceMotion === false && { transform: [{ scale: rankAnim.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] }) }] }]}>
               <View style={s.badgeIcon}>
                 <Ionicons name="trophy" size={24} color={Colors.textPrimary} />
               </View>
@@ -319,7 +429,7 @@ export default function RecordingSummaryScreen() {
                 <Text style={s.badgeSub}>今日のランで新しい記録が生まれました</Text>
               </View>
               <Text style={s.badgeNew}>{decorLabel('新記録', 'NEW')}</Text>
-            </View>
+            </Animated.View>
           </View>
         )}
 
@@ -354,7 +464,7 @@ export default function RecordingSummaryScreen() {
                       <Text style={s.rankBoxNum}>{primaryImpact.rankBefore}</Text>
                     </View>
                   </View>
-                  <View style={s.rankArrowWrap}>
+                  <Animated.View style={[s.rankArrowWrap, { opacity: rankAnim }] }>
                     <View style={s.rankArrowLine} />
                     <View style={s.rankArrowBadge}>
                       <Text style={s.rankArrowText}>
@@ -364,13 +474,16 @@ export default function RecordingSummaryScreen() {
                       </Text>
                     </View>
                     <Ionicons name="chevron-forward" size={14} color={Colors.primaryDark} />
-                  </View>
-                  <View style={s.rankAfter}>
+                  </Animated.View>
+                  <Animated.View style={[s.rankAfter, { transform: [
+                    { translateX: rankAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) },
+                    { scale: rankAnim.interpolate({ inputRange: [0, 1], outputRange: [0.82, 1] }) },
+                  ] }] }>
                     <Text style={s.rankAfterLabel}>変更後</Text>
                     <View style={s.rankBoxAfter}>
                       <Text style={s.rankBoxAfterNum}>{primaryImpact.rankAfter}</Text>
                     </View>
-                  </View>
+                  </Animated.View>
                 </View>
               ) : (
                 <View style={s.rankKept}>
@@ -397,7 +510,7 @@ export default function RecordingSummaryScreen() {
                 <View style={{ alignItems: 'flex-end' }}>
                   <Text style={s.impactAddLabel}>チーム加算</Text>
                   <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 2 }}>
-                    <Text style={s.impactAddVal}>+{primaryCreditedDistanceKm.toFixed(1)}</Text>
+                    <Text style={s.impactAddVal}>+{formatRunDistanceKm(primaryCreditedDistanceKm)}</Text>
                     <Text style={s.impactAddUnit}>KM</Text>
                   </View>
                   {primaryCreditedDistanceKm + 0.0001 < distanceKm && (
@@ -506,6 +619,8 @@ export default function RecordingSummaryScreen() {
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
   scroll: { paddingBottom: 40 },
+  confettiLayer: { ...StyleSheet.absoluteFillObject, zIndex: 20, overflow: 'hidden' },
+  confettiPiece: { position: 'absolute', top: 0, width: 9, height: 16, borderRadius: 2 },
 
   heroCard: {
     margin: 16, marginTop: 8, padding: 22, borderRadius: BorderRadius.lg,

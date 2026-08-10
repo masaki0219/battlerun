@@ -1,0 +1,119 @@
+# 新規登録からアプリ本体へ入り、全タブとチャレンジ詳細まで遷移して、最後にログアウトで戻る。
+# Firestoreルールはエミュレータでも有効なので、登録時のusers/publicProfiles書き込みが
+# ルールを通ることもここで確認できる。
+#
+# 前提:
+#   1. Firebaseエミュレータ起動（firestore/auth/functions）
+#   2. アプリと同じprojectIdへシード:
+#      FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 GCLOUD_PROJECT=zelio-run \
+#        npx ts-node --project tests/tsconfig.json tests/seedUiEmulator.ts
+#   3. EXPO_PUBLIC_USE_FIREBASE_EMULATOR=1 npx expo start --go --ios --port 8082
+appId: host.exp.Exponent
+---
+- stopApp
+- openLink: exp://127.0.0.1:8082
+- extendedWaitUntil:
+    visible: 'ZELIO'
+    timeout: 90000
+
+# 前回の実行でログイン状態が残っていても同じ前提から始められるようにする。
+# 認証はAsyncStorageに永続化されるので、stopAppだけではログイン画面へ戻らない。
+- runFlow:
+    when:
+      visible: 'プロフィール'
+    commands:
+      # 行のa11yテキストは「, ログアウト」のように前後に区切りが入るため部分一致で照合する。
+      - tapOn: 'プロフィール'
+      - scrollUntilVisible:
+          element: '.*ログアウト.*'
+          direction: DOWN
+      - tapOn: '.*ログアウト.*'
+      # 確認ダイアログの実行ボタン。RNのAlertはタイトル・本文・ボタンが同じ「ログアウト」で、
+      # text指定でもrightOf指定でも実行ボタンを選べないため、座標で押す。
+      - tapOn:
+          point: '68%,56%'
+      - extendedWaitUntil:
+          visible: '走る距離が、絆になる。'
+          timeout: 60000
+
+- assertVisible: '走る距離が、絆になる。'
+- tapOn: '新規登録はこちら'
+- assertVisible: '新規アカウント作成'
+
+# 何度でも流せるよう、メールアドレスは実行ごとに一意にする。
+- evalScript: ${output.email = 'maestro-' + Date.now() + '@example.com'}
+
+# キーボードの出入りと入力が競合すると1文字しか入らないため、
+# hideKeyboardは使わずタップ後にアニメーション完了を待つ。
+- tapOn: 'ニックネーム（12文字以内）'
+- waitForAnimationToEnd
+- inputText: 'E2Eランナー'
+- waitForAnimationToEnd
+- tapOn: 'メールアドレス'
+- waitForAnimationToEnd
+- inputText: ${output.email}
+- waitForAnimationToEnd
+# パスワード欄は textContentType="newPassword" のため、1文字目を入れた時点で
+# iOSの「強力なパスワードを使用しますか？」シートが出て、以降の入力を奪う（1文字しか入らない）。
+# このシートはアプリのアクセシビリティツリー外のシステムUIで、Maestroからテキストで
+# 特定できないため、右上の×を座標で閉じてから入力し直す。
+# アプリ側のtextContentTypeは実利用として正しい設定なので、変更せずテスト側で回避する。
+- tapOn: 'パスワード（6文字以上）'
+- waitForAnimationToEnd
+- inputText: 'testpass1234'
+- waitForAnimationToEnd
+- tapOn:
+    point: '90%,57%'
+- waitForAnimationToEnd
+- tapOn: 'パスワード（6文字以上）'
+- waitForAnimationToEnd
+- eraseText
+- inputText: 'testpass1234'
+- waitForAnimationToEnd
+- tapOn: 'アカウントを作成'
+
+# 登録が通ってアプリ本体（タブ）へ入る。
+- extendedWaitUntil:
+    visible: 'チャレンジ'
+    timeout: 90000
+- takeScreenshot: shots/10-after-signup
+
+# チャレンジタブ: シードした公開チャレンジとチーム名・距離が出ていること。
+# タイトルの「vs」は別テキストノードなので前半だけで照合する。
+# ランキング行は「1 朝ラン組 12.4km」のように1要素へまとまるため部分一致で照合する。
+- tapOn: 'チャレンジ'
+- extendedWaitUntil:
+    visible: '.*朝ラン組.*'
+    timeout: 30000
+- assertVisible: '.*よる歩き隊.*'
+- assertVisible: '参加するチャレンジを選ぶ'
+- assertVisible: '.*週末ロング班.*'
+- takeScreenshot: shots/11-battle-list
+
+# 残り3タブへ遷移する。
+- tapOn: 'ラン'
+- waitForAnimationToEnd
+- takeScreenshot: shots/12-record
+
+- tapOn: '記録'
+- waitForAnimationToEnd
+- takeScreenshot: shots/13-stats
+
+- tapOn: 'プロフィール'
+- extendedWaitUntil:
+    visible: '.*E2Eランナー.*'
+    timeout: 30000
+- takeScreenshot: shots/14-profile
+
+# ログアウトして未ログイン状態へ戻す（次回の実行を同じ前提から始められるようにする）。
+- scrollUntilVisible:
+    element: '.*ログアウト.*'
+    direction: DOWN
+- tapOn: '.*ログアウト.*'
+# 上と同じ理由で確認ダイアログの実行ボタンは座標指定。
+- tapOn:
+    point: '68%,56%'
+- extendedWaitUntil:
+    visible: '走る距離が、絆になる。'
+    timeout: 60000
+- takeScreenshot: shots/15-logged-out

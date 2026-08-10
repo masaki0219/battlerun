@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { calendarWeekKey, daysLeft, hasHighTrainingLoad, streakDays, weekOverWeek, weekStartLabel, weeklyBuckets } from '../utils/displayStats';
+import { calendarWeekKey, daysLeft, hasHighTrainingLoad, rollingWeekBuckets, streakDays, weekOverWeek, weekStartLabel, weeklyBuckets } from '../utils/displayStats';
 import { emptyAutoPauseDetector, evaluateAutoPause } from '../utils/autoPause';
 import { buildVoiceCoachAnnouncement, DEFAULT_VOICE_COACH_SETTINGS, spokenPace } from '../utils/voiceCoach';
 import { isQuietHours } from '../utils/notificationTiming';
@@ -40,6 +40,14 @@ assert.deepEqual(weekOverWeek(boundaryItems, tuesday), { thisWeekKm: 2, lastWeek
 assert.equal(weeklyBuckets(boundaryItems, tuesday).reduce((sum, day) => sum + day.km, 0), 2);
 assert.equal(weeklyBuckets(boundaryItems, tuesday)[0].label, '月'); // 月曜始まり固定
 assert.equal(weeklyBuckets(boundaryItems, tuesday)[1].isToday, true); // 火曜=今日
+const rolling = rollingWeekBuckets([
+  activity('2026-06-30T07:00:00+09:00', 9),
+  activity('2026-07-02T07:00:00+09:00', 1),
+  activity('2026-07-07T07:00:00+09:00', 2),
+], tuesday);
+assert.deepEqual(rolling.map((day) => day.label), ['水', '木', '金', '土', '日', '月', '火']);
+assert.equal(rolling.reduce((sum, day) => sum + day.km, 0), 3);
+assert.equal(rolling[6].isToday, true);
 assert.equal(weekStartLabel(now), '7月6日〜'); // 日曜時点でも週の起点は月曜
 assert.equal(daysLeft('invalid', now), null);
 assert.equal(daysLeft('2026-07-14T12:00:00+09:00', now), 2);

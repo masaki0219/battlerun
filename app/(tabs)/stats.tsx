@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRecentActivities } from '../../hooks/useRecentActivities';
 import { useAuthStore } from '../../stores/authStore';
-import { calendarWeekKey, calendarWeekStart, formatDistanceKm, hasHighTrainingLoad, weeklyBuckets, streakDays, relativeDay } from '../../utils/displayStats';
+import { calendarWeekKey, formatRunDistanceKm, hasHighTrainingLoad, rollingWeekBuckets, weeklyBuckets, streakDays, relativeDay } from '../../utils/displayStats';
 import { Colors, Spacing, BorderRadius, Shadow, TextStyles, Typography } from '../../design_tokens';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { WeeklyBarChart } from '../../components/viz/WeeklyBarChart';
@@ -90,13 +90,13 @@ export default function StatsScreen() {
   );
   const personalRecords = user?.personalRecords;
   const longestRecordKm = personalRecords?.longestRunKm ?? longestRun;
-  const weekBuckets = weeklyBuckets(activities, now);
-  const weekTotal = weekBuckets.reduce((sum, day) => sum + day.km, 0);
-  // 「今週」表示・週間バーと同じカレンダー週（月曜始まり）で数える
-  const weekStartMs = calendarWeekStart(now).getTime();
+  const rollingBuckets = rollingWeekBuckets(activities, now);
+  const calendarWeekBuckets = weeklyBuckets(activities, now);
+  const weekTotal = rollingBuckets.reduce((sum, day) => sum + day.km, 0);
+  const rollingStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6).getTime();
   const weekCount = activities.filter((activity) => {
     const started = new Date(activity.startedAt).getTime();
-    return !Number.isNaN(started) && started >= weekStartMs;
+    return !Number.isNaN(started) && started >= rollingStart && started <= now.getTime();
   }).length;
   const streak = streakDays(activities, now);
   const highTrainingLoad = hasHighTrainingLoad(activities, now);
@@ -187,11 +187,11 @@ export default function StatsScreen() {
           )}
           <View>
             <View style={styles.sectionHead}>
-              <Text style={styles.sectionTitle}>今週</Text>
+              <Text style={styles.sectionTitle}>直近7日</Text>
               <StreakChip days={streak} />
             </View>
             <View style={styles.weekCard}>
-              <WeeklyBarChart days={weekBuckets} height={84} showTotal={false} />
+              <WeeklyBarChart days={rollingBuckets} height={84} showTotal={false} periodLabel="直近7日" />
               <View style={styles.weekTotals}>
                 <View style={styles.weekTotalCell}>
                   <Text style={styles.statLabel}>合計</Text>
@@ -206,7 +206,7 @@ export default function StatsScreen() {
             <View style={styles.goalBlock}>
               <WeeklyGoalProgress
                 goal={user?.weeklyGoal}
-                days={weekBuckets}
+                days={calendarWeekBuckets}
                 onPress={() => setShowWeeklyGoal(true)}
               />
             </View>
@@ -271,7 +271,7 @@ export default function StatsScreen() {
             <SummaryCard label="距離" value={lifetimeKm.toFixed(1)} unit="km" note={lifetimeNote} />
             <SummaryCard
               label="最長ラン"
-              value={longestRecordKm.toFixed(1)}
+              value={formatRunDistanceKm(longestRecordKm)}
               unit="km"
               note="自己ベスト"
               icon="trophy-outline"
@@ -297,7 +297,7 @@ export default function StatsScreen() {
               </View>
               <View style={styles.personalRecordsDivider} />
               <View style={styles.personalRecordsRow}>
-                <PersonalRecordCell label="最長距離" value={longestRecordKm > 0 ? `${longestRecordKm.toFixed(1)} km` : '—'} />
+                <PersonalRecordCell label="最長距離" value={longestRecordKm > 0 ? `${formatRunDistanceKm(longestRecordKm)} km` : '—'} />
                 <PersonalRecordCell label="最高月間" value={bestMonthRecordKm > 0 ? `${bestMonthRecordKm.toFixed(1)} km` : '—'} />
               </View>
             </View>
@@ -354,7 +354,7 @@ export default function StatsScreen() {
                         </View>
                         <View style={styles.rowMain}>
                           <View style={styles.distanceLine}>
-                            <Text style={styles.rowDistance}>{formatDistanceKm(activity.distanceKm)} km</Text>
+                            <Text style={styles.rowDistance}>{formatRunDistanceKm(activity.distanceKm)} km</Text>
                             {isBest && <Text style={styles.bestBadge}>{decorLabel('最長', 'BEST')}</Text>}
                           </View>
                           <Text style={styles.rowDetail}>

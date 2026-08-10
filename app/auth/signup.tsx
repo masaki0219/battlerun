@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, TouchableOpacity,
-  KeyboardAvoidingView, Platform, Alert,
+  KeyboardAvoidingView, Platform, Alert, ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -9,6 +9,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { authErrorMessage } from '../../lib/authErrors';
 import { validateDisplayName, DISPLAY_NAME_MAX_LENGTH } from '../../lib/validation/displayName';
 import { Button } from '../../components/ui/Button';
+import { SocialAuthButtons } from '../../components/auth/SocialAuthButtons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../design_tokens';
 
 export default function SignupScreen() {
@@ -42,13 +43,18 @@ export default function SignupScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.logo}>ZELIO</Text>
-          <Text style={styles.tagline}>新規アカウント作成</Text>
-        </View>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboard}>
+        <ScrollView
+          contentContainerStyle={styles.container}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.header}>
+            <Text style={styles.logo}>ZELIO</Text>
+            <Text style={styles.tagline}>新規アカウント作成</Text>
+          </View>
 
-        <View style={styles.form}>
+          <View style={styles.form}>
           <TextInput
             style={styles.input}
             placeholder={`ニックネーム（${DISPLAY_NAME_MAX_LENGTH}文字以内）`}
@@ -87,16 +93,18 @@ export default function SignupScreen() {
           />
           <Text style={styles.nameNote}>ニックネームは他の参加者のランキングに表示されます。</Text>
 
-          <Button label="アカウントを作成" onPress={handleSignup} loading={isLoading} style={styles.btn} />
-          {/* オンボーディングから replace で来た場合は戻り先が無いため back() は使わない */}
-          <Button label="ログインに戻る" onPress={() => router.replace('/auth/login')} variant="ghost" />
-          <Text style={styles.consent}>登録すると、以下の内容に同意したものとみなされます。</Text>
-          <View style={styles.legalRow}>
-            <TouchableOpacity onPress={() => router.push('/legal/terms')} accessibilityRole="link"><Text style={styles.legalText}>利用規約</Text></TouchableOpacity>
-            <Text style={styles.legalDivider}>・</Text>
-            <TouchableOpacity onPress={() => router.push('/legal/privacy')} accessibilityRole="link"><Text style={styles.legalText}>プライバシーポリシー</Text></TouchableOpacity>
+            <Button label="アカウントを作成" onPress={handleSignup} loading={isLoading} style={styles.btn} />
+            <SocialAuthButtons mode="sign-up" />
+            {/* オンボーディングから replace で来た場合は戻り先が無いため back() は使わない */}
+            <Button label="ログインに戻る" onPress={() => router.replace('/auth/login')} variant="ghost" />
+            <Text style={styles.consent}>登録すると、以下の内容に同意したものとみなされます。</Text>
+            <View style={styles.legalRow}>
+              <TouchableOpacity onPress={() => router.push('/legal/terms')} accessibilityRole="link"><Text style={styles.legalText}>利用規約</Text></TouchableOpacity>
+              <Text style={styles.legalDivider}>・</Text>
+              <TouchableOpacity onPress={() => router.push('/legal/privacy')} accessibilityRole="link"><Text style={styles.legalText}>プライバシーポリシー</Text></TouchableOpacity>
+            </View>
           </View>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -104,8 +112,9 @@ export default function SignupScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
-  container: { flex: 1, justifyContent: 'center', paddingHorizontal: Spacing['2xl'] },
-  header: { alignItems: 'center', marginBottom: Spacing['4xl'] },
+  keyboard: { flex: 1 },
+  container: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: Spacing['2xl'], paddingVertical: Spacing['2xl'] },
+  header: { alignItems: 'center', marginBottom: Spacing['2xl'] },
   logo: { fontSize: Typography.fontSize['2xl'], fontWeight: Typography.fontWeight.extrabold, color: Colors.primary },
   tagline: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary, marginTop: Spacing.sm },
   form: { gap: Spacing.md },

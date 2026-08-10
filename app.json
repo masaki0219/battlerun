@@ -16,6 +16,8 @@
       "icon": "./assets/icon.png",
       "supportsTablet": false,
       "bundleIdentifier": "com.masaki.zelio",
+      "usesAppleSignIn": true,
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "CFBundleDisplayName": "ZELIO",
         "NSLocationWhenInUseUsageDescription": "ランニング・ウォーキングの走行距離を計測し、参加中のチャレンジへ反映するために位置情報を使用します。",
@@ -42,7 +44,8 @@
         "FOREGROUND_SERVICE_LOCATION",
         "ACTIVITY_RECOGNITION"
       ],
-      "package": "com.masaki.zelio"
+      "package": "com.masaki.zelio",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -50,6 +53,11 @@
     },
     "plugins": [
       "expo-router",
+      "expo-apple-authentication",
+      "./plugins/with-rnfirebase-static",
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      "react-native-nitro-google-signin",
       [
         "expo-splash-screen",
         {

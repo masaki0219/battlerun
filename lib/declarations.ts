@@ -19,25 +19,12 @@ import {
   shouldCompleteDeclaration,
 } from '../utils/declarations';
 import { validateDeclarationNote } from './validation/declaration';
+import { cachedPublicProfile } from './publicProfileCache';
 import type { RunDeclaration } from '../types';
-
-const profileCache = new Map<string, { name: string; avatarEmoji?: string }>();
 
 function timestampIso(value: unknown): string {
   const timestamp = value as { toDate?: () => Date } | undefined;
   return timestamp?.toDate?.().toISOString() ?? '';
-}
-
-async function declarationProfile(uid: string) {
-  const cached = profileCache.get(uid);
-  if (cached) return cached;
-  const snapshot = await getDoc(doc(db, 'publicProfiles', uid));
-  const profile = {
-    name: (snapshot.data()?.['name'] as string | undefined) ?? 'メンバー',
-    avatarEmoji: (snapshot.data()?.['avatarEmoji'] as string | undefined) ?? undefined,
-  };
-  profileCache.set(uid, profile);
-  return profile;
 }
 
 export function subscribeTodayDeclarations(
@@ -65,7 +52,7 @@ export function subscribeTodayDeclarations(
         ? Promise.resolve(false)
         : getDoc(doc(cheers, currentUserId)).then((snapshot) => snapshot.exists());
       const [profile, ownCheer, cheerCount] = await Promise.all([
-        declarationProfile(uid),
+        cachedPublicProfile(uid),
         ownCheerPromise,
         getCountFromServer(cheers),
       ]);

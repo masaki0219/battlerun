@@ -25,7 +25,7 @@ function todayStr(): string {
  * - 順位が変わった陣営には、比較や行動を煽らない中立的な更新通知を送る
  * - 1バトルあたり1日3回まで（rankChangeNotifyCount/rankChangeNotifyDateで制御）
  */
-export const rankChangeScheduler = onSchedule('every 60 minutes', async () => {
+export async function runRankChangeScan(): Promise<void> {
   const db = getFirestore();
 
   const activeSnap = await db.collection('battles').where('status', '==', 'active').get();
@@ -107,4 +107,6 @@ export const rankChangeScheduler = onSchedule('every 60 minutes', async () => {
       rankChangeNotifyDate: notifyDate,
     });
   }
-});
+}
+
+export const rankChangeScheduler = onSchedule('every 60 minutes', runRankChangeScan);

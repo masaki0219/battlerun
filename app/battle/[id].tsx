@@ -28,7 +28,8 @@ import type { CategoryStats, Battle, Category } from '../../types';
 import { inviteWebUrl } from '../../lib/invite';
 import { useBlockedUsers } from '../../hooks/useBlockedUsers';
 import { prioritizeTeams } from '../../utils/teamDisplay';
-import { comebackTarget } from '../../utils/displayStats';
+import { comebackTarget, formatRunDistanceKm } from '../../utils/displayStats';
+import { cachedPublicProfile } from '../../lib/publicProfileCache';
 
 // ─── countdown helpers ─────────────────────────────────────────
 function timeLeft(endAt: string): { d: number; h: number; m: number } {
@@ -47,8 +48,8 @@ interface RecentActivity {
   id: string;
   userId: string;
   displayName: string;
+  avatarEmoji?: string;
   distanceKm: number;
-  ago: string;
   isMe: boolean;
 }
 
@@ -176,29 +177,19 @@ export default function BattleDetailScreen() {
     );
     getDocs(q)
       .then((snap) => {
-        const now = Date.now();
-        const items: RecentActivity[] = snap.docs.map((d) => {
+        void Promise.all(snap.docs.map(async (d): Promise<RecentActivity> => {
           const data = d.data() as Record<string, unknown>;
-          const startedRaw = data['startedAt'] as any;
-          const startedMs: number =
-            startedRaw?.toMillis?.() ??
-            (startedRaw?.seconds ? (startedRaw.seconds as number) * 1000 : now);
-          const diffMin = Math.floor((now - startedMs) / 60000);
-          const ago = diffMin < 60
-            ? `${diffMin}分前`
-            : diffMin < 1440
-            ? `${Math.floor(diffMin / 60)}時間前`
-            : `${Math.floor(diffMin / 1440)}日前`;
+          const userId = data['userId'] as string;
+          const profile = await cachedPublicProfile(userId).catch(() => null);
           return {
             id: d.id,
-            userId: data['userId'] as string,
-            displayName: (data['displayName'] as string | undefined) ?? 'メンバー',
+            userId,
+            displayName: profile?.name ?? (data['displayName'] as string | undefined) ?? 'メンバー',
+            avatarEmoji: profile?.avatarEmoji,
             distanceKm: (data['distanceKm'] as number) ?? 0,
-            ago,
-            isMe: (data['userId'] as string) === user.id,
+            isMe: userId === user.id,
           };
-        });
-        setRecentActivities(items);
+        })).then(setRecentActivities);
       })
       .catch(() => { /* activities may not have battleIds index yet */ });
   }, [id, user]);
@@ -492,6 +483,7 @@ export default function BattleDetailScreen() {
               contributions={processContributions}
               currentUserId={user?.id}
               blockedUserIds={blockedUserIds}
+              teamColor={myCatId ? colorsByCategory[myCatId] : undefined}
             />
           </View>
         )}
@@ -526,11 +518,12 @@ export default function BattleDetailScreen() {
             {visibleRecentActivities.map((a) => (
               <ListRow
                 key={a.id}
-                icon="walk"
+                avatarName={a.displayName}
+                avatarEmoji={a.avatarEmoji}
                 iconColor={a.isMe ? Colors.primary : Colors.textTertiary}
                 iconBg={a.isMe ? Colors.primaryLight : Colors.surfaceGray}
                 title={a.displayName}
-                subtitle={`${a.distanceKm.toFixed(1)}km走った · ${a.ago}`}
+                subtitle={`${formatRunDistanceKm(a.distanceKm)}km走った`}
                 titleColor={a.isMe ? Colors.primary : undefined}
                 onPress={() => router.push(`/activity/${a.id}` as any)}
               />
