@@ -678,7 +678,7 @@ const s = StyleSheet.create({
   rankBeforeLabel: { fontSize: 9, color: Colors.textTertiary, fontWeight: '700', letterSpacing: 1, marginBottom: 4 },
   rankBox: {
     width: 54, height: 54, borderRadius: BorderRadius.md,
-    backgroundColor: Colors.surfaceAlt,
+    backgroundColor: Colors.surfaceGray,
     alignItems: 'center', justifyContent: 'center',
   },
   rankBoxNum: { fontSize: 32, fontWeight: '800', color: Colors.textSecondary, lineHeight: 36, fontVariant: ['tabular-nums'] },
@@ -711,7 +711,7 @@ const s = StyleSheet.create({
   impactTeamText: { fontSize: 14, fontWeight: '800', color: Colors.textPrimary, marginTop: 2 },
   impactMoreText: { fontSize: 10, color: Colors.textSecondary, fontWeight: '600', marginTop: 4 },
   impactAddLabel: { fontSize: 10, color: Colors.textTertiary, fontWeight: '700', letterSpacing: 1 },
-  impactAddVal: { fontSize: 24, color: Colors.accent, fontWeight: '800', lineHeight: 28, fontVariant: ['tabular-nums'] },
+  impactAddVal: { fontSize: 24, color: Colors.accentText, fontWeight: '800', lineHeight: 28, fontVariant: ['tabular-nums'] },
   impactAddUnit: { fontSize: 11, color: Colors.textTertiary },
   impactLimitText: { marginTop: 2, fontSize: 8, color: Colors.textSecondary },
 
@@ -728,10 +728,10 @@ const s = StyleSheet.create({
     shadowColor: Colors.accentYellow, shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.4, shadowRadius: 12, elevation: 6,
   },
-  badgeKicker: { fontSize: 12, fontWeight: '700', color: Colors.accentYellow },
+  badgeKicker: { fontSize: 12, fontWeight: '700', color: Colors.goldText },
   badgeTitle: { fontSize: 15, fontWeight: '900', color: Colors.textPrimary, marginTop: 1 },
   badgeSub: { fontSize: 11, color: Colors.textSecondary, marginTop: 1 },
-  badgeNew: { fontSize: 11, color: Colors.accentYellow, fontWeight: '800' },
+  badgeNew: { fontSize: 11, color: Colors.goldText, fontWeight: '800' },
 
   // Share
   routeShareToggle: {

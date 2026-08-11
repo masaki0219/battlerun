@@ -92,10 +92,17 @@ function nonNegativeStat(value: unknown): number {
 }
 
 export default function ProfileScreen() {
-  const { user, proEntitlement, signOut, setRunningPresenceVisible } = useAuthStore();
+  const {
+    user,
+    proEntitlement,
+    signOut,
+    setRunningPresenceVisible,
+    setRunDeclarationVisible,
+  } = useAuthStore();
   const [purchasing, setPurchasing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [presenceSaving, setPresenceSaving] = useState(false);
+  const [declarationVisibilitySaving, setDeclarationVisibilitySaving] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [avatarCategoryId, setAvatarCategoryId] = useState(AVATAR_EMOJI_CATEGORIES[0].id);
   const [showDeletePasswordPrompt, setShowDeletePasswordPrompt] = useState(false);
@@ -170,6 +177,20 @@ export default function ProfileScreen() {
       Alert.alert('設定を更新できませんでした', '通信状態を確認して、もう一度お試しください。');
     } finally {
       setPresenceSaving(false);
+    }
+  }
+
+  async function handleDeclarationVisibility(visible: boolean) {
+    setDeclarationVisibilitySaving(true);
+    try {
+      await setRunDeclarationVisible(visible);
+    } catch (error) {
+      Alert.alert(
+        '設定を更新できませんでした',
+        error instanceof Error ? error.message : '通信状態を確認して、もう一度お試しください。',
+      );
+    } finally {
+      setDeclarationVisibilitySaving(false);
     }
   }
 
@@ -393,7 +414,7 @@ export default function ProfileScreen() {
               <View style={styles.userNameRow}>
                 <Text style={styles.userName} numberOfLines={1}>{user.name}</Text>
                 <View style={[styles.planBadge, userIsPro && styles.planBadgePro]}>
-                  {userIsPro && <Ionicons name="sparkles" size={10} color={Colors.accentYellow} />}
+                  {userIsPro && <Ionicons name="sparkles" size={10} color={Colors.goldText} />}
                   <Text style={[styles.planText, userIsPro && styles.planTextPro]}>{userIsPro ? 'Pro' : 'Free'}</Text>
                 </View>
               </View>
@@ -444,7 +465,7 @@ export default function ProfileScreen() {
             {userIsPro ? (
               <View style={styles.proRow}>
                 <View style={styles.proActiveRow}>
-                  <Ionicons name="sparkles" size={16} color={Colors.accentYellow} />
+                  <Ionicons name="sparkles" size={16} color={Colors.goldText} />
                   <Text style={styles.proLabel}>Proプラン 有効中</Text>
                 </View>
                 <TouchableOpacity onPress={() => Linking.openURL('https://apps.apple.com/account/subscriptions')} accessibilityRole="link">
@@ -454,7 +475,7 @@ export default function ProfileScreen() {
             ) : (
               <>
                 <View style={styles.proIntro}>
-                  <View style={styles.proIcon}><Ionicons name="diamond-outline" size={20} color={Colors.accentDark} /></View>
+                  <View style={styles.proIcon}><Ionicons name="diamond-outline" size={20} color={Colors.accentText} /></View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.proUpsellTitle}>もっと走りを楽しむ</Text>
                     <Text style={styles.freeDesc}>友達チャレンジ作成、透かしなし共有を利用できます。</Text>
@@ -520,6 +541,22 @@ export default function ProfileScreen() {
               />
             </View>
             <View style={styles.rowDivider} />
+            <View style={styles.profileRow}>
+              <View style={styles.profileRowIcon}><Ionicons name="flag-outline" size={18} color={Colors.primaryDark} /></View>
+              <View style={styles.profileRowBody}>
+                <Text style={styles.profileRowTitle}>ラン宣言をチームに公開</Text>
+                <Text style={styles.profileRowDetail}>予定時刻と20字以内のひとことを、同じチームだけに48時間以内公開します。位置情報は共有しません。</Text>
+              </View>
+              <Switch
+                value={user.runDeclarationVisible}
+                onValueChange={(visible) => void handleDeclarationVisibility(visible)}
+                disabled={declarationVisibilitySaving}
+                trackColor={{ false: Colors.surfaceGray, true: Colors.primaryLight }}
+                thumbColor={user.runDeclarationVisible ? Colors.primary : Colors.textTertiary}
+                accessibilityLabel="ラン宣言をチームに公開"
+              />
+            </View>
+            <View style={styles.rowDivider} />
             <ProfileRow icon="notifications-outline" title="通知センター" detail="チャレンジ・ランの通知を確認する" onPress={() => router.push('/notifications' as any)} />
             <View style={styles.rowDivider} />
             <ProfileRow icon="notifications-circle-outline" title="プッシュ通知を有効にする" detail="順位変動や終了時刻を受け取る" onPress={handleEnableNotifications} />
@@ -535,6 +572,8 @@ export default function ProfileScreen() {
         <View>
           <Text style={styles.sectionHeading}>ヘルプ・アプリ情報</Text>
           <View style={[styles.surfaceCard, styles.listCard]}>
+            <ProfileRow icon="book-outline" title="使い方ガイド" detail="記録・チャレンジ・安全設定を確認する" onPress={() => router.push('/guide' as any)} />
+            <View style={styles.rowDivider} />
             <ProfileRow icon="help-circle-outline" title="ヘルプ・お問い合わせ" onPress={() => router.push('/help' as any)} />
             <View style={styles.rowDivider} />
             <ProfileRow icon="information-circle-outline" title="ZELIOについて" detail={`バージョン ${Constants.expoConfig?.version ?? '—'}`} onPress={() => Alert.alert('ZELIO', '仲間と距離を競うチーム対抗ランニング・ウォーキングアプリです。')} />
@@ -732,7 +771,7 @@ const styles = StyleSheet.create({
   },
   planBadgePro: { backgroundColor: Colors.accentYellow + '33' },
   planText: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary },
-  planTextPro: { color: Colors.accentYellow, fontWeight: Typography.fontWeight.bold },
+  planTextPro: { color: Colors.goldText, fontWeight: Typography.fontWeight.bold },
   sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.md },
   sectionHeading: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary, marginBottom: Spacing.md },
   surfaceCard: { backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, borderWidth: 1, borderColor: Colors.border, overflow: 'hidden', ...Shadow.sm },
@@ -745,7 +784,7 @@ const styles = StyleSheet.create({
   proCard: { backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, borderWidth: 1, borderColor: Colors.accent, padding: Spacing.lg, ...Shadow.sm },
   proCardActive: { borderColor: Colors.border },
   freePlanBadge: { backgroundColor: Colors.accentLight, borderRadius: BorderRadius.sm, paddingHorizontal: Spacing.sm, paddingVertical: 4, marginBottom: Spacing.md },
-  freePlanText: { fontSize: 10, color: Colors.accentDark, fontWeight: Typography.fontWeight.bold },
+  freePlanText: { fontSize: 10, color: Colors.accentText, fontWeight: Typography.fontWeight.bold },
   proIntro: { flexDirection: 'row', gap: Spacing.md },
   proIcon: { width: 40, height: 40, borderRadius: BorderRadius.sm, backgroundColor: Colors.accentLight, alignItems: 'center', justifyContent: 'center' },
   proUpsellTitle: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.extrabold, color: Colors.textPrimary },
@@ -754,9 +793,9 @@ const styles = StyleSheet.create({
   planOption: { flex: 1, alignItems: 'center', gap: 2, borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.md, paddingVertical: Spacing.sm },
   planOptionSelected: { borderColor: Colors.accent, backgroundColor: Colors.accentLight },
   planPeriod: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary, fontWeight: Typography.fontWeight.semibold },
-  planPeriodSelected: { color: Colors.accentDark },
+  planPeriodSelected: { color: Colors.accentText },
   planPrice: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.extrabold, color: Colors.textPrimary },
-  planPriceSelected: { color: Colors.accentDark },
+  planPriceSelected: { color: Colors.accentText },
   proStartButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.xs, backgroundColor: Colors.accent, borderRadius: BorderRadius.md, paddingVertical: Spacing.md, marginTop: Spacing.md },
   proStartButtonDisabled: { backgroundColor: Colors.textTertiary, opacity: 0.6 },
   proStartText: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.extrabold, color: Colors.textOnAccent },
@@ -779,7 +818,7 @@ const styles = StyleSheet.create({
   titleRankWrap: { width: 40, height: 40, backgroundColor: Colors.primaryLight, borderRadius: BorderRadius.sm, alignItems: 'center', justifyContent: 'center' },
   titleRankWrapSelected: { backgroundColor: Colors.accentLight },
   titleRank: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.primaryDark },
-  titleRankSelected: { color: Colors.accentDark },
+  titleRankSelected: { color: Colors.accentText },
   titleInfo: { flex: 1 },
   titleNameRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   titleName: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
@@ -948,7 +987,7 @@ const styles = StyleSheet.create({
   },
   devToggleText: {
     fontSize: Typography.fontSize.sm,
-    color: Colors.accentYellow,
+    color: Colors.goldText,
     fontWeight: Typography.fontWeight.semibold,
   },
   badgeLinkCard: {

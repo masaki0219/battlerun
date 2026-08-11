@@ -8,7 +8,7 @@ import { Colors, Spacing, Typography } from '../../design_tokens';
 export interface LegalSection {
   heading: string;
   body: string;
-  action?: { label: string; url: string };
+  action?: { label: string; url: string; route?: never } | { label: string; route: string; url?: never };
 }
 
 export function LegalDocument({ title, updatedAt, sections, topContent }: {
@@ -37,12 +37,16 @@ export function LegalDocument({ title, updatedAt, sections, topContent }: {
             {section.action && (
               <TouchableOpacity
                 style={styles.action}
-                onPress={() => void Linking.openURL(section.action!.url)}
-                accessibilityRole="link"
+                onPress={() => {
+                  const action = section.action!;
+                  if (action.route) router.push(action.route as never);
+                  else if (action.url) void Linking.openURL(action.url);
+                }}
+                accessibilityRole={section.action.route ? 'button' : 'link'}
                 accessibilityLabel={section.action.label}
               >
                 <Text style={styles.actionText}>{section.action.label}</Text>
-                <Ionicons name="open-outline" size={14} color={Colors.primaryDark} />
+                <Ionicons name={section.action.route ? 'chevron-forward' : 'open-outline'} size={14} color={Colors.primaryDark} />
               </TouchableOpacity>
             )}
           </View>

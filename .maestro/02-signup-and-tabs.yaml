@@ -90,20 +90,25 @@ appId: host.exp.Exponent
 - assertVisible: '.*週末ロング班.*'
 - takeScreenshot: shots/11-battle-list
 
-# 残り3タブへ遷移する。
+# 残り4タブへ遷移する。
+- tapOn: 'フレンド'
+- waitForAnimationToEnd
+- assertVisible: '招待コードをお持ちですか？'
+- takeScreenshot: shots/12-friends
+
 - tapOn: 'ラン'
 - waitForAnimationToEnd
-- takeScreenshot: shots/12-record
+- takeScreenshot: shots/13-record
 
 - tapOn: '記録'
 - waitForAnimationToEnd
-- takeScreenshot: shots/13-stats
+- takeScreenshot: shots/14-stats
 
 - tapOn: 'プロフィール'
 - extendedWaitUntil:
     visible: '.*E2Eランナー.*'
     timeout: 30000
-- takeScreenshot: shots/14-profile
+- takeScreenshot: shots/15-profile
 
 # ログアウトして未ログイン状態へ戻す（次回の実行を同じ前提から始められるようにする）。
 - scrollUntilVisible:
@@ -116,4 +121,4 @@ appId: host.exp.Exponent
 - extendedWaitUntil:
     visible: '走る距離が、絆になる。'
     timeout: 60000
-- takeScreenshot: shots/15-logged-out
+- takeScreenshot: shots/16-logged-out

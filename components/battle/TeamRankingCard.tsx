@@ -196,7 +196,7 @@ const styles = StyleSheet.create({
     fontWeight: Typography.fontWeight.bold,
     fontVariant: ['tabular-nums'],
   },
-  declarationText: { color: Colors.accentDark },
+  declarationText: { color: Colors.accentText },
   activeDaysText: { color: Colors.primary },
   processNote: {
     marginTop: Spacing.xs,

@@ -1,18 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  ActivityIndicator, Alert, Share,
+  ActivityIndicator, Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as Clipboard from 'expo-clipboard';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router } from 'expo-router';
 import { getDoc, doc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import { useBattleStore } from '../../stores/battleStore';
-import { parseLocalDate } from '../../utils/dateInput';
 import { useUnreadNotifications } from '../../hooks/useUnreadNotifications';
 import { useRecentActivities } from '../../hooks/useRecentActivities';
 import { useBattleCategoryStats } from '../../hooks/useBattleCategoryStats';
@@ -27,9 +25,6 @@ import { CategorySelectModal } from '../../components/battle/CategorySelectModal
 import { ActiveBattleHero } from '../../components/battle/ActiveBattleHero';
 import { ActiveBattleSwitcher } from '../../components/battle/ActiveBattleSwitcher';
 import { PublicBattleCard } from '../../components/battle/PublicBattleCard';
-import { PrivateBattleCard } from '../../components/battle/PrivateBattleCard';
-import { PrivateBattleCreateForm } from '../../components/battle/PrivateBattleCreateForm';
-import { InviteCodeJoinView } from '../../components/battle/InviteCodeJoinView';
 import { TeamRankingCard } from '../../components/battle/TeamRankingCard';
 import { DeclarationCard, DeclarationList } from '../../components/battle/DeclarationCard';
 import { RunningPresenceCard } from '../../components/battle/RunningPresenceCard';
@@ -38,36 +33,29 @@ import { useTeamRanking } from '../../hooks/useTeamRanking';
 import { useBattleProcessContributions } from '../../hooks/useBattleProcessContributions';
 import { useBattlePresence } from '../../hooks/useBattlePresence';
 import { useBlockedUsers } from '../../hooks/useBlockedUsers';
-import { weeklyBuckets, streakDays, weekOverWeek, weekStartLabel } from '../../utils/displayStats';
+import { rollingWeekBuckets, weeklyBuckets, streakDays } from '../../utils/displayStats';
 import {
   resolveDisplayedBattle,
   selectedBattleStorageKey,
   sortActiveBattlesForDisplay,
 } from '../../utils/battleSelection';
-import { Colors, Typography, Spacing, BorderRadius, Shadow, TeamColorOptions, teamColorMap } from '../../design_tokens';
-import type { Battle, Category, CategoryStats, RunningPresence, TeamColorId } from '../../types';
+import { Colors, Typography, Spacing, BorderRadius, Shadow, teamColorMap } from '../../design_tokens';
+import type { Battle, CategoryStats, RunningPresence } from '../../types';
 import type { ReportTarget } from '../../lib/moderation';
-import { inviteWebUrl, normalizeInviteCode, PENDING_INVITE_CODE_KEY } from '../../lib/invite';
-
-type Tab = 'public' | 'private';
-type PrivateView = 'list' | 'create' | 'join_code' | 'join_select';
 
 // ────────────────────────────────────────────────────────────────
 // メイン画面（state・購読・handler を集約。表示は components/battle/* に委譲）
 // ────────────────────────────────────────────────────────────────
 export default function BattleScreen() {
-  const params = useLocalSearchParams<{ inviteCode?: string; open?: string }>();
-  const { user, proEntitlement } = useAuthStore();
-  const userIsPro = user?.plan === 'pro' || proEntitlement;
+  const { user } = useAuthStore();
   const unreadNotifications = useUnreadNotifications();
   const {
     publicBattles, privateBattles, myMemberships, seasons, isLoading,
     fetchPublicBattles, fetchMyMemberships, fetchMyPrivateBattles, fetchSeason,
-    joinBattle, createBattle, findBattleByInviteCode, declarationsByBattle,
+    joinBattle, declarationsByBattle,
     subscribeDeclarations, declareRun, updateDeclaration, cancelDeclaration, cheerDeclaration,
   } = useBattleStore();
 
-  const [activeTab, setActiveTab] = useState<Tab>('public');
   const [joiningBattleId, setJoiningBattleId] = useState<string | null>(null);
   const [localLoading, setLocalLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -90,31 +78,6 @@ export default function BattleScreen() {
   const [safetyTarget, setSafetyTarget] = useState<ReportTarget | null>(null);
   const [safetyDisplayName, setSafetyDisplayName] = useState('このユーザー');
   const { blockedUserIds } = useBlockedUsers(user?.id);
-
-  // 友達チャレンジビュー
-  const [privateView, setPrivateView] = useState<PrivateView>('list');
-  const [inviteCode, setInviteCode] = useState('');
-  const [foundBattle, setFoundBattle] = useState<Battle | null>(null);
-  const [searching, setSearching] = useState(false);
-
-  // Web招待リンクや認証前に保管したコードを、友達チャレンジ参加フォームへ引き継ぐ。
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const fromParam = normalizeInviteCode(params.inviteCode);
-      const fromStorage = fromParam
-        ? null
-        : normalizeInviteCode(await AsyncStorage.getItem(PENDING_INVITE_CODE_KEY));
-      const pendingCode = fromParam ?? fromStorage;
-      if (!pendingCode || cancelled) return;
-      setInviteCode(pendingCode);
-      setFoundBattle(null);
-      setActiveTab('private');
-      setPrivateView('join_code');
-      await AsyncStorage.removeItem(PENDING_INVITE_CODE_KEY);
-    })();
-    return () => { cancelled = true; };
-  }, [params.inviteCode]);
 
   // 閲覧中チャレンジはユーザーごとに保存する。別ユーザーへの選択状態の引き継ぎを防ぐ。
   useEffect(() => {
@@ -139,34 +102,6 @@ export default function BattleScreen() {
     return () => { cancelled = true; };
   }, [user?.id]);
 
-  // 友達チャレンジ作成フォーム
-  const [createTitle, setCreateTitle] = useState('');
-  const [createDesc, setCreateDesc] = useState('');
-  const [createCategories, setCreateCategories] = useState<Category[]>([
-    { id: '', label: '', colorId: TeamColorOptions[0].id },
-    { id: '', label: '', colorId: TeamColorOptions[1].id },
-  ]);
-
-  // 結果画面などから「作成」を選んだ場合、同じタブ内の作成フォームまで正しく開く。
-  useEffect(() => {
-    if (params.open !== 'create' || !user) return;
-    if (!userIsPro) {
-      Alert.alert(
-        'Proプランが必要です',
-        '友達チャレンジの作成にはProプランが必要です。\nプロフィール画面からアップグレードできます。',
-      );
-      router.setParams({ open: '' });
-      return;
-    }
-    setActiveTab('private');
-    setPrivateView('create');
-    router.setParams({ open: '' });
-  }, [params.open, user?.id, userIsPro]);
-  const [createRankingType, setCreateRankingType] = useState<'average' | 'total'>('average');
-  const [createStartAt, setCreateStartAt] = useState('');
-  const [createEndAt, setCreateEndAt] = useState('');
-  const [creating, setCreating] = useState(false);
-
   // 参加者個人距離（バトルIDごと）
   const [myDistancePerBattle, setMyDistancePerBattle] = useState<Record<string, number>>({});
   // 一覧カードの陣営折りたたみ状態
@@ -174,9 +109,9 @@ export default function BattleScreen() {
 
   // 直近アクティビティ（週間バー・ストリーク用）※read-only、useRecentActivities のみ
   const { activities: recentActivities } = useRecentActivities(50);
-  const weekBuckets = weeklyBuckets(recentActivities);
+  const rollingBuckets = rollingWeekBuckets(recentActivities);
+  const calendarWeekBuckets = weeklyBuckets(recentActivities);
   const streak = streakDays(recentActivities);
-  const week = weekOverWeek(recentActivities);
 
   function toggleExpanded(id: string) {
     setExpandedBattles((prev) => {
@@ -268,10 +203,6 @@ export default function BattleScreen() {
   // 「他のチャレンジ」セクションには、上の切替UIにある参加中チャレンジを再掲しない
   const activeBattleIdSet = new Set(activeBattles.map((b) => b.id));
   const otherPublicBattles = publicBattles.filter((b) => !activeBattleIdSet.has(b.id));
-  const otherPrivateBattles = privateBattles.filter((b) => (
-    !activeBattleIdSet.has(b.id)
-    && (b.createdBy === user?.id || !b.createdBy || !blockedUserIds.has(b.createdBy))
-  ));
   const displayedMembership = displayedBattle
     ? myMemberships.find((m) => m.battleId === displayedBattle.id)
     : null;
@@ -288,18 +219,18 @@ export default function BattleScreen() {
   }
 
   useEffect(() => {
-    if (!displayedBattle || !user) return;
-    return subscribeDeclarations(displayedBattle.id, user.id);
-  }, [displayedBattle?.id, user?.id]);
+    if (!displayedBattle || !displayedCategoryId || !user) return;
+    return subscribeDeclarations(displayedBattle.id, user.id, displayedCategoryId);
+  }, [displayedBattle?.id, displayedCategoryId, user?.id]);
 
   // 自分の陣営内での立ち位置（ヒーローのフッターとチーム内ランキングで共用）
   const teamRanking = useTeamRanking(displayedBattle?.id, displayedCategoryId, user?.id);
-  const processContributions = useBattleProcessContributions(displayedBattle?.id);
+  const processContributions = useBattleProcessContributions(displayedBattle?.id, displayedCategoryId ?? undefined);
 
   async function handleDeclareRun(plannedAt: Date, note: string) {
-    if (!displayedBattle || !user) return;
+    if (!displayedBattle || !displayedCategoryId || !user) return;
     try {
-      await declareRun(displayedBattle.id, user.id, plannedAt, note);
+      await declareRun(displayedBattle.id, user.id, displayedCategoryId, plannedAt, note);
     } catch (error) {
       Alert.alert('宣言できませんでした', error instanceof Error ? error.message : '通信状態を確認して、もう一度お試しください。');
       throw error;
@@ -368,7 +299,7 @@ export default function BattleScreen() {
     if (!user) return;
     setJoiningBattleId(battle.id);
     try {
-      await joinBattle(battle.id, categoryId, user.id);
+      await joinBattle(battle.id, categoryId, user.id, battle.type === 'private' ? battle.inviteCode : null);
       void registerPushToken(user.id, true);
       void scheduleBattleEndNotification(battle);
       void scheduleBattleEnd1hNotification(battle);
@@ -385,125 +316,6 @@ export default function BattleScreen() {
       Alert.alert('エラー', e.message ?? '参加に失敗しました');
     } finally {
       setJoiningBattleId(null);
-    }
-  }
-
-  async function handleSearchInviteCode() {
-    if (!inviteCode.trim()) return;
-    setSearching(true);
-    try {
-      const battle = await findBattleByInviteCode(inviteCode);
-      setFoundBattle(battle);
-      setPrivateView('join_select');
-    } catch (e: any) {
-      Alert.alert('エラー', e.message ?? '招待コードが見つかりません');
-    } finally {
-      setSearching(false);
-    }
-  }
-
-  async function handleCreateBattle() {
-    if (!user) return;
-    if (!createTitle.trim()) {
-      Alert.alert('入力エラー', 'チャレンジ名を入力してください');
-      return;
-    }
-    const validCats = createCategories.filter((c) => c.label.trim());
-    if (validCats.length < 2) {
-      Alert.alert('入力エラー', 'チームを2つ以上入力してください');
-      return;
-    }
-    if (!createStartAt || !createEndAt) {
-      Alert.alert('入力エラー', '開始日と終了日を入力してください（YYYY-MM-DD）');
-      return;
-    }
-    // UTC解釈（new Date('YYYY-MM-DD')）だとJSTでは朝9:00が締切になるため、ローカルで解釈し
-    // 終了日は23:59:59まで含める（PeriodPickerの「終了日の23:59まで」表示・admin側と同じ扱い）。
-    const startDate = parseLocalDate(createStartAt);
-    const endDate = parseLocalDate(createEndAt, true);
-    if (!startDate || !endDate) {
-      Alert.alert('入力エラー', '日付の形式が正しくありません（例: 2026-06-01）');
-      return;
-    }
-    if (endDate <= startDate) {
-      Alert.alert('入力エラー', '終了日は開始日より後にしてください');
-      return;
-    }
-
-    setCreating(true);
-    try {
-      await createBattle({
-        title: createTitle.trim(),
-        description: createDesc.trim(),
-        // ID生成は createBattle 側に集約。ラベルのみ渡す（id は無視される）。
-        categories: validCats.map((c) => ({ id: '', label: c.label.trim(), colorId: c.colorId })),
-        rankingType: createRankingType,
-        startAt: startDate,
-        endAt: endDate,
-        userId: user.id,
-        isPublic: false,
-      });
-      await fetchMyPrivateBattles(user.id);
-      setPrivateView('list');
-      resetCreateForm();
-      Alert.alert('作成完了', 'チャレンジを作成しました！招待コードはチャレンジ一覧から確認できます');
-    } catch (e: any) {
-      Alert.alert('エラー', e.message ?? '作成に失敗しました');
-    } finally {
-      setCreating(false);
-    }
-  }
-
-  function resetCreateForm() {
-    setCreateTitle('');
-    setCreateDesc('');
-    setCreateCategories([
-      { id: '', label: '', colorId: TeamColorOptions[0].id },
-      { id: '', label: '', colorId: TeamColorOptions[1].id },
-    ]);
-    setCreateRankingType('average');
-    setCreateStartAt('');
-    setCreateEndAt('');
-  }
-
-  function addCategory() {
-    setCreateCategories((prev) => {
-      const used = new Set(prev.map((category) => category.colorId));
-      const nextColor = TeamColorOptions.find((option) => !used.has(option.id))
-        ?? TeamColorOptions[prev.length % TeamColorOptions.length];
-      return [...prev, { id: '', label: '', colorId: nextColor.id }];
-    });
-  }
-  function removeCategory(index: number) {
-    setCreateCategories((prev) => prev.filter((_, i) => i !== index));
-  }
-  function updateCategoryLabel(index: number, label: string) {
-    setCreateCategories((prev) => prev.map((c, i) => (i === index ? { ...c, label } : c)));
-  }
-  function updateCategoryColor(index: number, colorId: TeamColorId) {
-    setCreateCategories((prev) => prev.map((category, currentIndex) => {
-      if (currentIndex === index) return { ...category, colorId };
-      if (category.colorId !== colorId) return category;
-      const previousColor = prev[index]?.colorId;
-      return previousColor ? { ...category, colorId: previousColor } : category;
-    }));
-  }
-
-  function copyInvite(code: string) {
-    void Clipboard.setStringAsync(code);
-    Alert.alert('コピーしました', `招待コード: ${code}`);
-  }
-
-  async function shareInvite(battle: Battle) {
-    if (!battle.inviteCode) return;
-    try {
-      await Share.share({
-        title: `${battle.title}に招待`,
-        message: `ZELIOの「${battle.title}」に参加しよう！\n${inviteWebUrl(battle.inviteCode)}\n招待コード: ${battle.inviteCode}`,
-      });
-    } catch (error) {
-      console.warn('[BattleScreen] invite share failed:', error);
-      Alert.alert('共有できませんでした', '時間をおいてもう一度お試しください。');
     }
   }
 
@@ -534,97 +346,34 @@ export default function BattleScreen() {
   };
   const publicCard = (battle: Battle) => renderPublicCard(battle);
 
-  const privateCard = (battle: Battle) => (
-    <PrivateBattleCard
-      key={battle.id}
-      battle={battle}
-      stats={categoryStatsMap[battle.id] ?? []}
-      myCategoryId={myMembershipFor(battle.id)?.categoryId}
-      expanded={expandedBattles.has(battle.id)}
-      onToggleExpand={() => toggleExpanded(battle.id)}
-      onPress={() => router.push(`/battle/${battle.id}` as any)}
-      onCopyInvite={copyInvite}
-      onShareInvite={shareInvite}
-    />
-  );
-
-  const createForm = (
-    <PrivateBattleCreateForm
-      title={createTitle}
-      desc={createDesc}
-      categories={createCategories}
-      rankingType={createRankingType}
-      startAt={createStartAt}
-      endAt={createEndAt}
-      creating={creating}
-      onChangeTitle={setCreateTitle}
-      onChangeDesc={setCreateDesc}
-      onAddCategory={addCategory}
-      onRemoveCategory={removeCategory}
-      onChangeCategoryLabel={updateCategoryLabel}
-      onChangeCategoryColor={updateCategoryColor}
-      onChangeRankingType={setCreateRankingType}
-      onChangeStartAt={setCreateStartAt}
-      onChangeEndAt={setCreateEndAt}
-      onSubmit={handleCreateBattle}
-      onCancel={() => { setPrivateView('list'); resetCreateForm(); }}
-    />
-  );
-
-  const inviteJoinView = (view: 'join_code' | 'join_select') => (
-    <InviteCodeJoinView
-      view={view}
-      inviteCode={inviteCode}
-      onChangeInviteCode={setInviteCode}
-      searching={searching}
-      onSearch={handleSearchInviteCode}
-      onCancelCode={() => { setPrivateView('list'); setInviteCode(''); }}
-      foundBattle={foundBattle}
-      joining={joiningBattleId === foundBattle?.id}
-      onJoinCategory={(catId) => foundBattle && handleJoin(foundBattle, catId)}
-      onBackToCode={() => { setPrivateView('join_code'); setFoundBattle(null); }}
-    />
-  );
-
   function renderWeeklyCard() {
-    const up = week.changeRatio != null && week.changeRatio >= 0;
+    const rollingTotalKm = rollingBuckets.reduce((sum, day) => sum + day.km, 0);
     return (
       <View>
         <View style={styles.sectionHead}>
-          <Text style={styles.sectionTitle}>今週の走り</Text>
-          <Text style={styles.sectionNote}>{weekStartLabel()}</Text>
+          <Text style={styles.sectionTitle}>直近7日</Text>
         </View>
         <Card style={styles.card}>
           <View style={styles.weekHead}>
             <View>
-              <Text style={styles.weekLabel}>週合計距離</Text>
+              <Text style={styles.weekLabel}>合計距離</Text>
               <View style={styles.weekValueRow}>
-                <Text style={styles.weekValue}>{week.thisWeekKm.toFixed(1)}</Text>
+                <Text style={styles.weekValue}>{rollingTotalKm.toFixed(1)}</Text>
                 <Text style={styles.weekUnit}>km</Text>
               </View>
             </View>
-            {week.changeRatio != null && (
-              <View style={[styles.deltaChip, !up && styles.deltaChipDown]}>
-                <Text style={[styles.deltaText, !up && styles.deltaTextDown]}>
-                  先週比 {up ? '+' : ''}{Math.round(week.changeRatio * 100)}%
-                </Text>
-              </View>
-            )}
           </View>
 
           <View style={styles.weekChart}>
-            <WeeklyBarChart days={weekBuckets} height={70} showTotal={false} />
+            <WeeklyBarChart days={rollingBuckets} height={70} showTotal={false} periodLabel="直近7日" />
           </View>
 
           {user?.weeklyGoal && (
-            <WeeklyGoalProgress goal={user.weeklyGoal} days={weekBuckets} compact />
+            <WeeklyGoalProgress goal={user.weeklyGoal} days={calendarWeekBuckets} compact />
           )}
 
           <View style={styles.weekFoot}>
             <StreakChip days={streak} />
-            {week.lastWeekKm > 0 && (
-              <Text style={styles.weekFootNote}>先週 {week.lastWeekKm.toFixed(1)} km</Text>
-            )}
           </View>
         </Card>
       </View>
@@ -686,14 +435,34 @@ export default function BattleScreen() {
             onPress={() => router.push(`/battle/${displayedBattle.id}` as any)}
           />
         )}
-        {displayedBattle && (
+        {displayedBattle && user?.runDeclarationVisible && (
           <DeclarationCard
             declaration={ownDeclaration}
             battleTitle={displayedBattle.title}
+            battleType={displayedBattle.type}
             onDeclare={handleDeclareRun}
             onUpdate={handleUpdateDeclaration}
             onCancel={handleCancelDeclaration}
           />
+        )}
+        {displayedBattle && user && !user.runDeclarationVisible && (
+          <Card style={styles.declarationPrivacyCard}>
+            <View style={styles.declarationPrivacyIcon}>
+              <Ionicons name="shield-checkmark-outline" size={20} color={Colors.primaryDark} />
+            </View>
+            <View style={styles.declarationPrivacyCopy}>
+              <Text style={styles.declarationPrivacyTitle}>ラン宣言は公開OFFです</Text>
+              <Text style={styles.declarationPrivacyText}>同じチームだけに予定時刻を共有する場合は、プロフィールで明示的にONにしてください。</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.declarationPrivacyButton}
+              onPress={() => router.push('/(tabs)/profile' as any)}
+              accessibilityRole="button"
+              accessibilityLabel="プロフィールでラン宣言の公開設定を開く"
+            >
+              <Text style={styles.declarationPrivacyButtonText}>設定</Text>
+            </TouchableOpacity>
+          </Card>
         )}
         {displayedBattle && user && (
           <RunningPresenceCard
@@ -734,74 +503,19 @@ export default function BattleScreen() {
 
         {renderRunNowButton()}
 
-        {/* 他のバトル セクション */}
+        {/* 友達チャレンジの作成・招待・一覧はフレンドタブへ集約する。 */}
         <View style={styles.otherSection}>
           <Text style={styles.sectionTitle}>他のチャレンジ</Text>
-          <View style={styles.segmentRow}>
-            {(['public', 'private'] as Tab[]).map((tab) => {
-              const active = activeTab === tab;
-              return (
-                <TouchableOpacity
-                  key={tab}
-                  style={[styles.segment, active && styles.segmentActive]}
-                  onPress={() => { setActiveTab(tab); setPrivateView('list'); }}
-                >
-                  <Ionicons
-                    name={tab === 'public' ? 'trophy-outline' : 'lock-closed-outline'}
-                    size={14}
-                    color={active ? Colors.textPrimary : Colors.textTertiary}
-                  />
-                  <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]}>
-                    {tab === 'public' ? '公開チャレンジ' : '友達チャレンジ'}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+          <Text style={styles.choiceHint}>公開チャレンジから最大2件まで参加できます</Text>
         </View>
 
-        {activeTab === 'public' ? (
-          otherPublicBattles.length === 0
-            ? <EmptyState
-                icon="trophy-outline"
-                title="ほかに参加できる公開チャレンジはありません"
-                hint="友達チャレンジで仲間と競うこともできます"
-              />
-            : otherPublicBattles.map(publicCard)
-        ) : (
-          <>
-            {privateView === 'list' && (
-              <>
-                {otherPrivateBattles.length === 0 && (
-                  <EmptyState
-                    icon="people-outline"
-                    title="ほかの友達チャレンジはありません"
-                    hint="招待コードで友達チャレンジに参加できます"
-                  />
-                )}
-                {otherPrivateBattles.map(privateCard)}
-                <Button
-                  label={userIsPro ? '＋ 新しいチャレンジを作る' : '＋ 新しいチャレンジを作る（Pro）'}
-                  onPress={() => {
-                    if (!userIsPro) {
-                      Alert.alert('Proプランが必要です',
-                        '友達チャレンジの作成にはProプランが必要です。\nプロフィール画面からアップグレードできます。');
-                      return;
-                    }
-                    setPrivateView('create');
-                  }}
-                  style={{ marginTop: Spacing.sm }}
-                />
-                <Button label="招待コードで参加"
-                  onPress={() => setPrivateView('join_code')}
-                  variant="secondary" style={{ marginTop: Spacing.sm }} />
-              </>
-            )}
-            {privateView === 'create' && createForm}
-            {privateView === 'join_code' && inviteJoinView('join_code')}
-            {privateView === 'join_select' && inviteJoinView('join_select')}
-          </>
-        )}
+        {otherPublicBattles.length === 0
+          ? <EmptyState
+              icon="trophy-outline"
+              title="ほかに参加できる公開チャレンジはありません"
+              hint="招待コードでの参加はフレンドタブから行えます"
+            />
+          : otherPublicBattles.map(publicCard)}
       </ScrollView>
     );
   }
@@ -841,34 +555,11 @@ export default function BattleScreen() {
           variant="secondary"
         />
 
-        {/* 招待コードで参加 */}
-        {privateView === 'list' && (
-          <Button
-            label="招待コードをお持ちですか？"
-            onPress={() => setPrivateView('join_code')}
-            variant="secondary"
-          />
-        )}
-        {privateView === 'join_code' && inviteJoinView('join_code')}
-        {privateView === 'join_select' && inviteJoinView('join_select')}
-
-        {/* チャレンジ作成（Proのみ） */}
-        {privateView === 'list' && (
-          <Button
-            label={userIsPro ? '＋ 友達チャレンジを作る' : '＋ 友達チャレンジを作る（Pro）'}
-            onPress={() => {
-              if (!userIsPro) {
-                Alert.alert('Proプランが必要です',
-                  '友達チャレンジの作成にはProプランが必要です。\nプロフィール画面からアップグレードできます。');
-                return;
-              }
-              setPrivateView('create');
-            }}
-            variant="secondary"
-            style={{ marginTop: Spacing.sm }}
-          />
-        )}
-        {privateView === 'create' && createForm}
+        <Button
+          label="招待コードで参加する"
+          onPress={() => router.push('/(tabs)/friends' as any)}
+          variant="secondary"
+        />
       </ScrollView>
     );
   }
@@ -1048,15 +739,6 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   weekUnit: { marginLeft: 4, fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.textSecondary },
-  deltaChip: {
-    backgroundColor: Colors.primaryLight,
-    borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 5,
-  },
-  deltaChipDown: { backgroundColor: Colors.surfaceGray },
-  deltaText: { fontSize: Typography.fontSize.xs, fontWeight: Typography.fontWeight.bold, color: Colors.primary, fontVariant: ['tabular-nums'] },
-  deltaTextDown: { color: Colors.textSecondary },
   weekChart: { marginTop: Spacing.xl },
   weekFoot: {
     flexDirection: 'row',
@@ -1067,7 +749,20 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.borderLight,
   },
-  weekFootNote: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary, fontVariant: ['tabular-nums'] },
+
+  declarationPrivacyCard: { marginHorizontal: 0, flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  declarationPrivacyIcon: {
+    width: 40, height: 40, borderRadius: BorderRadius.full,
+    backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center',
+  },
+  declarationPrivacyCopy: { flex: 1, minWidth: 0 },
+  declarationPrivacyTitle: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
+  declarationPrivacyText: { marginTop: 2, fontSize: Typography.fontSize.xs, color: Colors.textSecondary },
+  declarationPrivacyButton: {
+    minHeight: 36, paddingHorizontal: Spacing.md, borderRadius: BorderRadius.full,
+    backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center',
+  },
+  declarationPrivacyButtonText: { fontSize: Typography.fontSize.xs, fontWeight: Typography.fontWeight.bold, color: Colors.primaryDark },
 
   // Run Now
   runNowSection: { gap: Spacing.sm },
@@ -1090,18 +785,6 @@ const styles = StyleSheet.create({
 
   // 他のバトル
   otherSection: { gap: 0 },
-
-  // Segment tabs
-  segmentRow: {
-    flexDirection: 'row',
-    backgroundColor: Colors.surfaceAlt,
-    borderRadius: BorderRadius.md,
-    padding: 4,
-  },
-  segment: { flex: 1, flexDirection: 'row', gap: 5, paddingVertical: Spacing.sm, alignItems: 'center', justifyContent: 'center', borderRadius: BorderRadius.sm },
-  segmentActive: { backgroundColor: Colors.surface, ...Shadow.sm },
-  segmentLabel: { fontSize: Typography.fontSize.sm, color: Colors.textSecondary, fontWeight: Typography.fontWeight.medium },
-  segmentLabelActive: { color: Colors.textPrimary, fontWeight: Typography.fontWeight.bold },
 
   // Empty state (State B)
   emptyStateCard: {

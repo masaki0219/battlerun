@@ -4,7 +4,7 @@ import {
   Dimensions, StatusBar, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, DarkColors, Typography, Spacing, BorderRadius, Shadow, TeamColorOptions } from '../design_tokens';
@@ -18,7 +18,7 @@ const TEAM_BLUE   = TeamColorOptions.find((option) => option.id === 'blue')!.col
 const TEAM_YELLOW = Colors.accentYellow;
 const TEAM_RED    = TeamColorOptions.find((option) => option.id === 'red')!.color;
 const TEAM_PURPLE = TeamColorOptions.find((option) => option.id === 'purple')!.color;
-const GOLD   = Colors.rank1;
+const GOLD   = Colors.rank1Text;
 const SILVER = Colors.rank2;
 const BRONZE = Colors.rank3;
 const INK_DARK = Colors.textPrimary;
@@ -26,7 +26,7 @@ const INK_DARK = Colors.textPrimary;
 const STEP_COLORS: Record<number, string> = {
   1: Colors.primary,
   2: Colors.primary,
-  3: Colors.accent,
+  3: Colors.accentText,
   4: Colors.primary,
 };
 
@@ -52,9 +52,15 @@ const STEP_BODIES: Record<number, string> = {
 };
 
 export default function OnboardingScreen() {
+  const { replay } = useLocalSearchParams<{ replay?: string }>();
+  const isReplay = replay === '1';
   const [step, setStep] = useState(1);
 
   async function done(path: '/auth/login' | '/auth/signup') {
+    if (isReplay) {
+      router.replace('/guide');
+      return;
+    }
     await AsyncStorage.setItem(ONBOARDING_KEY, '1');
     router.replace(path);
   }
@@ -86,7 +92,7 @@ export default function OnboardingScreen() {
         </View>
         {step < 4 && (
           <TouchableOpacity onPress={() => done('/auth/signup')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={styles.skip}>スキップ</Text>
+            <Text style={styles.skip}>{isReplay ? 'ガイドへ戻る' : 'スキップ'}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -114,13 +120,21 @@ export default function OnboardingScreen() {
           </TouchableOpacity>
         ) : (
           <View style={styles.finalCta}>
-            <TouchableOpacity style={styles.btnPrimary} onPress={() => done('/auth/signup')} activeOpacity={0.85}>
-              <Text style={styles.btnPrimaryText}>はじめる（新規登録）</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.btnOutline} onPress={() => done('/auth/login')} activeOpacity={0.85}>
-              <Text style={styles.btnOutlineText}>アカウントをお持ちの方はログイン</Text>
-            </TouchableOpacity>
-            <Text style={styles.footnote}>登録後すぐにランを記録できます</Text>
+            {isReplay ? (
+              <TouchableOpacity style={styles.btnPrimary} onPress={() => done('/auth/signup')} activeOpacity={0.85}>
+                <Text style={styles.btnPrimaryText}>ガイドへ戻る</Text>
+              </TouchableOpacity>
+            ) : (
+              <>
+                <TouchableOpacity style={styles.btnPrimary} onPress={() => done('/auth/signup')} activeOpacity={0.85}>
+                  <Text style={styles.btnPrimaryText}>はじめる（新規登録）</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.btnOutline} onPress={() => done('/auth/login')} activeOpacity={0.85}>
+                  <Text style={styles.btnOutlineText}>アカウントをお持ちの方はログイン</Text>
+                </TouchableOpacity>
+                <Text style={styles.footnote}>登録後すぐにランを記録できます</Text>
+              </>
+            )}
           </View>
         )}
       </View>
@@ -366,7 +380,7 @@ const ob3 = StyleSheet.create({
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 2.5,
-    color: Colors.accent,
+    color: Colors.accentText,
     textTransform: 'uppercase',
   },
   numRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 14, gap: 4 },
@@ -385,7 +399,7 @@ const ob3 = StyleSheet.create({
     paddingVertical: 5,
   },
   liveIndicator: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.accent },
-  liveText: { fontSize: 10, fontWeight: '800', color: Colors.accent, letterSpacing: 1 },
+  liveText: { fontSize: 10, fontWeight: '800', color: Colors.accentText, letterSpacing: 1 },
 });
 
 // ── Step 4: Battle search list ─────────────────────────────────

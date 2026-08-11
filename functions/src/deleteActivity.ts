@@ -49,7 +49,7 @@ export const deleteActivity = onCall(
     if (!uid) throw new HttpsError('unauthenticated', 'ログインが必要です。');
 
     const activityId = (request.data ?? {})['activityId'];
-    if (typeof activityId !== 'string' || activityId.length === 0 || activityId.includes('/')) {
+    if (typeof activityId !== 'string' || !/^[A-Za-z0-9_-]{8,128}$/.test(activityId)) {
       throw new HttpsError('invalid-argument', '記録IDが不正です。');
     }
 

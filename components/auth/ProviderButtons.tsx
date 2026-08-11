@@ -1,47 +1,65 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text } from 'react-native';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import {
   configureGoogleSignIn,
   isNativeAuthBuild,
   type SocialProviderId,
 } from '../../lib/socialAuth';
-import { BorderRadius, Colors, Spacing, Typography } from '../../design_tokens';
+import { BorderRadius, Colors, ComponentSize, Spacing, Typography } from '../../design_tokens';
+import { GoogleGLogo } from './GoogleGLogo';
 
 interface GoogleAuthButtonProps {
   onPress: () => Promise<void> | void;
   loading?: boolean;
   disabled?: boolean;
+  mode?: 'sign-in' | 'sign-up' | 'continue';
 }
 
-export function GoogleAuthButton({ onPress, loading, disabled }: GoogleAuthButtonProps) {
-  const result = useMemo(() => {
+const GOOGLE_BUTTON_LABELS: Record<NonNullable<GoogleAuthButtonProps['mode']>, string> = {
+  'sign-in': 'Googleでログイン',
+  'sign-up': 'Googleで登録',
+  continue: 'Googleで続ける',
+};
+
+export function GoogleAuthButton({ onPress, loading, disabled, mode = 'continue' }: GoogleAuthButtonProps) {
+  const configured = useMemo(() => {
     if (!isNativeAuthBuild()) return null;
     try {
-      return { google: configureGoogleSignIn(), error: null };
-    } catch (error) {
-      return { google: null, error };
+      configureGoogleSignIn();
+      return true;
+    } catch {
+      return false;
     }
   }, []);
 
-  if (!result) return null;
-  if (!result.google) {
+  if (configured === null) return null;
+  if (!configured) {
     return <Text style={styles.configurationError}>Googleログインの設定を読み込めませんでした。</Text>;
   }
 
-  const NativeGoogleButton = result.google.GoogleSignInButton;
+  const unavailable = !!disabled || !!loading;
+  const label = GOOGLE_BUTTON_LABELS[mode];
   return (
-    <View style={styles.googleButtonWrap}>
-      <NativeGoogleButton
-        colorScheme="light"
-        size="standard"
-        signInBehavior="none"
-        onPress={onPress}
-        loading={loading}
-        disabled={!!disabled}
-        accessibilityLabel="Googleで続ける"
-      />
-    </View>
+    <Pressable
+      onPress={() => { void onPress(); }}
+      disabled={unavailable}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: unavailable, busy: !!loading }}
+      style={({ pressed }) => [
+        styles.googleButton,
+        pressed && !unavailable && styles.googleButtonPressed,
+        unavailable && styles.disabled,
+      ]}
+    >
+      <GoogleGLogo />
+      {loading ? (
+        <ActivityIndicator color={Colors.googleButtonText} />
+      ) : (
+        <Text style={styles.googleButtonText}>{label}</Text>
+      )}
+    </Pressable>
   );
 }
 
@@ -89,14 +107,31 @@ export function providerLabel(providerId: SocialProviderId): string {
 }
 
 const styles = StyleSheet.create({
-  googleButtonWrap: {
-    minHeight: 48,
+  googleButton: {
+    width: '100%',
+    height: ComponentSize.buttonHeight.md,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.googleButtonBorder,
+    borderRadius: BorderRadius.full,
+  },
+  googleButtonPressed: {
+    backgroundColor: Colors.surfaceGray,
+  },
+  googleButtonText: {
+    color: Colors.googleButtonText,
+    fontSize: Typography.fontSize.md,
+    lineHeight: Typography.fontSize.md * Typography.lineHeight.normal,
+    fontWeight: Typography.fontWeight.semibold,
   },
   appleButton: {
     width: '100%',
-    height: 48,
+    height: ComponentSize.buttonHeight.md,
   },
   disabled: {
     opacity: 0.55,

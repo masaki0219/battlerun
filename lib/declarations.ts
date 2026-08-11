@@ -11,6 +11,7 @@ import {
 } from './notifications';
 import {
   candidateDeclarationDateKeys,
+  DECLARATION_RETENTION_MS,
   dateKeyAtTimeZone,
   declarationDocumentId,
   deviceTimeZone,
@@ -30,12 +31,16 @@ function timestampIso(value: unknown): string {
 export function subscribeTodayDeclarations(
   battleId: string,
   currentUserId: string,
+  categoryId: string,
   listener: (declarations: RunDeclaration[]) => void,
 ): () => void {
   const dateKey = localDateKey();
   const declarationsQuery = query(
     collection(db, 'battles', battleId, 'declarations'),
+    where('categoryId', '==', categoryId),
     where('dateKey', '==', dateKey),
+    where('visible', '==', true),
+    where('expireAt', '>', Timestamp.now()),
   );
   let generation = 0;
   return onSnapshot(declarationsQuery, (snapshot) => {
@@ -60,6 +65,7 @@ export function subscribeTodayDeclarations(
         id: declarationDoc.id,
         battleId,
         uid,
+        categoryId: (data['categoryId'] as string) ?? categoryId,
         dateKey: (data['dateKey'] as string) ?? dateKey,
         timezone: (data['timezone'] as string | undefined) || undefined,
         plannedAt: timestampIso(data['plannedAt']),
@@ -89,6 +95,7 @@ export function subscribeTodayDeclarations(
 export async function createDeclaration(params: {
   battleId: string;
   userId: string;
+  categoryId: string;
   plannedAt: Date;
   note: string;
 }): Promise<void> {
@@ -111,12 +118,15 @@ export async function createDeclaration(params: {
   }
   await setDoc(declarationRef, {
     uid: params.userId,
+    categoryId: params.categoryId,
     dateKey,
     timezone,
     plannedAt: Timestamp.fromDate(params.plannedAt),
     ...(trimmedNote ? { note: trimmedNote } : {}),
     status: 'planned',
+    visible: true,
     createdAt: serverTimestamp(),
+    expireAt: Timestamp.fromMillis(Date.now() + DECLARATION_RETENTION_MS),
   });
   await scheduleDeclarationReminder({ declarationId, battleId: params.battleId, plannedAt: params.plannedAt });
   void registerPushToken(params.userId, false);

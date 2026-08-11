@@ -45,6 +45,7 @@ export interface RunDeclaration {
   id: string;
   battleId: string;
   uid: string;
+  categoryId: string;
   dateKey: string;
   timezone?: string;
   plannedAt: string;
@@ -90,6 +91,8 @@ export interface User {
   personalRecords?: PersonalRecords;
   /** 走行中であることだけを同じチャレンジの参加者へ公開する。既定OFF。 */
   runningPresenceVisible: boolean;
+  /** ラン予定を同じチームの参加者へ公開する。既定OFF。 */
+  runDeclarationVisible: boolean;
 }
 
 export interface Event {
@@ -330,4 +333,5 @@ export interface AuthStore {
   setProEntitlement: (active: boolean) => void;
   setWeeklyGoal: (goal: WeeklyGoal | null) => Promise<void>;
   setRunningPresenceVisible: (visible: boolean) => Promise<void>;
+  setRunDeclarationVisible: (visible: boolean) => Promise<void>;
 }

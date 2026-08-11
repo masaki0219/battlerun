@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { BorderRadius, Colors, Shadow, Spacing, Typography } from '../../design_tokens';
+import { ActionColors, BorderRadius, Colors, Shadow, Spacing, Typography } from '../../design_tokens';
 import {
   blockUser,
   REPORT_REASONS,
@@ -211,9 +211,9 @@ const styles = StyleSheet.create({
   reasonText: { fontSize: Typography.fontSize.sm, color: Colors.textPrimary },
   reasonTextActive: { color: Colors.primaryDark, fontWeight: Typography.fontWeight.bold },
   detailsInput: { height: 74, marginTop: Spacing.md, padding: Spacing.md, borderRadius: BorderRadius.sm, backgroundColor: Colors.surfaceGray, borderWidth: 1, borderColor: Colors.border, color: Colors.textPrimary, textAlignVertical: 'top', fontSize: Typography.fontSize.sm },
-  submitButton: { minHeight: 48, marginTop: Spacing.md, borderRadius: BorderRadius.md, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
+  submitButton: { minHeight: 48, marginTop: Spacing.md, borderRadius: BorderRadius.md, backgroundColor: ActionColors.background, alignItems: 'center', justifyContent: 'center' },
   disabledButton: { opacity: 0.4 },
-  submitText: { color: Colors.textOnPrimary, fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.bold },
+  submitText: { color: ActionColors.foreground, fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.bold },
   cancelButton: { minHeight: 44, alignItems: 'center', justifyContent: 'center', marginTop: Spacing.xs },
   cancelText: { color: Colors.textSecondary, fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.medium },
 });

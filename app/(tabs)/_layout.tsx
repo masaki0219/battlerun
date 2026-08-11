@@ -23,7 +23,6 @@ import { Colors, Shadow } from '../../design_tokens';
 const KEEP_AWAKE_TAG = 'zelio-recording';
 
 const PRIMARY = Colors.primary;
-const ACCENT  = Colors.accent;
 const INK3    = Colors.textTertiary;
 const LINE    = Colors.border;
 
@@ -37,6 +36,7 @@ const TAB_ITEMS: {
   primary?: boolean;
 }[] = [
   { name: 'battle',  label: 'チャレンジ',   icon: 'trophy-outline',    iconFocused: 'trophy' },
+  { name: 'friends', label: 'フレンド',     icon: 'people-outline',    iconFocused: 'people' },
   { name: 'record',  label: 'ラン',         icon: 'walk-outline',      primary: true },
   { name: 'stats',   label: '記録',         icon: 'bar-chart-outline', iconFocused: 'bar-chart' },
   { name: 'profile', label: 'プロフィール', icon: 'person-outline',    iconFocused: 'person' },
@@ -76,12 +76,12 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
                 accessibilityLabel={item.label}
                 accessibilityState={{ selected: focused }}
               >
-                <Ionicons name="walk" size={24} color={focused ? Colors.textOnAccent : Colors.textSecondary} />
+                <Ionicons name="walk" size={24} color={focused ? Colors.textOnPrimary : Colors.textSecondary} />
               </TouchableOpacity>
               <Text
                 numberOfLines={2}
                 maxFontSizeMultiplier={1.6}
-                style={[tb.label, { color: focused ? Colors.accentDark : INK3, fontWeight: focused ? '700' : '500' }]}
+                style={[tb.label, { color: focused ? Colors.primaryDark : INK3, fontWeight: focused ? '700' : '500' }]}
               >
                 {item.label}
               </Text>
@@ -154,19 +154,19 @@ const tb = StyleSheet.create({
     marginTop: -26,
     gap: 4,
   },
-  // 浮いた主 CTA。背景色のリングでタブバーから切り抜かれたように見せる
+  // 浮いた中央タブ。選択色は他タブと同じブランドティールに揃える。
   centerBtn: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: ACCENT,
+    backgroundColor: PRIMARY,
     borderWidth: 4,
     borderColor: Colors.background,
     alignItems: 'center',
     justifyContent: 'center',
     ...Platform.select({
       ios: {
-        shadowColor: Colors.accentDark,
+        shadowColor: Colors.primaryDark,
         shadowOffset: { width: 0, height: 6 },
         shadowOpacity: 0.32,
         shadowRadius: 14,
@@ -175,7 +175,7 @@ const tb = StyleSheet.create({
     }),
   },
   centerBtnInactive: {
-    backgroundColor: Colors.surfaceAlt,
+    backgroundColor: Colors.surfaceGray,
     borderColor: Colors.background,
     shadowOpacity: 0.08,
   },
@@ -265,6 +265,7 @@ export default function TabLayout() {
       tabBar={(props) => isRecording ? null : <CustomTabBar {...props} />}
     >
       <Tabs.Screen name="battle" />
+      <Tabs.Screen name="friends" />
       <Tabs.Screen name="record" />
       <Tabs.Screen name="stats" />
       <Tabs.Screen name="profile" />

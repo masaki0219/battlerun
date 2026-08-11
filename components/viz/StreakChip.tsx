@@ -8,7 +8,7 @@ interface Props {
 
 /**
  * 連続記録日数のピル型チップ。
- * days > 0: accentLight 背景＋accent 文字「🔥 ◯日連続」
+ * days > 0: accentLight 背景＋accentText 文字「🔥 ◯日連続」
  * days === 0: surfaceGray 背景＋行動喚起「🔥 今日から始めよう」
  * 絵文字使用が許可されている数少ない箇所。
  */
@@ -17,7 +17,7 @@ export function StreakChip({ days }: Props) {
   return (
     <View style={[styles.chip, { backgroundColor: active ? Colors.accentLight : Colors.surfaceGray }]}>
       <Text style={styles.fire}>🔥</Text>
-      <Text style={[styles.label, { color: active ? Colors.accent : Colors.textSecondary }]}>
+      <Text style={[styles.label, { color: active ? Colors.accentText : Colors.textSecondary }]}>
         {active ? `${days}日連続` : '今日から始めよう'}
       </Text>
     </View>

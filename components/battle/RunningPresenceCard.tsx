@@ -67,10 +67,10 @@ export function RunningPresenceCard({
                     accessibilityState={{ disabled: presence.cheeredByMe || sendingKey === key }}
                   >
                     {sendingKey === key
-                      ? <ActivityIndicator size="small" color={Colors.accentDark} />
+                      ? <ActivityIndicator size="small" color={Colors.accentText} />
                       : (
                         <>
-                          <Ionicons name="flame" size={14} color={presence.cheeredByMe ? Colors.textTertiary : Colors.accentDark} />
+                          <Ionicons name="flame" size={14} color={presence.cheeredByMe ? Colors.textTertiary : Colors.accentText} />
                           <Text style={[styles.cheerText, presence.cheeredByMe && styles.cheeredText]}>
                             {presence.cheeredByMe ? '応援済み' : '応援'}
                           </Text>
@@ -117,7 +117,7 @@ const styles = StyleSheet.create({
   state: { fontSize: Typography.fontSize.xs, color: Colors.primaryDark, marginTop: 2, fontWeight: Typography.fontWeight.medium },
   cheerButton: { minWidth: 72, minHeight: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 10, borderRadius: BorderRadius.full, backgroundColor: Colors.accentLight },
   cheeredButton: { backgroundColor: Colors.surfaceGray },
-  cheerText: { fontSize: 10, fontWeight: Typography.fontWeight.bold, color: Colors.accentDark },
+  cheerText: { fontSize: 10, fontWeight: Typography.fontWeight.bold, color: Colors.accentText },
   cheeredText: { color: Colors.textSecondary },
   privacyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderTopWidth: 1, borderTopColor: Colors.borderLight, paddingVertical: Spacing.sm },
   privacyText: { fontSize: 9, color: Colors.textSecondary },

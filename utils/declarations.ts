@@ -51,6 +51,8 @@ export function localDateKey(date: Date = new Date()): string {
   return dateKeyAtTimeZone(date, deviceTimeZone());
 }
 
+export const DECLARATION_RETENTION_MS = 48 * 60 * 60 * 1_000;
+
 export function declarationDocumentId(
   userId: string,
   date: Date = new Date(),

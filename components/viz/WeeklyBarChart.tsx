@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, Animated, StyleSheet } from 'react-native';
 import { Colors, Spacing, BorderRadius, Animation } from '../../design_tokens';
+import { chartAxisLabel, niceChartMaximum } from '../../utils/chartScale';
 
 export interface WeeklyBarChartDay {
   label: string;
@@ -33,7 +34,8 @@ const MIN_BAR = 3;
 export function WeeklyBarChart({
   days, maxKm, height = 64, compact = false, showTotal, periodLabel = '今週',
 }: Props) {
-  const peak = Math.max(1, maxKm ?? Math.max(...days.map((d) => d.km), 0));
+  const rawPeak = maxKm ?? Math.max(...days.map((d) => d.km), 0);
+  const peak = niceChartMaximum(rawPeak);
   const totalKm = days.reduce((sum, d) => sum + d.km, 0);
   const allZero = totalKm <= 0;
   const withTotal = showTotal ?? !compact;
@@ -58,48 +60,75 @@ export function WeeklyBarChart({
         </View>
       ) : null}
 
-      <View style={[styles.barsRow, { height }]}>
-        {days.map((d, i) => {
-          const target = d.km > 0 ? Math.max(MIN_BAR, (d.km / peak) * height) : MIN_BAR;
-          const barColor = d.km <= 0
-            ? Colors.chartBarInactive
-            : d.isToday
-            ? Colors.chartToday
-            : Colors.chartBarActive;
-          const barHeight = grow.interpolate({
-            inputRange: [0, 1],
-            outputRange: [MIN_BAR, target],
-          });
-          return (
-            <View key={i} style={styles.barSlot}>
-              <View style={[styles.track, { height }]}>
-                <Animated.View
-                  style={[styles.bar, { height: barHeight, backgroundColor: barColor }]}
-                />
-              </View>
-            </View>
-          );
-        })}
-
-        {allZero ? (
-          <View style={styles.emptyOverlay} pointerEvents="none">
-            <Text style={styles.emptyText}>{periodLabel}の最初のランを記録しよう</Text>
+      {!compact && <Text style={styles.axisUnit}>km</Text>}
+      <View style={styles.plotRow}>
+        {!compact && (
+          <View style={[styles.axis, { height }]}>
+            <Text style={styles.axisLabel}>{chartAxisLabel(peak)}</Text>
+            <Text style={styles.axisLabel}>{chartAxisLabel(peak / 2)}</Text>
+            <Text style={styles.axisLabel}>0</Text>
           </View>
-        ) : null}
+        )}
+        <View style={[styles.plot, { height }]}>
+          {!compact && (
+            <View style={styles.grid} pointerEvents="none">
+              <View style={[styles.gridLine, styles.gridTop]} />
+              <View style={[styles.gridLine, styles.gridMiddle]} />
+              <View style={[styles.gridLine, styles.gridBottom]} />
+            </View>
+          )}
+          <View style={[styles.barsRow, { height }]}>
+            {days.map((d, i) => {
+              const target = d.km > 0 ? Math.max(MIN_BAR, (d.km / peak) * height) : MIN_BAR;
+              const barColor = d.km <= 0
+                ? Colors.chartBarInactive
+                : d.isToday
+                ? Colors.chartToday
+                : Colors.chartBarActive;
+              const barHeight = grow.interpolate({
+                inputRange: [0, 1],
+                outputRange: [MIN_BAR, target],
+              });
+              return (
+                <View
+                  key={i}
+                  style={styles.barSlot}
+                  accessible
+                  accessibilityLabel={`${d.label}${d.isToday ? '、今日' : ''}、${d.km.toFixed(1)}キロメートル`}
+                >
+                  <View style={[styles.track, { height }]}>
+                    <Animated.View
+                      style={[styles.bar, { height: barHeight, backgroundColor: barColor }]}
+                    />
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+
+          {allZero ? (
+            <View style={styles.emptyOverlay} pointerEvents="none">
+              <Text style={styles.emptyText}>{periodLabel}の最初のランを記録しよう</Text>
+            </View>
+          ) : null}
+        </View>
       </View>
 
       {!compact ? (
-        <View style={styles.labelsRow}>
-          {days.map((d, i) => (
-            <View key={i} style={styles.barSlot}>
-              <Text
-                style={[styles.dayLabel, d.isToday && styles.dayLabelToday]}
-                numberOfLines={1}
-              >
-                {d.label}
-              </Text>
-            </View>
-          ))}
+        <View style={styles.labelsOuter}>
+          <View style={styles.axisSpacer} />
+          <View style={styles.labelsRow}>
+            {days.map((d, i) => (
+              <View key={i} style={styles.barSlot}>
+                <Text
+                  style={[styles.dayLabel, d.isToday && styles.dayLabelToday]}
+                  numberOfLines={1}
+                >
+                  {d.label}
+                </Text>
+              </View>
+            ))}
+          </View>
         </View>
       ) : null}
     </View>
@@ -122,10 +151,22 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
   },
   barsRow: {
+    ...StyleSheet.absoluteFillObject,
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: Spacing.sm,
   },
+  plotRow: { flexDirection: 'row', gap: Spacing.xs },
+  plot: { flex: 1, position: 'relative' },
+  axisUnit: { width: 32, marginBottom: 3, fontSize: 9, color: Colors.textTertiary, textAlign: 'right' },
+  axis: { width: 32, justifyContent: 'space-between', alignItems: 'flex-end' },
+  axisLabel: { fontSize: 9, color: Colors.textTertiary, fontVariant: ['tabular-nums'] },
+  axisSpacer: { width: 32 },
+  grid: { ...StyleSheet.absoluteFillObject },
+  gridLine: { position: 'absolute', left: 0, right: 0, height: StyleSheet.hairlineWidth, backgroundColor: Colors.chartTrack },
+  gridTop: { top: 0 },
+  gridMiddle: { top: '50%' },
+  gridBottom: { bottom: 0 },
   barSlot: {
     flex: 1,
     alignItems: 'stretch',
@@ -142,7 +183,9 @@ const styles = StyleSheet.create({
     width: '100%',
     borderRadius: BorderRadius.sm,
   },
+  labelsOuter: { flexDirection: 'row', gap: Spacing.xs },
   labelsRow: {
+    flex: 1,
     flexDirection: 'row',
     gap: Spacing.sm,
     marginTop: Spacing.sm,
@@ -153,7 +196,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   dayLabelToday: {
-    color: Colors.accentDark,
+    color: Colors.accentText,
     fontWeight: '700',
   },
   emptyOverlay: {

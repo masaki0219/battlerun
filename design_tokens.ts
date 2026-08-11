@@ -12,9 +12,15 @@ import type { Category, TeamColorId } from './types';
 // カラーパレット
 // ============================================================
 
+// 明るい面に載せる小さな強調文字は、装飾・塗り用の色より濃くする。
+// accentText: 白 5.20:1 / accentLight 4.67:1
+// goldText: 白 6.10:1 / rank1Bg 5.54:1
+const ACCESSIBLE_ACCENT_TEXT = '#B64C1B';
+const ACCESSIBLE_GOLD_TEXT = '#8A5700';
+
 export const Colors = {
   // ブランドカラー（ディープパイン・ティール。inst_v3 世代）
-  primary: '#087B73',        // 明るい背景上のブランド色・ボタン・プログレスバー
+  primary: '#087B73',        // 明るい背景上のブランド色・選択状態・プログレスバー
   primaryBright: '#4FD0C2',  // ダーク背景上で使う明るいティール（ダーク面のゲージ・アイコン）
   primaryLight: '#E9F6F3',   // 背景ハイライト・選択状態
   primaryBorder: '#B8D9D4',  // primaryLight 面のボーダー（ブランド強調カード）
@@ -24,7 +30,9 @@ export const Colors = {
   accent: '#EF7136',         // 主 CTA・今日のバー・1位強調
   accentDark: '#D65E25',     // アクセントのプレスド状態
   accentLight: '#FFF0E7',    // accent の淡背景（チップ・バッジ・強調カード）
+  accentText: ACCESSIBLE_ACCENT_TEXT, // 白・accentLight上の小さなオレンジ文字／意味を持つアイコン
   accentYellow: '#E5A13A',   // 王冠アイコン・ゴールド・称号
+  goldText: ACCESSIBLE_GOLD_TEXT, // 白・ゴールド淡背景上の文字／意味を持つアイコン
 
   // Pro（サブスク）
   pro: '#6B4FC9',            // Pro バッジ・特別感
@@ -32,6 +40,7 @@ export const Colors = {
   // セマンティックカラー
   success: '#0F9187',        // 達成・完了（ブランドのティール系）
   warning: '#E5A13A',
+  warningText: ACCESSIBLE_GOLD_TEXT,
   error: '#D92D20',
   info: '#3A86FF',
 
@@ -57,6 +66,7 @@ export const Colors = {
 
   // チームランキング用（競争感を出す色）
   rank1: '#E5A13A',          // 1位 ゴールド
+  rank1Text: ACCESSIBLE_GOLD_TEXT,
   rank2: '#9AAAA7',          // 2位 シルバー
   rank3: '#C08552',          // 3位 ブロンズ
   // 金銀銅の淡背景（RankBadge の 1〜3 位バッジ地）
@@ -90,6 +100,19 @@ export const Colors = {
   chartBarInactive: '#DDE5E3',  // データ 0 の日・プレースホルダー
   chartToday: '#F07A3E',        // 今日のバーだけアクセント
   chartTrack: '#EDF2F1',        // バーの下地トラック（棒の背景レーン）
+  googleButtonBorder: '#747775', // Google公式 Light ボタンの1px境界線
+  googleButtonText: '#1F1F1F',   // Google公式 Light ボタンの文字色
+  googleLogoBlue: '#4285F4',
+  googleLogoGreen: '#34A853',
+  googleLogoYellow: '#FBBC05',
+  googleLogoRed: '#EA4335',
+} as const;
+
+/** 主操作の意味をパレット名から切り離す。primary action はオレンジで統一する。 */
+export const ActionColors = {
+  background: Colors.accent,
+  pressed: Colors.accentDark,
+  foreground: Colors.textOnAccent,
 } as const;
 
 /** 友達チャレンジ作成時に保存する識別色。先頭6色は旧データ用 teamPalette と一致する。 */

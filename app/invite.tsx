@@ -29,7 +29,7 @@ export default function InviteScreen() {
 
   useEffect(() => {
     if (!isLoading && user && stored && code) {
-      router.replace({ pathname: '/(tabs)/battle' as any, params: { inviteCode: code } });
+      router.replace({ pathname: '/(tabs)/friends' as any, params: { inviteCode: code } });
     }
   }, [isLoading, user?.id, stored, code]);
 
@@ -60,8 +60,8 @@ export default function InviteScreen() {
           <>
             <Text style={styles.body}>リンクが途中で切れている可能性があります。送信者から6桁の招待コードを受け取ってください。</Text>
             <Button
-              label={user ? 'チャレンジ一覧へ' : 'ログイン画面へ'}
-              onPress={() => router.replace(user ? '/(tabs)/battle' : '/auth/login')}
+              label={user ? 'フレンドへ' : 'ログイン画面へ'}
+              onPress={() => router.replace(user ? '/(tabs)/friends' : '/auth/login')}
             />
           </>
         )}
@@ -89,7 +89,7 @@ const styles = StyleSheet.create({
   body: { fontSize: Typography.fontSize.sm, lineHeight: 21, color: Colors.textSecondary },
   codeBox: {
     alignSelf: 'center', paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.md, backgroundColor: Colors.surfaceAlt,
+    borderRadius: BorderRadius.md, backgroundColor: Colors.surfaceGray,
   },
   code: { fontSize: 24, fontWeight: '900', letterSpacing: 5, color: Colors.primaryDark },
 });

@@ -23,7 +23,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useBattleStore } from '../../stores/battleStore';
 import { useRecentActivities } from '../../hooks/useRecentActivities';
 import type { Activity, MeasurementType, RoutePoint, RunGoal } from '../../types';
-import { Colors, DarkColors, Spacing, BorderRadius, Shadow, TextStyles } from '../../design_tokens';
+import { ActionColors, Colors, DarkColors, Spacing, BorderRadius, Shadow, TextStyles } from '../../design_tokens';
 import { MonoLabel } from '../../components/ui/MonoLabel';
 import { StatBlock } from '../../components/ui/StatBlock';
 import { SectionHeader } from '../../components/ui/SectionHeader';
@@ -147,7 +147,6 @@ export default function RecordScreen() {
   }, [user?.id]);
 
   // 参加中のアクティブバトル
-  const nowMs = Date.now();
   const allBattles = [...publicBattles, ...privateBattles];
   const activeBattleIds = getActiveBattleIds();
   const currentActiveBattles = activeBattleIds
@@ -158,6 +157,9 @@ export default function RecordScreen() {
     sortActiveBattlesForDisplay(currentActiveBattles),
     selectedDeclarationBattleId,
   );
+  const declarationCategoryId = declarationBattle
+    ? myMemberships.find((membership) => membership.battleId === declarationBattle.id)?.categoryId ?? null
+    : null;
   const ownDeclaration = declarationBattle && user
     ? (declarationsByBattle[declarationBattle.id] ?? []).find((item) => item.uid === user.id)
     : undefined;
@@ -178,9 +180,9 @@ export default function RecordScreen() {
   }, [user?.id]));
 
   useEffect(() => {
-    if (!declarationBattle || !user) return;
-    return subscribeDeclarations(declarationBattle.id, user.id);
-  }, [declarationBattle?.id, user?.id]);
+    if (!declarationBattle || !declarationCategoryId || !user) return;
+    return subscribeDeclarations(declarationBattle.id, user.id, declarationCategoryId);
+  }, [declarationBattle?.id, declarationCategoryId, user?.id]);
 
   // 開始前の下段データ（前回のラン・週間ミニバー・ストリーク）
   const { activities: recentActivities, loading: recentLoading } = useRecentActivities(20);
@@ -812,20 +814,23 @@ export default function RecordScreen() {
 
   function renderDeclarationGuide() {
     if (!declarationBattle) return null;
+    const declarationPublishingEnabled = user?.runDeclarationVisible === true;
     return (
       <TouchableOpacity
         style={[s.declarationGuide, fontScale >= 1.6 && s.declarationGuideLargeText]}
-        onPress={() => router.push('/(tabs)/battle' as any)}
+        onPress={() => router.push(declarationPublishingEnabled ? '/(tabs)/battle' as any : '/(tabs)/profile' as any)}
         activeOpacity={0.7}
         accessibilityRole="button"
-        accessibilityLabel="今日のラン宣言を開く"
+        accessibilityLabel={declarationPublishingEnabled ? '今日のラン宣言を開く' : 'プロフィールでラン宣言の公開設定を開く'}
       >
         <View style={s.declarationGuideIcon}>
-          <Ionicons name={ownDeclaration?.status === 'done' ? 'checkmark' : 'flag-outline'} size={16} color={Colors.accentDark} />
+          <Ionicons name={ownDeclaration?.status === 'done' ? 'checkmark' : 'flag-outline'} size={16} color={Colors.accentText} />
         </View>
         <View style={[s.declarationGuideCopy, fontScale >= 1.6 && s.declarationGuideCopyLargeText]}>
           <Text style={s.declarationGuideTitle} numberOfLines={fontScale >= 1.6 ? undefined : 1}>
-            {ownDeclaration?.status === 'done'
+            {!declarationPublishingEnabled
+              ? 'ラン宣言は公開OFFです'
+              : ownDeclaration?.status === 'done'
               ? '今日のラン宣言を達成しました'
               : ownDeclaration
                 ? `今日の予定：${declarationTimeLabel(ownDeclaration.plannedAt, ownDeclaration.timezone)}`
@@ -833,7 +838,9 @@ export default function RecordScreen() {
           </Text>
           <Text style={s.declarationGuideBattle} numberOfLines={fontScale >= 1.6 ? undefined : 1}>{declarationBattle.title}</Text>
         </View>
-        <Text style={s.declarationGuideAction}>{ownDeclaration?.status === 'planned' ? '変更' : ownDeclaration ? '確認' : '宣言する'}</Text>
+        <Text style={s.declarationGuideAction}>
+          {!declarationPublishingEnabled ? '設定' : ownDeclaration?.status === 'planned' ? '変更' : ownDeclaration ? '確認' : '宣言する'}
+        </Text>
         <Ionicons name="chevron-forward" size={15} color={Colors.textTertiary} />
       </TouchableOpacity>
     );
@@ -1561,13 +1568,13 @@ const s = StyleSheet.create({
   // 特大文字サイズでバッジがスイッチ側へはみ出さないよう折り返しを許可する
   autoPauseTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   experimentalBadge: {
-    fontSize: 9, fontWeight: '800', color: Colors.accentDark,
+    fontSize: 9, fontWeight: '800', color: Colors.accentText,
     backgroundColor: Colors.accentLight, borderRadius: BorderRadius.full,
     paddingHorizontal: 6, paddingVertical: 1,
   },
   modeToggle: {
     flexDirection: 'row', gap: 4, padding: 4,
-    backgroundColor: Colors.surfaceAlt, borderRadius: BorderRadius.full,
+    backgroundColor: Colors.surfaceGray, borderRadius: BorderRadius.full,
     marginHorizontal: 40, marginTop: 20,
   },
   modeBtn: {
@@ -1614,14 +1621,14 @@ const s = StyleSheet.create({
   },
   startBtn: {
     width: 160, height: 160, borderRadius: 80,
-    backgroundColor: Colors.accent,
+    backgroundColor: ActionColors.background,
     alignItems: 'center', justifyContent: 'center',
-    shadowColor: Colors.accentDark, shadowOffset: { width: 0, height: 14 },
+    shadowColor: ActionColors.pressed, shadowOffset: { width: 0, height: 14 },
     shadowOpacity: 0.34, shadowRadius: 28, elevation: 12,
   },
   startBtnDisabled: { backgroundColor: Colors.textTertiary, shadowOpacity: 0, elevation: 0 },
   startLabel: {
-    width: '90%', fontSize: 38, fontWeight: '900', color: Colors.textOnAccent,
+    width: '90%', fontSize: 38, fontWeight: '900', color: ActionColors.foreground,
     letterSpacing: 2, textAlign: 'center',
   },
   startHint: { width: '88%', maxWidth: 360, fontSize: 13, lineHeight: 18, textAlign: 'center', color: Colors.textSecondary, fontWeight: '600' },
@@ -1641,7 +1648,7 @@ const s = StyleSheet.create({
   goalChip: {
     paddingHorizontal: 12, paddingVertical: 7,
     borderRadius: BorderRadius.full,
-    backgroundColor: Colors.surfaceAlt,
+    backgroundColor: Colors.surfaceGray,
   },
   goalChipActive: { backgroundColor: Colors.primary },
   goalChipText: { fontSize: 12, fontWeight: '700' as const, color: Colors.textTertiary },
@@ -1650,7 +1657,7 @@ const s = StyleSheet.create({
   gpsChip: {
     flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6,
     paddingHorizontal: 12, paddingVertical: 5,
-    borderRadius: BorderRadius.full, backgroundColor: Colors.surfaceAlt,
+    borderRadius: BorderRadius.full, backgroundColor: Colors.surfaceGray,
   },
   gpsDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: Colors.textTertiary },
   gpsChipText: { fontSize: 11, fontWeight: '700' as const, color: Colors.textSecondary },
@@ -1819,8 +1826,8 @@ const s = StyleSheet.create({
   stopConfirmSheet: { backgroundColor: Colors.surface, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl, paddingHorizontal: Spacing.xl, paddingTop: Spacing.sm },
   stopConfirmTitle: { fontSize: 22, fontWeight: '900', color: Colors.textPrimary, textAlign: 'center' },
   stopConfirmBody: { marginTop: Spacing.sm, fontSize: 13, lineHeight: 19, color: Colors.textSecondary, textAlign: 'center' },
-  stopSaveButton: { minHeight: 64, marginTop: Spacing.xl, borderRadius: BorderRadius.lg, backgroundColor: Colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
-  stopSaveButtonText: { fontSize: 18, fontWeight: '900', color: Colors.textOnPrimary },
+  stopSaveButton: { minHeight: 64, marginTop: Spacing.xl, borderRadius: BorderRadius.lg, backgroundColor: ActionColors.background, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
+  stopSaveButtonText: { fontSize: 18, fontWeight: '900', color: ActionColors.foreground },
   stopDiscardButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: Spacing.sm },
   stopDiscardButtonText: { fontSize: 13, fontWeight: '700', color: Colors.error },
   stopCancelButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.sm },
@@ -1857,7 +1864,7 @@ const s = StyleSheet.create({
   sheetOptions: { borderTopWidth: 1, borderTopColor: Colors.borderLight },
   sheetOptionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 48, borderBottomWidth: 1, borderBottomColor: Colors.borderLight },
   sheetOptionLabel: { fontSize: 14, fontWeight: '600', color: Colors.textPrimary },
-  sheetDoneButton: { backgroundColor: Colors.primary, borderRadius: BorderRadius.md, paddingVertical: 14, alignItems: 'center', marginTop: Spacing.xl, marginBottom: Spacing.md },
-  sheetDoneText: { color: Colors.textOnPrimary, fontSize: 15, fontWeight: '800' },
+  sheetDoneButton: { backgroundColor: ActionColors.background, borderRadius: BorderRadius.md, paddingVertical: 14, alignItems: 'center', marginTop: Spacing.xl, marginBottom: Spacing.md },
+  sheetDoneText: { color: ActionColors.foreground, fontSize: 15, fontWeight: '800' },
 
 });

@@ -1,8 +1,30 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
-    function isSelf(uid) { return signedIn() && request.auth.uid == uid; }
+    // ===============================================================
+    // Assumed data model (client-visible collections)
+    // ===============================================================
+    // users/{uid}: private profile, plan/role, totals, memberships and settings.
+    //   Owner/admin read; client may create its own free profile and update only settings.
+    // users/{uid}/{notifications|badges|monthlyStats|activityRoutes|blocks}: private owner data.
+    // publicProfiles/{uid}: signed-in users may read the bounded public name/avatar projection.
+    // seasons/{id}: signed-in read, admin write.
+    // battles/{id}: public challenges are signed-in readable; private challenges are limited to
+    //   creator/admin/participants. Private creation and participation use Callable Functions.
+    // battles/{id}/{participants|category_stats|presence|declarations}: battle-scoped data.
+    // activities/{id}: authoritative activity, exact times, memberships and aggregation metadata;
+    //   owner/admin read only. Authorized social views receive a server-sanitized projection.
+    // activities/{id}/reactions/{uid}: readable/writable only to an authorized viewer of a battle
+    //   credited by the parent activity (or the activity owner/admin).
+    // battleInviteCodes/{code}: server-only uniqueness reservation.
+    // contentReports/{id}: authenticated create, admin read/review.
+    // All unspecified paths are denied by default.
+    // ===============================================================
+
+    function isAuthenticated() { return request.auth != null; }
+    function signedIn() { return isAuthenticated(); }
+    function isOwner(uid) { return signedIn() && request.auth.uid == uid; }
+    function isSelf(uid) { return isOwner(uid); }
     function userDoc(uid) {
       return get(/databases/$(database)/documents/users/$(uid));
     }
@@ -37,6 +59,96 @@ service cloud.firestore {
       return !('runningPresenceVisible' in data)
         || data.runningPresenceVisible is bool;
     }
+    function validRunDeclarationSetting(data) {
+      return !('runDeclarationVisible' in data)
+        || data.runDeclarationVisible is bool;
+    }
+    function isSameBattleCategory(battleId, categoryId) {
+      let participantPath = /databases/$(database)/documents/battles/$(battleId)/participants/$(request.auth.uid);
+      return signedIn()
+        && categoryId is string
+        && exists(participantPath)
+        && get(participantPath).data.get('categoryId', '') == categoryId;
+    }
+    function validDeclarationV2(data, declarationId) {
+      return data.keys().hasOnly([
+          'uid', 'categoryId', 'dateKey', 'timezone', 'plannedAt', 'note',
+          'status', 'visible', 'createdAt', 'expireAt'
+        ])
+        && data.keys().hasAll([
+          'uid', 'categoryId', 'dateKey', 'timezone', 'plannedAt',
+          'status', 'visible', 'createdAt', 'expireAt'
+        ])
+        && data.uid is string
+        && data.uid.size() >= 1
+        && data.uid.size() <= 128
+        && data.categoryId is string
+        && data.categoryId.size() >= 1
+        && data.categoryId.size() <= 128
+        && data.dateKey is string
+        && data.dateKey.matches('^[0-9]{8}$')
+        && declarationId == data.uid + '_' + data.dateKey
+        && data.timezone is string
+        && data.timezone.size() <= 64
+        && data.plannedAt is timestamp
+        && data.get('note', '') is string
+        && data.get('note', '').size() <= 20
+        && safeUserText(data.get('note', ''))
+        && data.status in ['planned', 'done', 'cancelled']
+        && data.visible is bool
+        && data.createdAt is timestamp
+        && data.expireAt is timestamp;
+    }
+    function validFreshDeclarationV2(data, declarationId, battleId) {
+      return validDeclarationV2(data, declarationId)
+        && data.uid == request.auth.uid
+        && isSameBattleCategory(battleId, data.categoryId)
+        && userDoc(request.auth.uid).data.get('runDeclarationVisible', false) == true
+        && data.plannedAt >= request.time - duration.value(5, 'm')
+        && data.plannedAt <= request.time + duration.value(24, 'h')
+        && data.status == 'planned'
+        && data.visible == true
+        && data.createdAt == request.time
+        && data.expireAt >= request.time + duration.value(47, 'h')
+        && data.expireAt <= request.time + duration.value(49, 'h');
+    }
+    function validLegacyDeclaration(data, declarationId) {
+      return data.keys().hasOnly([
+          'uid', 'dateKey', 'timezone', 'plannedAt', 'note', 'status', 'createdAt'
+        ])
+        && data.keys().hasAll(['uid', 'dateKey', 'plannedAt', 'status', 'createdAt'])
+        && data.uid is string
+        && data.uid.size() >= 1
+        && data.uid.size() <= 128
+        && data.dateKey is string
+        && data.dateKey.matches('^[0-9]{8}$')
+        && declarationId == data.uid + '_' + data.dateKey
+        && data.get('timezone', '') is string
+        && data.get('timezone', '').size() <= 64
+        && data.plannedAt is timestamp
+        && data.get('note', '') is string
+        && data.get('note', '').size() <= 20
+        && safeUserText(data.get('note', ''))
+        && data.status in ['planned', 'done', 'cancelled']
+        && data.createdAt is timestamp;
+    }
+    function canReadDeclaration(battleId, data) {
+      return signedIn() && (
+        data.uid == request.auth.uid
+        || isAdmin()
+        || (
+          validDeclarationV2(data, data.uid + '_' + data.dateKey)
+          && data.visible == true
+          && data.expireAt > request.time
+          && isSameBattleCategory(battleId, data.categoryId)
+        )
+      );
+    }
+    function validExpoPushToken(data) {
+      return !('expoPushToken' in data)
+        || data.expoPushToken == null
+        || (data.expoPushToken is string && data.expoPushToken.size() <= 512);
+    }
     function validAvatarEmoji(data) {
       return data.get('avatarEmoji', null) in [
         null,
@@ -69,26 +181,52 @@ service cloud.firestore {
         || exists(/databases/$(database)/documents/battles/$(battleId)/participants/$(request.auth.uid))
       );
     }
+    function canAccessActivitySocial(activityId) {
+      let activity = get(/databases/$(database)/documents/activities/$(activityId));
+      let battleIds = activity.data.get('battleIds', []);
+      return signedIn()
+        && exists(/databases/$(database)/documents/activities/$(activityId))
+        && activity.data.get('visibility', '') == 'public_v2'
+        && (
+          activity.data.userId == request.auth.uid
+          || isAdmin()
+          || (
+            battleIds is list
+            && battleIds.size() >= 1
+            && canReadBattle(battleIds[0])
+          )
+          || (
+            battleIds is list
+            && battleIds.size() >= 2
+            && canReadBattle(battleIds[1])
+          )
+        );
+    }
+    function validReaction(data, userId) {
+      return data.keys().hasOnly(['type', 'userId', 'createdAt'])
+        && data.userId == userId
+        && data.type in ['👏', '🔥', '💪', '⚡']
+        && data.createdAt == request.time;
+    }
 
     // 課金状態・通知トークン・参加履歴を含む非公開ユーザーデータ。
     match /users/{userId} {
       allow read: if isSelf(userId) || isAdmin();
       allow create: if isSelf(userId)
+        && request.resource.data.keys().hasOnly([
+          'name', 'plan', 'avatarEmoji', 'weeklyGoal',
+          'runningPresenceVisible', 'runDeclarationVisible', 'createdAt', 'expoPushToken'
+        ])
+        && request.resource.data.keys().hasAll([
+          'name', 'plan', 'runningPresenceVisible', 'createdAt'
+        ])
         && request.resource.data.plan == 'free'
-        && !('role' in request.resource.data)
-        && !('titles' in request.resource.data)
-        && !('totalDistanceKm' in request.resource.data)
-        && !('activityCount' in request.resource.data)
-        && !('personalRecords' in request.resource.data)
-        && !('battleIds' in request.resource.data)
-        && !('monthlyStatsBackfillVersion' in request.resource.data)
-        && !('monthlyStatsBackfilledAt' in request.resource.data)
-        && !('revenuecatLastEventAtMs' in request.resource.data)
-        && !('lastStatsSyncAtMs' in request.resource.data)
-        && !('avatarUrl' in request.resource.data)
+        && request.resource.data.createdAt is timestamp
         && validAvatarEmoji(request.resource.data)
         && validWeeklyGoal(request.resource.data.get('weeklyGoal', null))
         && validRunningPresenceSetting(request.resource.data)
+        && validRunDeclarationSetting(request.resource.data)
+        && validExpoPushToken(request.resource.data)
         && request.resource.data.get('name', '') is string
         && request.resource.data.get('name', '').size() >= 1
         && request.resource.data.get('name', '').size() <= 40
@@ -103,13 +241,11 @@ service cloud.firestore {
         && validAvatarEmoji(request.resource.data)
         && validWeeklyGoal(request.resource.data.get('weeklyGoal', null))
         && validRunningPresenceSetting(request.resource.data)
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-          'plan', 'role', 'titles', 'totalDistanceKm', 'activityCount',
-          'personalRecords',
-          'battleIds',
-          'monthlyStatsBackfillVersion', 'monthlyStatsBackfilledAt',
-          'revenuecatLastEventAtMs', 'revenuecatLastEventId', 'revenuecatExpirationAtMs',
-          'lastStatsSyncAtMs'
+        && validRunDeclarationSetting(request.resource.data)
+        && validExpoPushToken(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name', 'avatarEmoji', 'avatarUrl', 'weeklyGoal',
+          'runningPresenceVisible', 'runDeclarationVisible', 'expoPushToken'
         ]);
       allow delete: if false;
 
@@ -208,15 +344,10 @@ service cloud.firestore {
         && request.resource.data.endAt is timestamp
         && request.resource.data.endAt > request.resource.data.startAt
         && request.resource.data.createdBy == request.auth.uid
-        && (
-          (request.resource.data.type == 'private'
-            && userDoc(request.auth.uid).data.plan == 'pro'
-            && request.resource.data.seasonId == null
-            && request.resource.data.inviteCode is string
-            && request.resource.data.inviteCode.matches('^[A-Z0-9]{6}$'))
-          ||
-          (request.resource.data.type == 'public' && isAdmin())
-        );
+        // private は招待コードの一意予約を伴う createPrivateBattle だけが作成する。
+        && request.resource.data.type == 'public'
+        && request.resource.data.inviteCode == null
+        && isAdmin();
       allow update: if isAdmin();
       allow delete: if isAdmin();
 
@@ -307,120 +438,165 @@ service cloud.firestore {
       }
 
       match /declarations/{declarationId} {
-        allow read: if isBattleParticipant(battleId);
+        allow get: if canReadDeclaration(battleId, resource.data);
+        // 設定OFF時の一括非公開化に限り、本人のuidで絞ったcollectionGroup検索を許可する。
+        allow list: if signedIn() && resource.data.uid == request.auth.uid;
+        // 一覧取得は categoryId / visible / expireAt の絞り込みを必須にする。
+        // owner/admin 用の分岐を混ぜると、SDK が無制約一覧を許可されたと解釈し得るため分離する。
+        allow list: if isAdmin() || (
+          signedIn()
+          && resource.data.visible == true
+          && resource.data.expireAt > request.time
+          && isSameBattleCategory(battleId, resource.data.categoryId)
+        );
         allow create: if isBattleParticipant(battleId)
           && get(/databases/$(database)/documents/battles/$(battleId)).data.status == 'active'
-          && request.resource.data.keys().hasOnly([
-            'uid', 'dateKey', 'timezone', 'plannedAt', 'note', 'status', 'createdAt'
-          ])
-          && request.resource.data.uid == request.auth.uid
-          && request.resource.data.dateKey is string
-          && request.resource.data.dateKey.matches('^[0-9]{8}$')
-          && declarationId == request.auth.uid + '_' + request.resource.data.dateKey
-          && request.resource.data.get('timezone', '') is string
-          && request.resource.data.get('timezone', '').size() <= 64
-          && request.resource.data.plannedAt is timestamp
-          && request.resource.data.plannedAt >= request.time - duration.value(5, 'm')
-          && request.resource.data.plannedAt <= request.time + duration.value(24, 'h')
-          && request.resource.data.get('note', '') is string
-          && request.resource.data.get('note', '').size() <= 20
-          && safeUserText(request.resource.data.get('note', ''))
-          && request.resource.data.status == 'planned'
-          && request.resource.data.createdAt is timestamp;
-        allow update: if isBattleParticipant(battleId)
+          && validFreshDeclarationV2(request.resource.data, declarationId, battleId);
+        // 取消済み、または旧形式の同日ドキュメントは、新しい48時間TTL付き宣言で置換できる。
+        allow update: if signedIn()
+          && resource.data.uid == request.auth.uid
+          && isBattleParticipant(battleId)
           && get(/databases/$(database)/documents/battles/$(battleId)).data.status == 'active'
+          && (
+            resource.data.status == 'cancelled'
+            || resource.data.get('visible', true) == false
+            || validLegacyDeclaration(resource.data, declarationId)
+          )
+          && validFreshDeclarationV2(request.resource.data, declarationId, battleId)
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.dateKey == resource.data.dateKey;
+        allow update: if signedIn()
           && resource.data.uid == request.auth.uid
           && (
+            // 公開OFFは退出後や終了後でも即時反映でき、他のフィールドは一切変えられない。
             (
-              resource.data.status == 'planned'
-              && request.resource.data.status == 'done'
-              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+              validDeclarationV2(resource.data, declarationId)
+              && validDeclarationV2(request.resource.data, declarationId)
+              && resource.data.visible == true
+              && request.resource.data.visible == false
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['visible'])
             )
             || (
-              resource.data.status == 'planned'
-              && request.resource.data.status == 'cancelled'
-              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
-            )
-            || (
-              resource.data.status == 'planned'
-              && request.resource.data.status == 'planned'
-              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['plannedAt', 'note'])
-              && request.resource.data.plannedAt is timestamp
+              isBattleParticipant(battleId)
+              && get(/databases/$(database)/documents/battles/$(battleId)).data.status == 'active'
               && (
-                !request.resource.data.diff(resource.data).affectedKeys().hasAny(['plannedAt'])
+                // 現行スキーマの通常編集・達成・取消。
+                (
+                  validDeclarationV2(resource.data, declarationId)
+                  && validDeclarationV2(request.resource.data, declarationId)
+                  && request.resource.data.expireAt > request.time
+                  && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'plannedAt', 'note'])
+                  && (
+                    (
+                      resource.data.status == 'planned'
+                      && request.resource.data.status in ['done', 'cancelled']
+                      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+                    )
+                    || (
+                      resource.data.status == 'planned'
+                      && request.resource.data.status == 'planned'
+                      && (
+                        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['plannedAt'])
+                        || (
+                          request.resource.data.plannedAt >= request.time - duration.value(5, 'm')
+                          && request.resource.data.plannedAt <= request.time + duration.value(24, 'h')
+                        )
+                      )
+                    )
+                  )
+                )
+                // デプロイ前に作られた宣言は本人の編集・取消・達成だけを維持する。
                 || (
-                  request.resource.data.plannedAt >= request.time - duration.value(5, 'm')
-                  && request.resource.data.plannedAt <= request.time + duration.value(24, 'h')
+                  validLegacyDeclaration(resource.data, declarationId)
+                  && validLegacyDeclaration(request.resource.data, declarationId)
+                  && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'plannedAt', 'note'])
+                  && (
+                    (
+                      resource.data.status == 'planned'
+                      && request.resource.data.status in ['done', 'cancelled']
+                      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+                    )
+                    || (
+                      resource.data.status == 'planned'
+                      && request.resource.data.status == 'planned'
+                      && (
+                        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['plannedAt'])
+                        || (
+                          request.resource.data.plannedAt >= request.time - duration.value(5, 'm')
+                          && request.resource.data.plannedAt <= request.time + duration.value(24, 'h')
+                        )
+                      )
+                    )
+                  )
                 )
               )
-              && request.resource.data.get('note', '') is string
-              && request.resource.data.get('note', '').size() <= 20
-              && safeUserText(request.resource.data.get('note', ''))
-            )
-            || (
-              resource.data.status == 'cancelled'
-              && request.resource.data.status == 'planned'
-              && request.resource.data.keys().hasOnly([
-                'uid', 'dateKey', 'timezone', 'plannedAt', 'note', 'status', 'createdAt'
-              ])
-              && request.resource.data.uid == request.auth.uid
-              && request.resource.data.dateKey == resource.data.dateKey
-              && request.resource.data.get('timezone', '') is string
-              && request.resource.data.get('timezone', '').size() <= 64
-              && request.resource.data.plannedAt is timestamp
-              && request.resource.data.plannedAt >= request.time - duration.value(5, 'm')
-              && request.resource.data.plannedAt <= request.time + duration.value(24, 'h')
-              && request.resource.data.get('note', '') is string
-              && request.resource.data.get('note', '').size() <= 20
-              && safeUserText(request.resource.data.get('note', ''))
-              && request.resource.data.createdAt is timestamp
             )
           );
         allow delete: if false;
 
         match /cheers/{fromUid} {
-          allow read: if isBattleParticipant(battleId);
-          allow create: if isBattleParticipant(battleId)
+          function declarationDoc() {
+            return get(/databases/$(database)/documents/battles/$(battleId)/declarations/$(declarationId));
+          }
+          function canAccessDeclarationCheer() {
+            return exists(/databases/$(database)/documents/battles/$(battleId)/declarations/$(declarationId))
+              && canReadDeclaration(battleId, declarationDoc().data);
+          }
+
+          allow read: if canAccessDeclarationCheer();
+          allow create: if canAccessDeclarationCheer()
+            && isSameBattleCategory(battleId, declarationDoc().data.categoryId)
             && fromUid == request.auth.uid
             && request.resource.data.keys().hasOnly(['fromUid', 'createdAt'])
             && request.resource.data.fromUid == request.auth.uid
-            && request.resource.data.createdAt is timestamp
-            && get(/databases/$(database)/documents/battles/$(battleId)/declarations/$(declarationId)).data.uid != request.auth.uid
-            && get(/databases/$(database)/documents/battles/$(battleId)/declarations/$(declarationId)).data.status in ['planned', 'done']
+            && request.resource.data.createdAt == request.time
+            && declarationDoc().data.uid != request.auth.uid
+            && declarationDoc().data.status in ['planned', 'done']
             && !hasBlockBetween(
               request.auth.uid,
-              get(/databases/$(database)/documents/battles/$(battleId)/declarations/$(declarationId)).data.uid
+              declarationDoc().data.uid
             );
           allow update: if false;
-          allow delete: if isBattleParticipant(battleId)
-            && get(/databases/$(database)/documents/battles/$(battleId)/declarations/$(declarationId)).data.uid == request.auth.uid
-            && get(/databases/$(database)/documents/battles/$(battleId)/declarations/$(declarationId)).data.status == 'cancelled';
+          allow delete: if declarationDoc().data.uid == request.auth.uid
+            && declarationDoc().data.status == 'cancelled';
         }
       }
     }
 
     match /activities/{activityId} {
-      // 新形式は公開メタデータのみ。routeを含む旧形式は本人だけ閲覧可能。
+      // 正確な活動時刻・所属battleIds・aggregationImpactsを含む正本は本人専用。
+      // 他人向け表示は認可とフィールド削減を行うCallable Functionsから返す。
       allow read: if signedIn() && (
-        request.auth.uid == resource.data.userId
-        || resource.data.visibility == 'public_v2'
+        request.auth.uid == resource.data.userId || isAdmin()
       );
       // 記録作成・集計更新は認証・内容検証を行う submitActivity / Functions のみ。
       allow create, update, delete: if false;
 
       match /reactions/{userId} {
-        allow read: if signedIn();
+        allow read: if canAccessActivitySocial(activityId);
         allow create, update: if isSelf(userId)
-          && get(/databases/$(database)/documents/activities/$(activityId)).data.visibility == 'public_v2'
-          && request.resource.data.keys().hasOnly(['type', 'userId', 'createdAt'])
-          && request.resource.data.userId == userId
-          && request.resource.data.type in ['👏', '🔥', '💪', '⚡']
+          && canAccessActivitySocial(activityId)
+          && validReaction(request.resource.data, userId)
           && !hasBlockBetween(
             request.auth.uid,
             get(/databases/$(database)/documents/activities/$(activityId)).data.userId
           );
         allow delete: if isSelf(userId);
       }
+    }
+
+    match /battleInviteCodes/{inviteCode} {
+      allow read, write: if false;
+    }
+
+    match /inviteLookupAttempts/{userId} {
+      allow read, write: if false;
+    }
+
+    // 公開設定をOFFにするとき、本人の宣言だけを全チャレンジ横断で取得する。
+    // collectionGroup クエリは rules_version 2 の再帰ワイルドカードで明示的に許可する必要がある。
+    match /{path=**}/declarations/{declarationId} {
+      allow list: if signedIn() && resource.data.uid == request.auth.uid;
     }
 
     match /contentReports/{reportId} {
@@ -434,7 +610,11 @@ service cloud.firestore {
         && request.resource.data.targetId is string
         && request.resource.data.targetId.size() >= 1
         && request.resource.data.targetId.size() <= 200
-        && (!('targetUid' in request.resource.data) || request.resource.data.targetUid is string)
+        && (!('targetUid' in request.resource.data) || (
+          request.resource.data.targetUid is string
+          && request.resource.data.targetUid.size() >= 1
+          && request.resource.data.targetUid.size() <= 128
+        ))
         && (!('battleId' in request.resource.data) || (
           request.resource.data.battleId is string && request.resource.data.battleId.size() <= 200
         ))

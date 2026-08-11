@@ -15,8 +15,8 @@ import {
   RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
 import {
-  deleteField, doc, setDoc, updateDoc, addDoc, deleteDoc, collection, Timestamp, getDoc,
-  getDocs, query, where, orderBy, serverTimestamp,
+  deleteField, doc, setDoc, updateDoc, addDoc, deleteDoc, collection, collectionGroup, Timestamp, getDoc,
+  getDocs, query, where, orderBy, serverTimestamp, writeBatch,
 } from 'firebase/firestore';
 
 const PROJECT_ID = 'battlerun-rules-test';
@@ -39,6 +39,26 @@ async function check(name: string, promise: Promise<unknown>, expected: 'succeed
     console.error(`FAIL: ${name}`);
     console.error(e);
   }
+}
+
+function declarationPayload(
+  uid: string,
+  dateKey: string,
+  categoryId: string,
+  note?: string,
+) {
+  return {
+    uid,
+    categoryId,
+    dateKey,
+    timezone: 'Asia/Tokyo',
+    plannedAt: Timestamp.fromMillis(Date.now() + 3_600_000),
+    ...(note ? { note } : {}),
+    status: 'planned',
+    visible: true,
+    createdAt: serverTimestamp(),
+    expireAt: Timestamp.fromMillis(Date.now() + 48 * 60 * 60_000),
+  };
 }
 
 async function seed() {
@@ -74,6 +94,9 @@ async function seed() {
     await setDoc(doc(db, 'battles/battle1/participants/carol'), {
       userId: 'carol', categoryId: 'teamA', totalDistanceKm: 0, activityCount: 0,
     });
+    await setDoc(doc(db, 'battles/battle1/participants/erin'), {
+      userId: 'erin', categoryId: 'teamB', totalDistanceKm: 0, activityCount: 0,
+    });
 
     // alice の既存アクティビティ（update/delete拒否確認用）
     await setDoc(doc(db, 'activities/act1'), {
@@ -93,16 +116,25 @@ async function seed() {
       plan: 'free',
       role: 'user',
       titles: [],
+      runDeclarationVisible: true,
     });
     await setDoc(doc(db, 'users/bob'), { name: 'Bob', plan: 'free', role: 'user', titles: [] });
     await setDoc(doc(db, 'users/adminUser'), { name: 'Admin', plan: 'free', role: 'admin', titles: [] });
     await setDoc(doc(db, 'users/carol'), {
       name: 'Carol', plan: 'free', role: 'user', titles: [], runningPresenceVisible: true,
+      runDeclarationVisible: true,
+    });
+    await setDoc(doc(db, 'users/erin'), {
+      name: 'Erin', plan: 'free', role: 'user', titles: [], runDeclarationVisible: true,
     });
     await setDoc(doc(db, 'publicProfiles/alice'), { name: 'Alice', avatarUrl: null, avatarEmoji: null, updatedAt: Timestamp.now() });
     await setDoc(doc(db, 'publicProfiles/carol'), { name: 'Carol', avatarEmoji: null, updatedAt: Timestamp.now() });
     await setDoc(doc(db, 'activities/publicAct'), {
       userId: 'alice', visibility: 'public_v2', distanceKm: 2, battleIds: ['battle1'],
+      startedAt: Timestamp.now(), endedAt: Timestamp.now(), durationSeconds: 1200,
+    });
+    await setDoc(doc(db, 'activities/publicBattleAct'), {
+      userId: 'alice', visibility: 'public_v2', distanceKm: 2, battleIds: ['battle2'],
       startedAt: Timestamp.now(), endedAt: Timestamp.now(), durationSeconds: 1200,
     });
     await setDoc(doc(db, 'users/alice/badges/first_run'), { badgeId: 'first_run', name: 'はじめの一歩' });
@@ -119,6 +151,10 @@ async function seed() {
       uid: 'alice', dateKey: '20990106',
       plannedAt: Timestamp.fromMillis(Date.now() - 3_600_000),
       note: '過ぎた予定', status: 'planned', createdAt: Timestamp.now(),
+    });
+    await setDoc(doc(db, 'battles/battle1/declarations/alice_20981231'), {
+      ...declarationPayload('alice', '20981231', 'teamA', '期限切れ'),
+      expireAt: Timestamp.fromMillis(Date.now() - 60_000),
     });
   });
 }
@@ -137,6 +173,7 @@ async function run() {
   const adminDb = testEnv.authenticatedContext('adminUser').firestore();
   const carolDb = testEnv.authenticatedContext('carol').firestore();
   const daveDb = testEnv.authenticatedContext('dave').firestore();
+  const erinDb = testEnv.authenticatedContext('erin').firestore();
 
   // ── category_stats ────────────────────────────────────────────────
   await check(
@@ -253,8 +290,23 @@ async function run() {
     'fail',
   );
   await check(
-    'activities: 他人でもrouteのない公開活動は読める',
+    'activities: 他人はrouteのないpublic_v2正本も読めない',
     getDoc(doc(bobDb, 'activities/publicAct')),
+    'fail',
+  );
+  await check(
+    'activities: 同じprivateチャレンジの参加者にも正本は公開しない',
+    getDoc(doc(carolDb, 'activities/publicAct')),
+    'fail',
+  );
+  await check(
+    'activities: 他人はvisibility絞り込みでも全件列挙できない',
+    getDocs(query(collection(bobDb, 'activities'), where('visibility', '==', 'public_v2'))),
+    'fail',
+  );
+  await check(
+    'activities: 本人はuserId絞り込みで自分の履歴を一覧できる',
+    getDocs(query(collection(aliceDb, 'activities'), where('userId', '==', 'alice'))),
     'succeed',
   );
   await check(
@@ -334,6 +386,29 @@ async function run() {
     'fail',
   );
   await check(
+    'private battle: adminを含むクライアント直接作成を拒否（Callableのみ）',
+    setDoc(doc(adminDb, 'battles/directPrivateBattle'), {
+      type: 'private', seasonId: null, title: '直接作成', description: '',
+      categories: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }],
+      categoryIds: ['a', 'b'], rankingType: 'total', startAt: Timestamp.now(),
+      endAt: Timestamp.fromMillis(Date.now() + 86400000), status: 'active',
+      createdBy: 'adminUser', inviteCode: 'ZZZ999', createdAt: Timestamp.now(),
+    }),
+    'fail',
+  );
+  await check(
+    'battleInviteCodes: クライアントは予約コードを作成できない',
+    setDoc(doc(aliceDb, 'battleInviteCodes/ABC123'), {
+      battleId: 'attacker-battle', createdBy: 'alice', createdAt: Timestamp.now(),
+    }),
+    'fail',
+  );
+  await check(
+    'battleInviteCodes: クライアントは予約コードを読めない',
+    getDoc(doc(aliceDb, 'battleInviteCodes/ABC123')),
+    'fail',
+  );
+  await check(
     'private battle: 作成者でもtypeをpublicへ変更できない',
     updateDoc(doc(aliceDb, 'battles/battle1'), { type: 'public' }),
     'fail',
@@ -386,32 +461,34 @@ async function run() {
   );
   await check(
     'declarations: 参加者本人は当日IDで宣言を作成できる',
-    setDoc(doc(aliceDb, declarationPath), {
-      uid: 'alice', dateKey: '20990101', plannedAt: Timestamp.fromMillis(Date.now() + 3_600_000),
-      timezone: 'Asia/Tokyo', note: 'ゆっくり走る', status: 'planned', createdAt: Timestamp.now(),
-    }),
+    setDoc(doc(aliceDb, declarationPath), declarationPayload('alice', '20990101', 'teamA', 'ゆっくり走る')),
     'succeed',
   );
   await check(
     'declarations: 本人以外のuidで宣言作成は拒否',
-    setDoc(doc(carolDb, 'battles/battle1/declarations/alice_20990102'), {
-      uid: 'alice', dateKey: '20990102', plannedAt: Timestamp.fromMillis(Date.now() + 3_600_000),
-      status: 'planned', createdAt: Timestamp.now(),
-    }),
+    setDoc(
+      doc(carolDb, 'battles/battle1/declarations/alice_20990102'),
+      declarationPayload('alice', '20990102', 'teamA'),
+    ),
     'fail',
   );
   await check(
     'declarations: 不適切なひとことはサーバールールで拒否',
-    setDoc(doc(aliceDb, 'battles/battle1/declarations/alice_20990104'), {
-      uid: 'alice', dateKey: '20990104', plannedAt: Timestamp.fromMillis(Date.now() + 3_600_000),
-      note: '死ね', status: 'planned', createdAt: Timestamp.now(),
-    }),
+    setDoc(
+      doc(aliceDb, 'battles/battle1/declarations/alice_20990104'),
+      declarationPayload('alice', '20990104', 'teamA', '死ね'),
+    ),
     'fail',
   );
   await check(
-    'declarations: 参加者は宣言を読める',
+    'declarations: 同じチームの参加者は宣言を読める',
     getDoc(doc(carolDb, declarationPath)),
     'succeed',
+  );
+  await check(
+    'declarations: 相手チームの参加者は宣言を読めない',
+    getDoc(doc(erinDb, declarationPath)),
+    'fail',
   );
   await check(
     'declarations: 非参加者は宣言を読めない',
@@ -419,30 +496,91 @@ async function run() {
     'fail',
   );
   await check(
+    'declarations: 期限切れの宣言は同じチームでも読めない',
+    getDoc(doc(carolDb, 'battles/battle1/declarations/alice_20981231')),
+    'fail',
+  );
+  await check(
+    'declarations: 同じチーム・公開中・未期限切れの絞り込み一覧は読める',
+    getDocs(query(
+      collection(carolDb, 'battles/battle1/declarations'),
+      where('categoryId', '==', 'teamA'),
+      where('dateKey', '==', '20990101'),
+      where('visible', '==', true),
+      where('expireAt', '>', Timestamp.now()),
+    )),
+    'succeed',
+  );
+  await check(
+    'declarations: 本人はuidで絞って公開中の宣言をcollectionGroup検索できる',
+    getDocs(query(
+      collectionGroup(aliceDb, 'declarations'),
+      where('uid', '==', 'alice'),
+      where('visible', '==', true),
+    )),
+    'succeed',
+  );
+  await check(
+    'declarations: 他人のuidを指定したcollectionGroup検索は拒否',
+    getDocs(query(
+      collectionGroup(carolDb, 'declarations'),
+      where('uid', '==', 'alice'),
+      where('visible', '==', true),
+    )),
+    'fail',
+  );
+  await check(
+    'declarations: 相手チームのcategoryIdを指定した一覧取得は拒否',
+    getDocs(query(
+      collection(erinDb, 'battles/battle1/declarations'),
+      where('categoryId', '==', 'teamA'),
+      where('dateKey', '==', '20990101'),
+      where('visible', '==', true),
+      where('expireAt', '>', Timestamp.now()),
+    )),
+    'fail',
+  );
+  await check(
+    'declarations: 自分と異なるチームIDの宣言作成は拒否',
+    setDoc(
+      doc(aliceDb, 'battles/battle1/declarations/alice_20990107'),
+      declarationPayload('alice', '20990107', 'teamB'),
+    ),
+    'fail',
+  );
+  await check(
+    'declarations: 49時間より先へTTLを延長した宣言作成は拒否',
+    setDoc(doc(aliceDb, 'battles/battle1/declarations/alice_20990108'), {
+      ...declarationPayload('alice', '20990108', 'teamA'),
+      expireAt: Timestamp.fromMillis(Date.now() + 50 * 60 * 60_000),
+    }),
+    'fail',
+  );
+  await check(
     'declaration cheers: 参加者は自分のuidで応援できる',
     setDoc(doc(carolDb, `${declarationPath}/cheers/carol`), {
-      fromUid: 'carol', createdAt: Timestamp.now(),
+      fromUid: 'carol', createdAt: serverTimestamp(),
     }),
     'succeed',
   );
   await check(
     'declaration cheers: 同じ宣言への重複応援は拒否',
     setDoc(doc(carolDb, `${declarationPath}/cheers/carol`), {
-      fromUid: 'carol', createdAt: Timestamp.now(),
+      fromUid: 'carol', createdAt: serverTimestamp(),
     }),
     'fail',
   );
   await check(
     'declaration cheers: 非参加者のなりすまし応援は拒否',
     setDoc(doc(bobDb, `${declarationPath}/cheers/carol_spoof`), {
-      fromUid: 'carol', createdAt: Timestamp.now(),
+      fromUid: 'carol', createdAt: serverTimestamp(),
     }),
     'fail',
   );
   await check(
     'declaration cheers: 自分自身への応援は拒否',
     setDoc(doc(aliceDb, `${declarationPath}/cheers/alice`), {
-      fromUid: 'alice', createdAt: Timestamp.now(),
+      fromUid: 'alice', createdAt: serverTimestamp(),
     }),
     'fail',
   );
@@ -472,11 +610,10 @@ async function run() {
   const editableDeclarationPath = 'battles/battle1/declarations/alice_20990103';
   await check(
     'declarations: 編集テスト用planned宣言を作成できる',
-    setDoc(doc(aliceDb, editableDeclarationPath), {
-      uid: 'alice', dateKey: '20990103', timezone: 'Asia/Tokyo',
-      plannedAt: Timestamp.fromMillis(Date.now() + 3_600_000),
-      note: '最初の予定', status: 'planned', createdAt: Timestamp.now(),
-    }),
+    setDoc(
+      doc(aliceDb, editableDeclarationPath),
+      declarationPayload('alice', '20990103', 'teamA', '最初の予定'),
+    ),
     'succeed',
   );
   await check(
@@ -500,7 +637,7 @@ async function run() {
   await check(
     'declaration cheers: 取り消し前の宣言へ応援できる',
     setDoc(doc(carolDb, `${editableDeclarationPath}/cheers/carol`), {
-      fromUid: 'carol', createdAt: Timestamp.now(),
+      fromUid: 'carol', createdAt: serverTimestamp(),
     }),
     'succeed',
   );
@@ -517,7 +654,7 @@ async function run() {
   await check(
     'declaration cheers: cancelled宣言への応援は拒否',
     setDoc(doc(carolDb, `${editableDeclarationPath}/cheers/carol`), {
-      fromUid: 'carol', createdAt: Timestamp.now(),
+      fromUid: 'carol', createdAt: serverTimestamp(),
     }),
     'fail',
   );
@@ -529,17 +666,93 @@ async function run() {
   await check(
     'declarations: 取り消し後も同日中に新しい予定として再宣言できる',
     setDoc(doc(aliceDb, editableDeclarationPath), {
-      uid: 'alice', dateKey: '20990103', timezone: 'Asia/Tokyo',
+      ...declarationPayload('alice', '20990103', 'teamA', '再宣言'),
       plannedAt: Timestamp.fromMillis(Date.now() + 5_400_000),
-      note: '再宣言', status: 'planned', createdAt: Timestamp.now(),
     }),
     'succeed',
   );
   await check(
     'declaration cheers: 再宣言後は同じメンバーが改めて応援できる',
     setDoc(doc(carolDb, `${editableDeclarationPath}/cheers/carol`), {
-      fromUid: 'carol', createdAt: Timestamp.now(),
+      fromUid: 'carol', createdAt: serverTimestamp(),
     }),
+    'succeed',
+  );
+  await check(
+    'declaration cheers: 相手チームからの応援は拒否',
+    setDoc(doc(erinDb, `${editableDeclarationPath}/cheers/erin`), {
+      fromUid: 'erin', createdAt: serverTimestamp(),
+    }),
+    'fail',
+  );
+
+  const privacyDeclarationPath = 'battles/battle1/declarations/alice_20990109';
+  await check(
+    'declarations: 公開OFF確認用の宣言を作成できる',
+    setDoc(
+      doc(aliceDb, privacyDeclarationPath),
+      declarationPayload('alice', '20990109', 'teamA', '非表示にする'),
+    ),
+    'succeed',
+  );
+  await check(
+    'declarations: 本人はvisibleだけをfalseへ変更できる',
+    updateDoc(doc(aliceDb, privacyDeclarationPath), { visible: false }),
+    'succeed',
+  );
+  await check(
+    'declarations: 非表示後は同じチームでも読めない',
+    getDoc(doc(carolDb, privacyDeclarationPath)),
+    'fail',
+  );
+  await check(
+    'declarations: visibleを再びtrueへ戻す更新は拒否',
+    updateDoc(doc(aliceDb, privacyDeclarationPath), { visible: true }),
+    'fail',
+  );
+  await check(
+    'declarations: 公開OFF後は新しい宣言操作で同日中に再宣言できる',
+    setDoc(
+      doc(aliceDb, privacyDeclarationPath),
+      declarationPayload('alice', '20990109', 'teamA', 'もう一度宣言'),
+    ),
+    'succeed',
+  );
+  const declarationOptOutBatch = writeBatch(aliceDb);
+  declarationOptOutBatch.update(doc(aliceDb, privacyDeclarationPath), { visible: false });
+  declarationOptOutBatch.update(doc(aliceDb, 'users/alice'), { runDeclarationVisible: false });
+  await check(
+    'declaration setting: 設定OFFと本人の公開中宣言を同じバッチで非公開にできる',
+    declarationOptOutBatch.commit(),
+    'succeed',
+  );
+  await check(
+    'declaration setting: 後続テスト用に本人は公開設定をONへ戻せる',
+    updateDoc(doc(aliceDb, 'users/alice'), { runDeclarationVisible: true }),
+    'succeed',
+  );
+
+  await check(
+    'declaration setting: 本人はラン宣言公開をOFFにできる',
+    updateDoc(doc(erinDb, 'users/erin'), { runDeclarationVisible: false }),
+    'succeed',
+  );
+  await check(
+    'declarations: opt-inがOFFの本人は宣言を作成できない',
+    setDoc(
+      doc(erinDb, 'battles/battle1/declarations/erin_20990110'),
+      declarationPayload('erin', '20990110', 'teamB'),
+    ),
+    'fail',
+  );
+  await check(
+    'declaration setting: boolean以外の設定は拒否',
+    updateDoc(doc(erinDb, 'users/erin'), { runDeclarationVisible: 'yes' }),
+    'fail',
+  );
+  await check(
+    'declaration setting: 本人はラン宣言公開を再度ONにできる',
+    updateDoc(doc(erinDb, 'users/erin'), { runDeclarationVisible: true }),
     'succeed',
   );
 
@@ -691,16 +904,16 @@ async function run() {
   const blockedDeclarationPath = 'battles/battle1/declarations/alice_20990105';
   await check(
     'blocks: ブロック確認用の宣言を本人は作成できる',
-    setDoc(doc(aliceDb, blockedDeclarationPath), {
-      uid: 'alice', dateKey: '20990105', plannedAt: Timestamp.fromMillis(Date.now() + 3_600_000),
-      note: '走ります', status: 'planned', createdAt: Timestamp.now(),
-    }),
+    setDoc(
+      doc(aliceDb, blockedDeclarationPath),
+      declarationPayload('alice', '20990105', 'teamA', '走ります'),
+    ),
     'succeed',
   );
   await check(
     'blocks: ブロック関係にある相手は宣言へ応援できない',
     setDoc(doc(carolDb, `${blockedDeclarationPath}/cheers/carol`), {
-      fromUid: 'carol', createdAt: Timestamp.now(),
+      fromUid: 'carol', createdAt: serverTimestamp(),
     }),
     'fail',
   );
@@ -720,6 +933,30 @@ async function run() {
     'blocks: 解除後は公開記録へリアクションできる',
     setDoc(doc(carolDb, 'activities/publicAct/reactions/carol'), {
       userId: 'carol', type: '🔥', createdAt: serverTimestamp(),
+    }),
+    'succeed',
+  );
+  await check(
+    'activity reactions: privateチャレンジ非参加者はリアクションできない',
+    setDoc(doc(bobDb, 'activities/publicAct/reactions/bob'), {
+      userId: 'bob', type: '👏', createdAt: serverTimestamp(),
+    }),
+    'fail',
+  );
+  await check(
+    'activity reactions: privateチャレンジ参加者はリアクション一覧を読める',
+    getDocs(collection(carolDb, 'activities/publicAct/reactions')),
+    'succeed',
+  );
+  await check(
+    'activity reactions: privateチャレンジ非参加者はリアクション一覧を読めない',
+    getDocs(collection(bobDb, 'activities/publicAct/reactions')),
+    'fail',
+  );
+  await check(
+    'activity reactions: publicチャレンジの要約を見られる認証ユーザーは応援できる',
+    setDoc(doc(bobDb, 'activities/publicBattleAct/reactions/bob'), {
+      userId: 'bob', type: '👏', createdAt: serverTimestamp(),
     }),
     'succeed',
   );
@@ -746,6 +983,14 @@ async function run() {
     setDoc(doc(bobDb, 'contentReports/spoof'), {
       reporterUid: 'alice', targetType: 'user', targetId: 'alice', reason: 'spam',
       status: 'pending', createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    }),
+    'fail',
+  );
+  await check(
+    'contentReports: targetUidの過大入力は拒否',
+    setDoc(doc(bobDb, 'contentReports/oversized-target'), {
+      reporterUid: 'bob', targetType: 'user', targetId: 'alice', targetUid: 'x'.repeat(129),
+      reason: 'spam', status: 'pending', createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
     }),
     'fail',
   );
@@ -788,30 +1033,94 @@ async function run() {
     'fail',
   );
   await check(
+    'users/{uid}: createdBattleIdsの自己更新は拒否（Callable Functionのみ更新可）',
+    updateDoc(doc(aliceDb, 'users/alice'), { createdBattleIds: ['attacker-battle'] }),
+    'fail',
+  );
+  await check(
     'users/{uid}: 新規登録時のpersonalRecords自己設定は拒否',
     setDoc(doc(daveDb, 'users/dave'), {
-      name: 'Dave', plan: 'free', personalRecords: { fastest1kSec: 1 },
+      name: 'Dave', plan: 'free', runningPresenceVisible: false, createdAt: serverTimestamp(),
+      personalRecords: { fastest1kSec: 1 },
     }),
     'fail',
   );
   await check(
     'users/{uid}: 新規登録時のbattleIds自己設定は拒否',
     setDoc(doc(daveDb, 'users/dave'), {
-      name: 'Dave', plan: 'free', battleIds: ['battle1', 'battle2', 'battle3'],
+      name: 'Dave', plan: 'free', runningPresenceVisible: false, createdAt: serverTimestamp(),
+      battleIds: ['battle1', 'battle2', 'battle3'],
+    }),
+    'fail',
+  );
+  await check(
+    'users/{uid}: 新規登録時のcreatedBattleIds自己設定は拒否',
+    setDoc(doc(daveDb, 'users/dave'), {
+      name: 'Dave', plan: 'free', runningPresenceVisible: false, createdAt: serverTimestamp(),
+      createdBattleIds: ['attacker-battle'],
     }),
     'fail',
   );
   await check(
     'users/{uid}: 新規登録時の月次バックフィル済み偽装は拒否',
     setDoc(doc(daveDb, 'users/dave'), {
-      name: 'Dave', plan: 'free', monthlyStatsBackfillVersion: 1,
+      name: 'Dave', plan: 'free', runningPresenceVisible: false, createdAt: serverTimestamp(),
+      monthlyStatsBackfillVersion: 1,
+    }),
+    'fail',
+  );
+  await check(
+    'users/{uid}: 新規登録時の未知フィールド追加は拒否',
+    setDoc(doc(daveDb, 'users/dave'), {
+      name: 'Dave', plan: 'free', runningPresenceVisible: false, createdAt: serverTimestamp(),
+      attackerControlled: 'x',
+    }),
+    'fail',
+  );
+  await check(
+    'users/{uid}: 新規登録時の課金状態補助フィールド偽装は拒否',
+    setDoc(doc(daveDb, 'users/dave'), {
+      name: 'Dave', plan: 'free', runningPresenceVisible: false, createdAt: serverTimestamp(),
+      revenuecatExpirationAtMs: 9999999999999,
+    }),
+    'fail',
+  );
+  await check(
+    'users/{uid}: 過大な通知トークンは拒否',
+    setDoc(doc(daveDb, 'users/dave'), {
+      name: 'Dave', plan: 'free', runningPresenceVisible: false, createdAt: serverTimestamp(),
+      expoPushToken: 'x'.repeat(513),
     }),
     'fail',
   );
   await check(
     'users/{uid}: personalRecordsなしの通常登録は許可',
-    setDoc(doc(daveDb, 'users/dave'), { name: 'Dave', plan: 'free' }),
+    setDoc(doc(daveDb, 'users/dave'), {
+      name: 'Dave', plan: 'free', runningPresenceVisible: false, createdAt: serverTimestamp(),
+    }),
     'succeed',
+  );
+  await check(
+    'users/{uid}: 自己プロフィールへの未知フィールド追加は拒否',
+    updateDoc(doc(daveDb, 'users/dave'), { attackerControlled: 'x' }),
+    'fail',
+  );
+  await check(
+    'users/{uid}: 許可された通知トークン更新は成功',
+    updateDoc(doc(daveDb, 'users/dave'), { expoPushToken: 'ExponentPushToken[test]' }),
+    'succeed',
+  );
+  await check(
+    'inviteLookupAttempts: 本人でも試行回数を改ざんできない',
+    setDoc(doc(aliceDb, 'inviteLookupAttempts/alice'), {
+      attemptCount: 0, windowStartedAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    }),
+    'fail',
+  );
+  await check(
+    'inviteLookupAttempts: 本人でも試行回数を読めない',
+    getDoc(doc(aliceDb, 'inviteLookupAttempts/alice')),
+    'fail',
   );
   await check(
     'badges: 本人はサーバー付与済みバッジを読める',

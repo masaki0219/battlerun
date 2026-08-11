@@ -5,7 +5,6 @@ import {
 } from 'firebase/firestore';
 import { db, functions } from '../lib/firebase';
 import { httpsCallable } from 'firebase/functions';
-import * as Crypto from 'expo-crypto';
 import { useAuthStore } from './authStore';
 import {
   validateBattleCategory,
@@ -46,13 +45,18 @@ interface BattleStore {
   fetchMyMemberships: (userId: string) => Promise<void>;
   fetchMyPrivateBattles: (userId: string) => Promise<void>;
   fetchSeason: (seasonId: string) => Promise<void>;
-  joinBattle: (battleId: string, categoryId: string | null, userId: string) => Promise<void>;
+  joinBattle: (
+    battleId: string,
+    categoryId: string | null,
+    userId: string,
+    inviteCode?: string | null,
+  ) => Promise<void>;
   leaveBattle: (battleId: string, userId: string) => Promise<void>;
   createBattle: (params: CreateBattleParams) => Promise<string>;
   findBattleByInviteCode: (inviteCode: string) => Promise<Battle>;
   getActiveBattleIds: () => string[];
-  subscribeDeclarations: (battleId: string, userId: string) => () => void;
-  declareRun: (battleId: string, userId: string, plannedAt: Date, note: string) => Promise<void>;
+  subscribeDeclarations: (battleId: string, userId: string, categoryId: string) => () => void;
+  declareRun: (battleId: string, userId: string, categoryId: string, plannedAt: Date, note: string) => Promise<void>;
   updateDeclaration: (battleId: string, declaration: RunDeclaration, plannedAt: Date, note: string) => Promise<void>;
   cancelDeclaration: (battleId: string, declarationId: string) => Promise<void>;
   cheerDeclaration: (battleId: string, declarationId: string, fromUid: string) => Promise<boolean>;
@@ -172,9 +176,12 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
   },
 
   fetchMyPrivateBattles: async (userId: string) => {
-    // users/{uid}.battleIds で O(k) 取得
+    // 参加中IDと作成IDの和集合で O(k) 取得。作成者はチーム未選択でも招待コードを管理できる。
     const userSnap = await getDoc(doc(db, 'users', userId));
-    const battleIds = (userSnap.data()?.['battleIds'] as string[] | undefined) ?? [];
+    const battleIds = [...new Set([
+      ...((userSnap.data()?.['battleIds'] as string[] | undefined) ?? []),
+      ...((userSnap.data()?.['createdBattleIds'] as string[] | undefined) ?? []),
+    ])].slice(0, 100);
 
     if (battleIds.length === 0) {
       set({ privateBattles: [] });
@@ -188,6 +195,7 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
           if (!battleSnap.exists()) return null;
           const data = battleSnap.data();
           if (data['type'] !== 'private' || data['status'] !== 'active') return null;
+          if (data['createdBy'] === userId) return mapDocToBattle(battleId, data);
           const participantSnap = await getDoc(
             doc(db, 'battles', battleId, 'participants', userId)
           );
@@ -200,10 +208,10 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
     set({ privateBattles: myBattles });
   },
 
-  joinBattle: async (battleId, categoryId, userId) => {
+  joinBattle: async (battleId, categoryId, userId, inviteCode) => {
     if (!categoryId) throw new Error('チームを選択してください。');
     const callable = httpsCallable(functions, 'joinBattle');
-    await callable({ battleId, categoryId });
+    await callable({ battleId, categoryId, ...(inviteCode ? { inviteCode } : {}) });
 
     useAuthStore.setState((s) => ({
       user: s.user?.id === userId
@@ -254,11 +262,35 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
       throw new Error('PRO_REQUIRED: プライベートチャレンジの作成にはProプランが必要です。');
     }
 
-    const inviteCode = isPublic ? null : Crypto.randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase();
-
     // 区分IDを確定（ラベルから毎回生成し、重複ラベルには連番を付与）。
     // 呼び出し側が渡した cat.id は無視する。
     const resolvedCategories = resolveCategoryIds(categories);
+
+    if (!isPublic) {
+      const callable = httpsCallable<
+        {
+          title: string;
+          description: string;
+          categories: Array<{ label: string; colorId?: string }>;
+          rankingType: 'average' | 'total';
+          startAtMs: number;
+          endAtMs: number;
+        },
+        { battleId: string; inviteCode: string }
+      >(functions, 'createPrivateBattle');
+      const result = await callable({
+        title,
+        description,
+        categories: resolvedCategories.map(({ label, colorId }) => ({
+          label,
+          ...(colorId ? { colorId } : {}),
+        })),
+        rankingType,
+        startAtMs: startAt.getTime(),
+        endAtMs: endAt.getTime(),
+      });
+      return result.data.battleId;
+    }
 
     // 開始日が未来なら upcoming で作成し、スケジューラの upcoming→active に委ねる。
     const status = startAt.getTime() <= Date.now() ? 'active' : 'upcoming';
@@ -276,7 +308,7 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
       endAt: Timestamp.fromDate(endAt),
       status,
       createdBy: userId,
-      inviteCode,
+      inviteCode: null,
       createdAt: Timestamp.now(),
     });
 
@@ -317,16 +349,17 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
       .slice(0, 2);
   },
 
-  subscribeDeclarations: (battleId, userId) => subscribeTodayDeclarations(
+  subscribeDeclarations: (battleId, userId, categoryId) => subscribeTodayDeclarations(
     battleId,
     userId,
+    categoryId,
     (declarations) => set((state) => ({
       declarationsByBattle: { ...state.declarationsByBattle, [battleId]: declarations },
     })),
   ),
 
-  declareRun: async (battleId, userId, plannedAt, note) => {
-    await createRunDeclaration({ battleId, userId, plannedAt, note });
+  declareRun: async (battleId, userId, categoryId, plannedAt, note) => {
+    await createRunDeclaration({ battleId, userId, categoryId, plannedAt, note });
   },
 
   updateDeclaration: async (battleId, declaration, plannedAt, note) => {

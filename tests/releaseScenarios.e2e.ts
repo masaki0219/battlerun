@@ -342,6 +342,150 @@ async function scenarioParticipationLimits(): Promise<void> {
   console.log('  ✓ 参加制約: 最大2件・距離0なら退出可・記録後は退出不可');
 }
 
+// ── セキュリティ回帰（private参加・活動要約・招待コード一意性） ───────
+async function scenarioPrivateBattleSecurity(): Promise<void> {
+  const creator = await createAuthUser(`e2e-private-creator-${Date.now()}@example.com`);
+  const invited = await createAuthUser(`e2e-private-invited-${Date.now()}@example.com`);
+  const outsider = await createAuthUser(`e2e-private-outsider-${Date.now()}@example.com`);
+  await Promise.all([
+    seedUser(creator.uid, '作成者', { plan: 'pro' }),
+    seedUser(invited.uid, '招待された人'),
+    seedUser(outsider.uid, '第三者'),
+  ]);
+  const now = Date.now();
+
+  const created = await callFunction('createPrivateBattle', creator.idToken, {
+    title: '非公開セキュリティテスト',
+    description: '招待された人だけ参加',
+    categories: [{ label: '朝チーム' }, { label: '夜チーム' }],
+    rankingType: 'total',
+    startAtMs: now - 60_000,
+    endAtMs: now + 86_400_000,
+  });
+  assert.ok(created.ok, `privateチャレンジ作成に失敗: ${JSON.stringify(created)}`);
+  const privateBattleId = created.result['battleId'] as string;
+  const code = created.result['inviteCode'] as string;
+  assert.match(code, /^[A-Z0-9]{6}$/, 'サーバー生成の招待コードが6桁でない');
+  const [privateBattle, reservation] = await Promise.all([
+    db.doc(`battles/${privateBattleId}`).get(),
+    db.doc(`battleInviteCodes/${code}`).get(),
+  ]);
+  assert.equal(privateBattle.data()?.['inviteCode'], code, 'battleの招待コードと予約が一致しない');
+  assert.equal(reservation.data()?.['battleId'], privateBattleId, '招待コード予約がbattleを指していない');
+  assert.ok(
+    ((await db.doc(`users/${creator.uid}`).get()).data()?.['createdBattleIds'] as string[]).includes(privateBattleId),
+    '作成者がprivateチャレンジを再取得できる索引がない',
+  );
+  const categoryId = (privateBattle.data()?.['categoryIds'] as string[])[0]!;
+
+  const noCode = await callFunction('joinBattle', invited.idToken, {
+    battleId: privateBattleId,
+    categoryId,
+  });
+  assert.equal(noCode.ok, false, '招待コードなしでprivateへ参加できてしまう');
+  assert.equal(noCode.code, 'PERMISSION_DENIED');
+  const wrongCode = await callFunction('joinBattle', invited.idToken, {
+    battleId: privateBattleId,
+    categoryId,
+    inviteCode: 'WRONG1',
+  });
+  assert.equal(wrongCode.ok, false, '誤った招待コードでprivateへ参加できてしまう');
+  const beforeCorrectJoin = await db.doc(`battles/${privateBattleId}/participants/${invited.uid}`).get();
+  assert.equal(beforeCorrectJoin.exists, false, '拒否後にparticipantが作成された');
+
+  const correctCode = await callFunction('joinBattle', invited.idToken, {
+    battleId: privateBattleId,
+    categoryId,
+    inviteCode: code,
+  });
+  assert.ok(correctCode.ok, `正しい招待コードで参加できない: ${JSON.stringify(correctCode)}`);
+
+  const activityId = `e2e-private-activity-${Date.now()}`;
+  await db.doc(`activities/${activityId}`).set({
+    userId: creator.uid,
+    displayName: '作成者',
+    visibility: 'public_v2',
+    battleId: privateBattleId,
+    battleIds: [privateBattleId],
+    aggregationImpacts: {
+      [privateBattleId]: {
+        battleId: privateBattleId,
+        battleTitle: '非公開セキュリティテスト',
+        categoryId,
+        creditedDistanceKm: 3,
+      },
+    },
+    distanceKm: 3,
+    durationSeconds: 1_200,
+    measurementType: 'gps',
+    startedAt: Timestamp.fromMillis(now - 3_600_000),
+    endedAt: Timestamp.fromMillis(now - 2_400_000),
+    submittedAt: Timestamp.now(),
+    aggregated: true,
+  });
+
+  const outsiderList = await callFunction('listBattleActivities', outsider.idToken, {
+    battleId: privateBattleId,
+    limit: 10,
+  });
+  assert.equal(outsiderList.ok, false, '非参加者がprivateの活動要約を列挙できる');
+  assert.equal(outsiderList.code, 'NOT_FOUND', 'privateの存在を権限エラーで露出している');
+
+  const invitedList = await callFunction('listBattleActivities', invited.idToken, {
+    battleId: privateBattleId,
+    limit: 10,
+  });
+  assert.ok(invitedList.ok, `参加者が活動要約を取得できない: ${JSON.stringify(invitedList)}`);
+  const summaries = invitedList.result['activities'] as Array<Record<string, unknown>>;
+  assert.equal(summaries.length, 1);
+  const summary = summaries[0]!;
+  for (const forbidden of ['battleId', 'battleIds', 'aggregationImpacts', 'startedAt', 'endedAt']) {
+    assert.equal(forbidden in summary, false, `要約に非公開フィールド ${forbidden} が含まれる`);
+  }
+  assert.match(summary['dayKey'] as string, /^[0-9]{8}$/, '要約は時刻でなく日付だけを返す');
+
+  const detail = await callFunction('getBattleActivity', invited.idToken, {
+    battleId: privateBattleId,
+    activityId,
+  });
+  assert.ok(detail.ok, `参加者が活動詳細要約を取得できない: ${JSON.stringify(detail)}`);
+  const detailActivity = detail.result['activity'] as Record<string, unknown>;
+  assert.equal('startedAt' in detailActivity, false, '詳細要約に開始時刻が含まれる');
+  assert.equal('aggregationImpacts' in detailActivity, false, '詳細要約に内部集計値が含まれる');
+
+  const duplicateCode = 'DUP123';
+  await Promise.all(['a', 'b'].map((suffix) => db.doc(`battles/e2e-duplicate-${suffix}`).set({
+    type: 'private',
+    status: 'active',
+    inviteCode: duplicateCode,
+    title: `重複${suffix}`,
+    startAt: Timestamp.fromMillis(now - 60_000),
+    endAt: Timestamp.fromMillis(now + 86_400_000),
+    categories: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }],
+  })));
+  const duplicateLookup = await callFunction('lookupBattleByInviteCode', invited.idToken, {
+    inviteCode: duplicateCode,
+  });
+  assert.equal(duplicateLookup.ok, false, '重複招待コードから任意の1件を返している');
+  assert.equal(duplicateLookup.code, 'FAILED_PRECONDITION');
+
+  // 有効形式の不一致コードを連打しても、オンライン総当たりを継続できない。
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const miss = await callFunction('lookupBattleByInviteCode', outsider.idToken, {
+      inviteCode: '000000',
+    });
+    assert.equal(miss.ok, false);
+    assert.equal(miss.code, 'NOT_FOUND');
+  }
+  const rateLimited = await callFunction('lookupBattleByInviteCode', outsider.idToken, {
+    inviteCode: '000000',
+  });
+  assert.equal(rateLimited.ok, false, '招待コード照会を上限後も継続できる');
+  assert.equal(rateLimited.code, 'RESOURCE_EXHAUSTED');
+
+  console.log('  ✓ セキュリティ回帰: private招待照合・正本秘匿・認可済み要約・コード予約・重複拒否・照会制限');
+}
+
 // ── シナリオ7: アカウント削除の清掃 ─────────────────────────────────
 async function scenarioAccountDeletion(): Promise<void> {
   const victim = await createAuthUser(`e2e-delete-${Date.now()}@example.com`);
@@ -406,6 +550,7 @@ async function main(): Promise<void> {
   await scenarioRankChangeNotification();
   await scenarioBattleFinish();
   await scenarioParticipationLimits();
+  await scenarioPrivateBattleSecurity();
   await scenarioAccountDeletion();
   console.log('release scenario e2e tests passed');
 }

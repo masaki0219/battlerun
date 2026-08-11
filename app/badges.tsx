@@ -43,7 +43,7 @@ const BADGE_DEFS: BadgeDef[] = [
     name: '朝活ランナー',
     desc: '朝7時前に記録する',
     icon: 'sunny',
-    color: Colors.accentYellow,
+    color: Colors.goldText,
     check: (s) => s.earlyMorningCount >= 1,
   },
   {
@@ -51,7 +51,7 @@ const BADGE_DEFS: BadgeDef[] = [
     name: '3日連続ラン',
     desc: '3日連続で記録する',
     icon: 'flame',
-    color: Colors.accent,
+    color: Colors.accentText,
     check: (s) => s.consecutiveDays >= 3,
     progress: (s) => ({ current: Math.min(s.consecutiveDays, 3), target: 3, unit: '日' }),
   },
@@ -78,7 +78,7 @@ const BADGE_DEFS: BadgeDef[] = [
     name: '月間30km',
     desc: '月に30km記録する',
     icon: 'trophy',
-    color: Colors.accentYellow,
+    color: Colors.goldText,
     check: (s) => s.monthlyDistanceKm >= 30,
     progress: (s) => ({ current: Math.min(s.monthlyDistanceKm, 30), target: 30, unit: 'km' }),
   },
@@ -87,7 +87,7 @@ const BADGE_DEFS: BadgeDef[] = [
     name: 'ウォークマスター',
     desc: '歩数モードで10回記録する',
     icon: 'footsteps',
-    color: Colors.accent,
+    color: Colors.accentText,
     check: (s) => s.stepsModeCount >= 10,
     progress: (s) => ({ current: Math.min(s.stepsModeCount, 10), target: 10, unit: '回' }),
   },
@@ -96,7 +96,7 @@ const BADGE_DEFS: BadgeDef[] = [
     name: '百里の旅人',
     desc: '累計100km記録する',
     icon: 'earth',
-    color: Colors.accentYellow,
+    color: Colors.goldText,
     check: (s) => s.totalDistanceKm >= 100,
     progress: (s) => ({ current: Math.min(s.totalDistanceKm, 100), target: 100, unit: 'km' }),
   },
@@ -263,7 +263,7 @@ export default function BadgesScreen() {
                           あと {left}{prog.unit}
                         </Text>
                       </View>
-                      <ProgressBar value={pct} color={badge.color} trackColor={Colors.surfaceAlt} height={6} />
+                      <ProgressBar value={pct} color={badge.color} trackColor={Colors.surfaceGray} height={6} />
                       <Text style={s.upcomingDesc}>{badge.desc}</Text>
                     </View>
                   </View>
@@ -279,7 +279,7 @@ export default function BadgesScreen() {
               <View style={s.badgeGrid}>
                 {remainingUnearned.map((b) => (
                   <View key={b.id} style={[s.badgeItem, s.badgeItemGray]}>
-                    <View style={[s.badgeIcon, { backgroundColor: Colors.surfaceAlt }]}>
+                    <View style={[s.badgeIcon, { backgroundColor: Colors.surfaceGray }]}>
                       <Ionicons name={b.icon as any} size={28} color={Colors.textTertiary} />
                     </View>
                     <Text style={[s.badgeName, { color: Colors.textTertiary }]} numberOfLines={2}>{b.name}</Text>
@@ -299,7 +299,7 @@ export default function BadgesScreen() {
                 {titles.map((t, i) => (
                   <View key={i} style={s.titleCard}>
                     <View style={s.titleIconWrap}>
-                      <Ionicons name="ribbon" size={20} color={Colors.accentYellow} />
+                      <Ionicons name="ribbon" size={20} color={Colors.goldText} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={s.titleBattleName} numberOfLines={1}>

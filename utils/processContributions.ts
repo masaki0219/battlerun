@@ -1,5 +1,3 @@
-import { localDateKey } from './declarations';
-
 export interface ProcessContribution {
   declarationsDone: number;
   activeDaysThisWeek: number;
@@ -12,7 +10,7 @@ export interface ProcessDeclarationInput {
 
 export interface ProcessActivityInput {
   userId: string;
-  startedAt: Date;
+  dayKey: string;
 }
 
 /**
@@ -31,9 +29,9 @@ export function aggregateProcessContributions(
 
   const activeDateKeys = new Map<string, Set<string>>();
   for (const activity of activities) {
-    if (!activity.userId || Number.isNaN(activity.startedAt.getTime())) continue;
+    if (!activity.userId || !/^[0-9]{8}$/.test(activity.dayKey)) continue;
     const dates = activeDateKeys.get(activity.userId) ?? new Set<string>();
-    dates.add(localDateKey(activity.startedAt));
+    dates.add(activity.dayKey);
     activeDateKeys.set(activity.userId, dates);
   }
 

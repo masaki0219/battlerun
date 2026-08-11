@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Modal, Pressable, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors, DarkColors, Spacing, BorderRadius, Shadow } from '../../design_tokens';
+import { ActionColors, Colors, DarkColors, Spacing, BorderRadius, Shadow } from '../../design_tokens';
 import type { WeeklyGoal } from '../../types';
 
 interface Props {
@@ -142,8 +142,8 @@ const styles = StyleSheet.create({
   recommended: { fontSize: 8, fontWeight: '700', color: Colors.primaryDark, marginTop: 2 },
   recommendedActive: { color: Colors.textOnPrimary },
   restHint: { fontSize: 10, color: Colors.textSecondary, marginTop: Spacing.md },
-  saveButton: { backgroundColor: Colors.primary, borderRadius: BorderRadius.md, alignItems: 'center', paddingVertical: 14, marginTop: Spacing.xl },
-  saveText: { color: Colors.textOnPrimary, fontSize: 15, fontWeight: '800' },
+  saveButton: { backgroundColor: ActionColors.background, borderRadius: BorderRadius.md, alignItems: 'center', paddingVertical: 14, marginTop: Spacing.xl },
+  saveText: { color: ActionColors.foreground, fontSize: 15, fontWeight: '800' },
   clearButton: { alignItems: 'center', paddingVertical: 12, marginBottom: Spacing.xs },
   clearText: { color: Colors.textSecondary, fontSize: 13, fontWeight: '600' },
 });

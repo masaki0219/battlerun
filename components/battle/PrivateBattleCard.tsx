@@ -103,5 +103,5 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.accentYellow + '22', borderRadius: BorderRadius.full,
     paddingHorizontal: Spacing.sm, paddingVertical: 3,
   },
-  rankBadgeText: { fontSize: Typography.fontSize.xs, color: Colors.accentYellow, fontWeight: Typography.fontWeight.semibold },
+  rankBadgeText: { fontSize: Typography.fontSize.xs, color: Colors.goldText, fontWeight: Typography.fontWeight.semibold },
 });

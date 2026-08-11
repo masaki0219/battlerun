@@ -187,10 +187,10 @@ export default function BattleResultScreen() {
   const endDate = new Date(localBattle.endAt).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' });
 
   function rankMedal(rank: number) {
-    if (rank === 1) return { emoji: '🥇', color: Colors.accentYellow, label: '優勝！', bg: `${Colors.accentYellow}18` };
+    if (rank === 1) return { emoji: '🥇', color: Colors.rank1Text, label: '優勝！', bg: `${Colors.accentYellow}18` };
     if (rank === 2) return { emoji: '🥈', color: Colors.rank2, label: '準優勝', bg: `${Colors.rank2}28` };
     if (rank === 3) return { emoji: '🥉', color: Colors.rank3, label: '3位入賞', bg: `${Colors.rank3}18` };
-    return { emoji: '🏃', color: Colors.textSecondary, label: `${rank}位`, bg: `${Colors.surfaceAlt}` };
+    return { emoji: '🏃', color: Colors.textSecondary, label: `${rank}位`, bg: Colors.surfaceGray };
   }
 
   const medal = myRank ? rankMedal(myRank) : null;
@@ -285,7 +285,7 @@ export default function BattleResultScreen() {
             <MonoLabel color={Colors.textTertiary} size={9}>{decorLabel('称号獲得', 'TITLE EARNED')}</MonoLabel>
             <View style={s.titleCard}>
               <View style={s.titleIconWrap}>
-                <Ionicons name="ribbon" size={28} color={Colors.accentYellow} />
+                <Ionicons name="ribbon" size={28} color={Colors.goldText} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={s.titleName}>{titleName}</Text>
@@ -438,7 +438,7 @@ export default function BattleResultScreen() {
                   );
                   return;
                 }
-                router.push({ pathname: '/(tabs)/battle', params: { open: 'create' } } as any);
+                router.push({ pathname: '/(tabs)/friends', params: { open: 'create' } } as any);
               }}
               activeOpacity={0.85}
               accessibilityRole="button"

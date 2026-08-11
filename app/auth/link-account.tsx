@@ -201,6 +201,7 @@ export default function LinkAccountScreen() {
                 onPress={() => handleSocialLink('google.com')}
                 loading={busy}
                 disabled={busy}
+                mode="continue"
               />
             )}
             {Platform.OS === 'android' && initialPending.providerId === 'google.com' && (

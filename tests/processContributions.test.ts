@@ -9,11 +9,11 @@ const contributions = aggregateProcessContributions(
     { uid: 'bob', status: 'expired' },
   ],
   [
-    { userId: 'alice', startedAt: new Date(2026, 6, 20, 7) },
-    { userId: 'alice', startedAt: new Date(2026, 6, 20, 18) },
-    { userId: 'alice', startedAt: new Date(2026, 6, 21, 7) },
-    { userId: 'bob', startedAt: new Date(2026, 6, 20, 8) },
-    { userId: 'invalid', startedAt: new Date('invalid') },
+    { userId: 'alice', dayKey: '20260720' },
+    { userId: 'alice', dayKey: '20260720' },
+    { userId: 'alice', dayKey: '20260721' },
+    { userId: 'bob', dayKey: '20260720' },
+    { userId: 'invalid', dayKey: 'invalid' },
   ],
 );
 

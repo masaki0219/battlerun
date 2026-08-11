@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
-import { onSnapshot, collection, getDocs, orderBy, limit, doc, getDoc, query, where, Timestamp } from 'firebase/firestore';
+import { onSnapshot, collection, doc, getDoc, Timestamp } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
@@ -30,6 +30,7 @@ import { useBlockedUsers } from '../../hooks/useBlockedUsers';
 import { prioritizeTeams } from '../../utils/teamDisplay';
 import { comebackTarget, formatRunDistanceKm } from '../../utils/displayStats';
 import { cachedPublicProfile } from '../../lib/publicProfileCache';
+import { listBattleActivitySummaries } from '../../lib/activitySummaries';
 
 // ─── countdown helpers ─────────────────────────────────────────
 function timeLeft(endAt: string): { d: number; h: number; m: number } {
@@ -89,6 +90,7 @@ export default function BattleDetailScreen() {
   const teamRanking = useTeamRanking(id, myCatId, user?.id, { topCount: 10 });
   const processContributions = useBattleProcessContributions(
     battle && !isIndividual && myCatId ? id : undefined,
+    myCatId ?? undefined,
   );
 
   useEffect(() => {
@@ -168,31 +170,29 @@ export default function BattleDetailScreen() {
   // ── recent activities for this battle (best-effort) ────────
   useEffect(() => {
     if (!id || !user) return;
-    const q = query(
-      collection(db, 'activities'),
-      where('battleIds', 'array-contains', id),
-      where('visibility', '==', 'public_v2'),
-      orderBy('startedAt', 'desc'),
-      limit(10),
-    );
-    getDocs(q)
-      .then((snap) => {
-        void Promise.all(snap.docs.map(async (d): Promise<RecentActivity> => {
-          const data = d.data() as Record<string, unknown>;
-          const userId = data['userId'] as string;
+    let cancelled = false;
+    listBattleActivitySummaries({ battleId: id, limit: 10 })
+      .then((activities) => {
+        void Promise.all(activities.map(async (activity): Promise<RecentActivity> => {
+          const userId = activity.userId;
           const profile = await cachedPublicProfile(userId).catch(() => null);
           return {
-            id: d.id,
+            id: activity.id,
             userId,
-            displayName: profile?.name ?? (data['displayName'] as string | undefined) ?? 'メンバー',
+            displayName: profile?.name ?? activity.displayName ?? 'メンバー',
             avatarEmoji: profile?.avatarEmoji,
-            distanceKm: (data['distanceKm'] as number) ?? 0,
+            distanceKm: activity.distanceKm,
             isMe: userId === user.id,
           };
-        })).then(setRecentActivities);
+        })).then((items) => {
+          if (!cancelled) setRecentActivities(items);
+        });
       })
-      .catch(() => { /* activities may not have battleIds index yet */ });
-  }, [id, user]);
+      .catch(() => {
+        if (!cancelled) setRecentActivities([]);
+      });
+    return () => { cancelled = true; };
+  }, [id, user?.id]);
 
   if (!battle) {
     return (
@@ -525,7 +525,10 @@ export default function BattleDetailScreen() {
                 title={a.displayName}
                 subtitle={`${formatRunDistanceKm(a.distanceKm)}km走った`}
                 titleColor={a.isMe ? Colors.primary : undefined}
-                onPress={() => router.push(`/activity/${a.id}` as any)}
+                onPress={() => router.push({
+                  pathname: '/activity/[id]' as any,
+                  params: { id: a.id, battleId: id },
+                })}
               />
             ))}
           </View>
@@ -546,7 +549,12 @@ export default function BattleDetailScreen() {
           }
           setChangingTeam(true);
           try {
-            await joinBattle(battle.id, categoryId, user.id);
+            await joinBattle(
+              battle.id,
+              categoryId,
+              user.id,
+              battle.type === 'private' ? battle.inviteCode : null,
+            );
             setShowTeamChange(false);
           } catch (e) {
             Alert.alert(

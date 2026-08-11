@@ -5,7 +5,19 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged,
 } from 'firebase/auth';
-import { deleteField, doc, getDoc, serverTimestamp, writeBatch, onSnapshot, updateDoc } from 'firebase/firestore';
+import {
+  collectionGroup,
+  deleteField,
+  doc,
+  getDoc,
+  getDocs,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+  writeBatch,
+} from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { signOutGoogleSession } from '../lib/socialAuth';
 import { DISPLAY_NAME_MAX_LENGTH, validateDisplayName } from '../lib/validation/displayName';
@@ -81,6 +93,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
         name: normalizedName,
         plan: 'free',
         runningPresenceVisible: false,
+        runDeclarationVisible: false,
         createdAt: new Date(),
       });
       batch.set(doc(db, 'publicProfiles', result.user.uid), {
@@ -134,6 +147,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
         avatarEmoji,
         plan: 'free',
         runningPresenceVisible: false,
+        runDeclarationVisible: false,
         createdAt: serverTimestamp(),
       });
       batch.set(doc(db, 'publicProfiles', currentUser.uid), {
@@ -166,6 +180,30 @@ export const useAuthStore = create<AuthStore>((set) => ({
     const user = useAuthStore.getState().user;
     if (!user) throw new Error('ログインが必要です');
     await updateDoc(doc(db, 'users', user.id), { runningPresenceVisible: visible });
+  },
+
+  setRunDeclarationVisible: async (visible) => {
+    const user = useAuthStore.getState().user;
+    if (!user) throw new Error('ログインが必要です');
+    const userRef = doc(db, 'users', user.id);
+    if (visible) {
+      await updateDoc(userRef, { runDeclarationVisible: true });
+      return;
+    }
+
+    // 設定OFFと現在公開中の宣言を同じバッチで反映し、表示だけOFFの中間状態を作らない。
+    const visibleDeclarations = await getDocs(query(
+      collectionGroup(db, 'declarations'),
+      where('uid', '==', user.id),
+      where('visible', '==', true),
+    ));
+    if (visibleDeclarations.size > 450) {
+      throw new Error('公開中の宣言が多いため設定を更新できませんでした。');
+    }
+    const batch = writeBatch(db);
+    visibleDeclarations.docs.forEach((snapshot) => batch.update(snapshot.ref, { visible: false }));
+    batch.update(userRef, { runDeclarationVisible: false });
+    await batch.commit();
   },
 }));
 
@@ -316,6 +354,7 @@ function applyUserSnapshot(firebaseUid: string, data: Record<string, any>): void
     weeklyGoal,
     personalRecords: personalRecordsFrom(data['personalRecords']),
     runningPresenceVisible: data['runningPresenceVisible'] === true,
+    runDeclarationVisible: data['runDeclarationVisible'] === true,
   };
   useAuthStore.setState({
     user,

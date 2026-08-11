@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, Text, ActivityIndicator, StyleSheet, ViewStyle, StyleProp } from 'react-native';
-import { Colors, Typography, BorderRadius, ComponentSize } from '../../design_tokens';
+import { ActionColors, Colors, Typography, BorderRadius, ComponentSize } from '../../design_tokens';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'accent';
 type Size = 'sm' | 'md' | 'lg';
@@ -15,21 +15,21 @@ interface Props {
   style?: StyleProp<ViewStyle>;
 }
 
-// このアプリの主 CTA はオレンジ（accent）。primary=accent に統一
+// variant の primary は「主操作」の意味。ブランド色名ではなく ActionColors を参照する。
 const BG: Record<Variant, string> = {
-  primary: Colors.accent,
+  primary: ActionColors.background,
   secondary: Colors.surface,
   ghost: 'transparent',
   danger: Colors.error,
-  accent: Colors.accent,
+  accent: ActionColors.background,
 };
 
 const FG: Record<Variant, string> = {
-  primary: Colors.textOnAccent,
+  primary: ActionColors.foreground,
   secondary: Colors.textPrimary,
   ghost: Colors.textSecondary,
   danger: Colors.textOnPrimary,
-  accent: Colors.textOnAccent,
+  accent: ActionColors.foreground,
 };
 
 const FONT: Record<Size, number> = {

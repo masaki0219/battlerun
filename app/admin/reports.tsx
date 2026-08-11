@@ -7,7 +7,7 @@ import { collection, doc, getDocs, orderBy, query, serverTimestamp, updateDoc } 
 import { db } from '../../lib/firebase';
 import { REPORT_REASONS, type ReportReason, type ReportStatus, type ReportTargetType } from '../../lib/moderation';
 import { useAuthStore } from '../../stores/authStore';
-import { BorderRadius, Colors, Shadow, Spacing, Typography } from '../../design_tokens';
+import { ActionColors, BorderRadius, Colors, Shadow, Spacing, Typography } from '../../design_tokens';
 
 interface ModerationReport {
   id: string;
@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
   badges: { flexDirection: 'row', gap: Spacing.xs },
   typeBadge: { overflow: 'hidden', paddingHorizontal: 8, paddingVertical: 4, borderRadius: BorderRadius.full, backgroundColor: Colors.surfaceGray, color: Colors.textSecondary, fontSize: 10, fontWeight: Typography.fontWeight.bold },
   statusBadge: { overflow: 'hidden', paddingHorizontal: 8, paddingVertical: 4, borderRadius: BorderRadius.full, backgroundColor: Colors.borderLight, color: Colors.textSecondary, fontSize: 10, fontWeight: Typography.fontWeight.bold },
-  pendingBadge: { backgroundColor: Colors.accentLight, color: Colors.accentDark },
+  pendingBadge: { backgroundColor: Colors.accentLight, color: Colors.accentText },
   date: { flexShrink: 1, textAlign: 'right', fontSize: 9, color: Colors.textTertiary },
   reason: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary, marginTop: Spacing.md },
   snapshot: { fontSize: Typography.fontSize.sm, color: Colors.textPrimary, lineHeight: 20, marginTop: Spacing.sm, padding: Spacing.sm, backgroundColor: Colors.surfaceGray, borderRadius: BorderRadius.sm },
@@ -172,9 +172,9 @@ const styles = StyleSheet.create({
   updating: { marginTop: Spacing.md },
   actions: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md },
   reviewButton: { flex: 1, minHeight: 38, alignItems: 'center', justifyContent: 'center', borderRadius: BorderRadius.sm, backgroundColor: Colors.accentLight },
-  reviewText: { fontSize: 10, fontWeight: Typography.fontWeight.bold, color: Colors.accentDark },
+  reviewText: { fontSize: 10, fontWeight: Typography.fontWeight.bold, color: Colors.accentText },
   dismissButton: { flex: 1, minHeight: 38, alignItems: 'center', justifyContent: 'center', borderRadius: BorderRadius.sm, backgroundColor: Colors.surfaceGray },
   dismissText: { fontSize: 10, fontWeight: Typography.fontWeight.bold, color: Colors.textSecondary },
-  resolveButton: { flex: 1, minHeight: 38, alignItems: 'center', justifyContent: 'center', borderRadius: BorderRadius.sm, backgroundColor: Colors.primary },
-  resolveText: { fontSize: 10, fontWeight: Typography.fontWeight.bold, color: Colors.textOnPrimary },
+  resolveButton: { flex: 1, minHeight: 38, alignItems: 'center', justifyContent: 'center', borderRadius: BorderRadius.sm, backgroundColor: ActionColors.background },
+  resolveText: { fontSize: 10, fontWeight: Typography.fontWeight.bold, color: ActionColors.foreground },
 });

@@ -59,7 +59,7 @@ export function FeedbackForm() {
               <Ionicons
                 name={value <= rating ? 'star' : 'star-outline'}
                 size={36}
-                color={value <= rating ? Colors.warning : Colors.textTertiary}
+                color={value <= rating ? Colors.warningText : Colors.textTertiary}
               />
             </TouchableOpacity>
           ))}

@@ -26,6 +26,35 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 
 ## 最後に完了したこと
 
+### 2026-08-11 Googleログインボタンの実幅修正とUI配色統一
+
+- Googleネイティブボタンはホストを354×48ptへ広げても、iOS SDK内部が4ptの枠・影を内側へ描くため、白い面だけが小さく見えることを実装とシミュレータで確認した。表示だけをアプリ側の`Pressable`へ変更し、認証処理の`react-native-nitro-google-signin`／One Tap APIはそのまま維持した。不要になったネイティブラッパーのpatch、`patch-package`、`postinstall`は残していない。
+- Googleボタンは通常ログイン／Appleと同じ全幅・48pt・ピル型にし、白地、Google指定のグレー境界線と濃色文字、ブランド4色のGマークを使用する。ログイン／登録／連携でラベルを切り替え、押下中・処理中・disabledの見た目とアクセシビリティ状態も実装した。色はすべて`design_tokens.ts`へ集約した。
+- iPhone 17（iOS 26.4）シミュレータのスクリーンショットでGマークを含む外観を目視確認し、Maestro hierarchyで通常ログイン、Apple、Googleがすべて **bounds `[24, …][378, …]` = 354×48pt** と確認した。Googleだけにあった内側の縮小面・影はなく、3ボタンの外形が揃っている。
+- 主CTA用の意味トークン`ActionColors`を追加し、共通`Button`と、ラン保存／完了、週間目標保存、通報送信、管理解決の手書きCTAをオレンジへ統一した。タブバーの選択状態は中央「ラン」を含めブランドティールへ統一し、CTA色と選択色の役割を分離した。
+- 明るい面の小さな強調文字・意味を持つアイコン用に`accentText`（白5.20:1、accentLight 4.67:1）と`goldText`（白6.10:1）を追加し、`warningText` / `rank1Text`も同じ高コントラスト系へ移した。オレンジ／黄は塗り・罫線・装飾には従来色を維持し、前景だけを移行した。ライト面のdeprecated `Colors.surfaceAlt` は0件にし、`Colors.surfaceGray`へ統一した（`DarkColors.surfaceAlt`は対象外）。コントラストとdeprecated再利用を`tests/designTokens.test.ts`、Googleボタンの寸法・状態・ロゴを`tests/providerButtons.test.ts`で回帰検査する。
+- 今回の最終形で確認成功: `npx tsc --noEmit`、全unit（Googleボタン寸法・トークン回帰テストを含む）、Expo Doctor 18/18、iOS Expo export、`git diff --check`。Firebase側とネイティブ依存の変更はなく追加デプロイ不要。
+
+### 2026-08-11 フレンドタブ・直近7日グラフ・ラン宣言安全化・使い方ガイド
+
+- 友達チャレンジを `app/(tabs)/friends.tsx` へ分離し、タブを「チャレンジ / フレンド / ラン / 記録 / プロフィール」の5件にした。招待コード参加を先頭、Pro限定作成を下段に配置し、招待リンクと結果画面の遷移、Maestroのタブ巡回も新ルートへ更新した。チャレンジタブは公開チャレンジ一覧と、参加中の公開／友達チャレンジ体験に限定した。
+- チャレンジ画面の週間カードを今日が右端の「直近7日」へ変更し、合計値と棒グラフを同じ期間へ統一した。週間目標だけは月曜リセットのカレンダー週を維持した。週・月グラフへkm縦軸、最大／中央／0の目盛り、グリッド線、見やすい上限値を追加し、ランタブのcompact表示は軸なしを維持した。週グラフの各バーへ距離のアクセシビリティラベルも追加した。
+- ラン宣言はプロフィールの明示opt-in（既定OFF）を必須にし、`categoryId`で同一チームだけに限定、`visible`と`expireAt`を追加した。公開OFF時は本人の公開中宣言を一括非公開化し、単なる再公開は禁止、明示的な新規宣言操作だけ再宣言を許可する。公開チャレンジの入力欄には場所を書かない注意を表示する。48時間TTLと必要な複合インデックスを `firestore.indexes.json` に定義した。
+- `app/guide.tsx` を追加し、記録、チャレンジ、宣言・応援、統計、バッジ・称号、Pro、安全・プライバシー、ヘルプを現行仕様に合わせて説明した。プロフィールのヘルプ欄から開け、登録時の4画面紹介をログイン状態のまま再表示してガイドへ戻れる。
+- 確認成功: `npx tsc --noEmit`、全unit、Functions build、Firestore Rules全件、活動集計integration、記録反映E2E、リリースシナリオE2E、iOS Expo export、`git diff --check`。Firebase CLI 15.26.0で `zelio-run` 向けFirestore indexes/rules dry-runも警告なしで成功した。ブート済みiOSシミュレータが無いためMaestroの画面目視は未実行。
+- **本番反映済み（2026-08-11 19:25 JST）**: ユーザーの明示指示を受け、`zelio-run`へ宣言用複合インデックス3件と`expireAt`の48時間TTLを先行デプロイした。複合インデックス3件がすべて`READY`、TTLが`ACTIVE`、TTL用単一フィールドインデックス4件がすべて`READY`になったことを確認後、Firestore ruleset `projects/zelio-run/rulesets/249245da-32ca-4e0c-b16c-85531fa6fa06`を公開した。直前のRulesエミュレータテストと本番dry-runも成功。Functions変更・デプロイはない。
+
+### 2026-08-11 非公開チャレンジP0修正と独立セキュリティ監査
+
+- Claude Codeの報告を前提にせずコード・ルール・エミュレータPoCを再調査し、(1) `joinBattle`の招待コード未検証、(2) `activities`正本の全認証ユーザー公開、(3)クライアント生成コードの重複可能性をすべて再現・確認した。
+- privateの参加は最新の`battles/{id}.inviteCode`とのサーバー照合を必須化した。活動正本は本人/adminだけにし、チャレンジ参加者向けには認可後に日付・表示名・距離・時間だけを返す`listBattleActivities` / `getBattleActivity` Callableを追加した。正確な開始/終了時刻、`battleId(s)`、`aggregationImpacts`、他チャレンジ情報、GPSは返さない。リアクションは親活動を読ませず、反映先チャレンジのACLで認可する。
+- private作成を`createPrivateBattle`へ移し、Node cryptoで6桁コードを生成して`battleInviteCodes/{code}`をトランザクション予約する。旧データを含む重複コードのlookupは任意の1件を返さず拒否し、lookupは1アカウント10分30回までに制限した。作成者用の`createdBattleIds`と試行回数ドキュメントはクライアント書き込み不可。
+- 独立監査で追加修正: `users/{uid}`のcreate/updateを許可フィールド方式へ変更して未知フィールド・課金補助値・過大push tokenの注入を拒否、CallableのFirestore IDを長さ付き正規表現で検証、通報`targetUid`を128文字に制限。Functionsの`firebase-admin`を公式現行14.2.0へ更新した。
+- 確認成功: `npx tsc --noEmit`、tests型チェック、全unit、Functions build、`npm run test:rules`（**138 PASS / 0 FAIL**）、活動集計integration、Functions/Auth/Firestore E2E（招待なし・誤コード・非参加者要約・重複コード・31回目lookupの拒否を含む）、iOS Expo export＋source map確認、`git diff --check`。
+- 監査結果: 秘密情報のコミットは検出0。Firebase AuthのEmail enumeration protectionは実環境で有効。今回デプロイした公開Callable 7件はすべて`maxInstances: 20`（新規3件はソースにも明示）。App Checkの明示設定は0件でenforcement未導入。Supabase anon SELECTはHTTP 200・空配列で実データ露出は観測しなかったが、テーブルが空の場合と区別できないためRLSポリシー自体はダッシュボード確認が必要。
+- `npm audit --omit=dev`: rootは35件（high 12 / moderate 23）のまま。highの依存元はExpo CLI/Metro/Firebaseのツール系で、生成したiOS source mapのsourcesに`undici` / `postcss` / `image-size`は0件。FunctionsはAdmin SDK更新で8→7 moderate、high/critical 0。残りは`@google-cloud/storage`→`uuid`の同一advisoryで、強制fixは安全な最新版ではなく旧`firebase-admin@10.3.0`への破壊的ダウングレードを提示するため未適用。
+- **本番デプロイ済み（2026-08-11）**。ユーザーの明示指示を受け、対象Functions 8件を`zelio-run`へ限定デプロイ（8/8成功、エラー0）した後、Firestore rulesをruleset `projects/zelio-run/rulesets/600bd584-fffe-4800-bd59-8cf09cf3b305`として公開した。追加3 Callableの`maxInstances: 20`も限定再デプロイ済みで、対象8件はすべて`ACTIVE`。本番スモークテストは、公開Callable 7件の未認証リクエストがすべてHTTP 401、認証済み第三者による`activities`一覧・他人のuser・招待予約へのアクセスとprivate直書きがすべてHTTP 403、隔離PoCの招待なし／誤コード参加がともにHTTP 403かつ参加データ変更0を確認した。検証用Firestore/Authデータは全削除済み。Functions deployの依存確認でCloud Billing APIが自動有効化されたが、課金予算アラート自体は作成していない。
+
 ### 2026-08-10 ラン宣言・ソーシャル表示・記録体験・管理画面を一括改善
 
 - ラン宣言を「まもなく／次の15分区切り／1時間後＋時間ピッカー＋±15分」のハイブリッドへ変更し、当日内だけを許可した。15分以内と静音時間帯はリマインダーを登録せず、宣言の公開範囲も画面に明記した。
@@ -532,7 +561,7 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 
 ## 次にやること
 
-1. **EAS iOS development buildを作成し、物理端末で`RELEASE_TEST_CHECKLIST.md`シナリオ0（Apple／Google認証9項目）と今回のGPSカウントダウン／長押し停止／宣言ピッカーを通す。**
+1. **現行差分からEAS iOS development buildを作成し、物理端末のApple／Google実アカウントでログイン・新規登録・既存メールへの連携を確認する。**
 
 ## その次の候補
 - `lib/socialAuth.ts` の純粋ロジック（エラーコード分岐、idToken欠落時throw、pending linkの10分失効）を`tests/`へ載せられる形へ切り出し、ユニットテストを追加する
@@ -554,9 +583,14 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 
 ## 未解決・要確認
 
-- **Apple／Google認証の外部設定と物理端末E2Eが未完了（2026-08-10）**: iOSクライアントのprebuild／compileは成功したが、EAS buildとApple／Google実アカウントでの全フローは未確認。Apple Developerでprivate email relayの送信元／ドメインを確認し、App Store ConnectのApp Privacyを更新する。Android同時リリースの場合はEAS/Play署名鍵を作成し、SHA-1をFirebaseへ登録して`google-services.json`を再取得する（現状EAS Android credentialsなし、Firebase SHA 0件）。このMacにはAndroid SDKが無いためAndroid APKのローカルcompileも未完了。
+- **旧形式ラン宣言の物理削除／TTL対象化は未実施（2026-08-11）**: 新規宣言の48時間TTLと同一チーム限定ルールは本番反映済み。デプロイ前に作成された`expireAt`なしの旧形式宣言は、新ルールにより本人／admin以外から読めないが、Firestore上ではTTL対象外のまま残る。物理削除または`expireAt`バックフィルは既存データを不可逆に変えるため、件数・対象を確認して別途明示承認後に行う。
+- ~~非公開チャレンジ侵入・活動正本公開・招待コード重複~~ **解決済み（2026-08-11）**: Functions 8件、Firestore ruleset `600bd584-fffe-4800-bd59-8cf09cf3b305`、新規3 Callableの`maxInstances: 20`を本番`zelio-run`へ反映済み。本番の認証済み拒否テストと招待なし／誤コード参加PoCも成功し、検証データは削除済み。
+- **Supabaseフィードバックの実RLSは最終確認が必要（2026-08-11）**: anonキーでSELECTを実行した結果はHTTP 200・`[]`で、フィードバック本文の露出は観測しなかった。ただしテーブルが空ならSELECT許可時も同じ結果になる。Supabaseダッシュボードで`feedbacks`のRLS有効、anonはINSERTのみ、SELECT/UPDATE/DELETEなしを確認する。
+- **Firebase外部防御の確認結果（2026-08-11）**: Authのメール列挙防止は有効。今回の公開Callable 7件はmax instances 20、`onUserDeleted`は外部HTTP受付のないAuth削除トリガー（Gen 1、上限3000）。App Checkは明示設定0件で未enforce。Functions deploy時にFirebase CLIがCloud Billing APIを自動有効化したが、課金予算額・通知先は所有者判断が必要なため予算アラートは未作成。App Checkは正規クライアントの登録・debug token・メトリクス確認後に段階導入する。
+- **アカウント削除後の作成済みprivateチャレンジ方針（監査で発見・要仕様決定）**: `onUserDeleted`は活動・GPS・プロフィール・参加・ソーシャルデータを消すが、本人が作成した`battles`のタイトル/説明/チーム名/`createdBy`/招待コードは残る。履歴を必要とする他参加者がいるため一律削除は勝手に決めず未変更。終了＋招待無効化＋投稿文匿名化のどこまで行うか決めてから実装する。
+- **Apple／Google認証の外部設定と物理端末E2Eが未完了（2026-08-11）**: iOSシミュレータでログイン画面の外観と通常ログイン／Apple／Googleの354×48pt同一boundsまでは確認済みだが、EAS署名付きbuildとApple／Google実アカウントでの全フローは未確認。Apple Developerでprivate email relayの送信元／ドメインを確認し、App Store ConnectのApp Privacyを更新する。Android同時リリースの場合はEAS/Play署名鍵を作成し、SHA-1をFirebaseへ登録して`google-services.json`を再取得する（現状EAS Android credentialsなし、Firebase SHA 0件）。このMacにはAndroid SDKが無いためAndroid APKのローカルcompileも未完了。
 - **公開プライバシーポリシーの同期は【ユーザー担当】（2026-08-10）**: ローカル `public/legal/privacy.html` とアプリ内画面は8月10日版（Apple／Google記述あり）へ更新済み。公開先（`masaki0219/app-support` のGitHub Pages と Firebase Hosting）への反映はユーザーが行う。**エージェント側からは対応不要・再指摘不要。**
-- **新規認証コードに自動テストが0件（2026-08-10）**: `lib/socialAuth.ts`（251行）、`app/auth/link-account.tsx`（322行）、`app/auth/profile-setup.tsx`（170行）、`components/auth/*.tsx`（217行）の計985行に対し、`tests/unit.test.ts` が読み込むスイートは17件のままで、社会的ログイン関連の参照が1件もない。型チェックとネイティブビルドは通るが、`socialAuthErrorMessage()` のエラーコード分岐、`googleCredentialBundle()` のidToken欠落時throw、`getPendingAccountLink()` の10分失効といった純粋ロジックは一度も実行検証されていない。これらは`expo-constants`／`react-native`／`firebase/auth`をimportするため、現行のts-node直実行構成へ載せるにはモジュール分割かモックが要る。Maestroの画面遷移テストでも、Expo GoではApple／Googleのネイティブモジュールを読み込まないため「開発ビルドまたはストア版で利用できます」の表示までしか確認できない。
+- **認証ビジネスロジックの自動テストが0件（2026-08-11）**: Googleボタンの全幅48pt・ピル型・disabled表示・同梱Gマークは`tests/providerButtons.test.ts`で回帰検査するようになった。一方、`socialAuthErrorMessage()` のエラーコード分岐、`googleCredentialBundle()` のidToken欠落時throw、`getPendingAccountLink()` の10分失効はまだ自動実行されていない。`lib/socialAuth.ts`が`expo-constants`／`react-native`／`firebase/auth`をimportするため、現行のts-node直実行構成へ載せるには純粋ロジックの分割かモックが要る。
 - **画面遷移テストのエミュレータ接続が恒久化されていない（2026-08-10）**: `lib/firebase.ts`にエミュレータ接続コードが無いため、`npm run test:ui`を流すたびに一時ブロックの追加と`git checkout`での復元が要る。`EXPO_PUBLIC_USE_FIREBASE_EMULATOR`ガード付きで恒久化するかは未判断。恒久化しない限り、復元忘れで本番接続のまま配布する事故余地が残る。
 - ~~旧Storage画像の確認・削除が必要~~ **解決済み（2026-08-02）**: 本番bucketの `avatars/` は0件・0 bytesで、削除対象はなかった。新規アクセスはStorageルールで全面拒否済み。
 - ~~UGCの通報・ブロックが未実装~~ **解決済み（2026-07-31）**: 投稿前フィルター、投稿別の通報、ユーザーブロック、相互インタラクション/通知遮断、管理者通報キュー、公開連絡先、運用手順まで実装・デプロイ済み。実際に原則24時間以内の一次対応を継続する運用と、提出前の2アカウント実機確認は人手で必要。
@@ -576,7 +610,7 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 - サポート窓口は `https://github.com/masaki0219/app-support/issues` を使用し、ZELIO Hostingの `/support.html` から案内する。個人情報を含む問い合わせを公開Issueへ書かせない注意文を表示済み。非公開窓口として2026-07-21にSupabase評価・ご要望フォームをヘルプへ併設した（返信不可のため、返信が必要な報告はGitHub Issueを継続使用）。
 - Supabase評価・ご要望フォームの実機/Expo Goでの目視（ヘルプ最上部のフォーム表示・星タップ・キーボードと送信ボタンの重なり・送信後のお礼表示・未設定時の非表示）は未実施。Hosting `/support.html` からのフォーム案内追記も未実施。
 - Expo依存は `expo ~54.0.35`、`expo-font ~14.0.12`、`expo-router ~6.0.24` へ更新済み。Expo Doctorは18/18合格。
-- `npm audit fix`（`--force`なし）適用後、rootの `npm audit --omit=dev` は high 12 / moderate 23（合計35）。主なhighはExpo/Metro配下の`image-size`・`postcss`とFirebase配下の`undici`で、npm提示の解消はExpo/Firebaseのメジャー更新を伴う。functionsはhigh 0 / moderate 9で、残りはfirebase-admin配下の`uuid`系。互換性を壊す強制更新は未適用。
+- 2026-08-11時点の`npm audit --omit=dev`はrootがhigh 12 / moderate 23（合計35）。iOS出荷source mapには`undici`・`postcss`・`image-size`のsource 0件。Functionsは`firebase-admin@14.2.0`へ更新後high/critical 0・moderate 7で、残りは`@google-cloud/storage`配下の`uuid`同一advisory。npmの強制fixは旧Admin SDKへの破壊的ダウングレードになるため未適用。
 - Firestore Rulesテストは一時Temurin 21 JREとローカルエミュレータで2026-08-01に全件成功。JREは`/tmp`だけに配置し、システムへインストールしていない。
 - `submitActivity` はサーバーで距離を再計算するが、Firebase App Checkのネイティブ導入は未実施。Firebase Apple/Android SDKの導入、App Attest/DeviceCheck・Play Integrity登録、debug token整備、メトリクス監視後に距離送信系から段階的にenforcementする。
 - クラッシュ監視・分析イベントはSDK/送信先・プライバシー申告を決める外部設定が必要なため未導入。App CheckもApple App Attest / DeviceCheck、Android Play Integrity、Firebase Console設定とdevelopment buildでの確認が必要。

@@ -24,6 +24,7 @@ try {
 interface OwnDeclarationProps {
   declaration?: RunDeclaration;
   battleTitle: string;
+  battleType: 'public' | 'private';
   onDeclare: (plannedAt: Date, note: string) => Promise<void>;
   onUpdate: (plannedAt: Date, note: string) => Promise<void>;
   onCancel: () => Promise<void>;
@@ -60,7 +61,7 @@ export function buildTimeOptions(now: Date): TimeOption[] {
 }
 
 export function DeclarationCard({
-  declaration, battleTitle, onDeclare, onUpdate, onCancel,
+  declaration, battleTitle, battleType, onDeclare, onUpdate, onCancel,
 }: OwnDeclarationProps) {
   const options = buildTimeOptions(new Date());
   const [selectedKey, setSelectedKey] = useState('soon');
@@ -113,7 +114,7 @@ export function DeclarationCard({
     return (
       <View style={[styles.card, done ? styles.doneCard : styles.plannedCard]}>
         <View style={[styles.stateIcon, done ? styles.doneIcon : styles.plannedIcon]}>
-          <Ionicons name={done ? 'checkmark' : 'flag'} size={21} color={done ? Colors.textOnPrimary : Colors.accentDark} />
+          <Ionicons name={done ? 'checkmark' : 'flag'} size={21} color={done ? Colors.textOnPrimary : Colors.accentText} />
         </View>
         <View style={styles.copy}>
           <Text style={[styles.kicker, done && styles.doneKicker]}>{done ? '宣言達成！' : '今日のラン宣言'}</Text>
@@ -211,7 +212,7 @@ export function DeclarationCard({
     <View style={[styles.card, styles.formCard]}>
       <View style={styles.formHead}>
         <View style={styles.formIcon}>
-          <Ionicons name="flag-outline" size={20} color={Colors.accentDark} />
+          <Ionicons name="flag-outline" size={20} color={Colors.accentText} />
         </View>
         <View style={styles.copy}>
           <Text style={styles.kicker}>今日のラン宣言</Text>
@@ -295,7 +296,7 @@ export function DeclarationCard({
         <TextInput
           value={note}
           onChangeText={(value) => { setNote(value); setValidationMessage(''); }}
-          placeholder="ひとこと（任意）"
+          placeholder={battleType === 'public' ? '場所は書かず、ひとこと（任意）' : 'ひとこと（任意）'}
           placeholderTextColor={Colors.textTertiary}
           maxLength={DECLARATION_NOTE_MAX_LENGTH}
           style={styles.noteInput}
@@ -325,7 +326,10 @@ export function DeclarationCard({
           <Text style={styles.stopEditingText}>編集をやめる</Text>
         </TouchableOpacity>
       )}
-      <Text style={styles.scopeHint}>公開範囲：このチャレンジの参加者</Text>
+      {battleType === 'public' && (
+        <Text style={styles.safetyHint}>場所・集合先・普段のコースなど、居場所が分かる内容は書かないでください。</Text>
+      )}
+      <Text style={styles.scopeHint}>公開範囲：このチャレンジの同じチーム</Text>
       <Text style={styles.reminderHint}>15分以内の予定は通知せず、それより先は1回だけリマインドします。</Text>
     </View>
   );
@@ -378,7 +382,7 @@ export function DeclarationList({
                     accessibilityLabel={`${item.displayName}さんを応援`}
                   >
                     {sendingId === item.id
-                      ? <ActivityIndicator size="small" color={Colors.accentDark} />
+                      ? <ActivityIndicator size="small" color={Colors.accentText} />
                       : (
                         <Text style={styles.cheerText}>
                           {item.cheeredByMe
@@ -424,13 +428,13 @@ const styles = StyleSheet.create({
   plannedIcon: { backgroundColor: Colors.surface },
   doneIcon: { backgroundColor: Colors.primary },
   copy: { flex: 1, minWidth: 0 },
-  kicker: { fontSize: 10, fontWeight: Typography.fontWeight.bold, color: Colors.accentDark, letterSpacing: 0.7 },
+  kicker: { fontSize: 10, fontWeight: Typography.fontWeight.bold, color: Colors.accentText, letterSpacing: 0.7 },
   doneKicker: { color: Colors.primaryDark },
   formTitle: { fontSize: 15, fontWeight: Typography.fontWeight.extrabold, color: Colors.textPrimary, marginTop: 2 },
   formBattle: { fontSize: 10, color: Colors.textSecondary, marginTop: 2 },
   currentTitle: { fontSize: 16, fontWeight: Typography.fontWeight.extrabold, color: Colors.textPrimary, marginTop: 2 },
   currentNote: { fontSize: 11, color: Colors.textSecondary, marginTop: 3 },
-  currentCheers: { fontSize: 10, color: Colors.accentDark, fontWeight: Typography.fontWeight.bold, marginTop: 4 },
+  currentCheers: { fontSize: 10, color: Colors.accentText, fontWeight: Typography.fontWeight.bold, marginTop: 4 },
   currentHint: { fontSize: 10, color: Colors.textSecondary, marginTop: 3 },
   ownActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.sm },
   ownActionButton: { minHeight: 32, paddingHorizontal: Spacing.md, borderRadius: BorderRadius.full, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center' },
@@ -454,6 +458,7 @@ const styles = StyleSheet.create({
   noteInput: { flex: 1, paddingHorizontal: Spacing.md, paddingVertical: 10, fontSize: 13, color: Colors.textPrimary },
   noteCount: { fontSize: 9, color: Colors.textTertiary, marginRight: Spacing.sm },
   validation: { fontSize: 10, color: Colors.error, marginTop: Spacing.xs },
+  safetyHint: { fontSize: 9, color: Colors.error, textAlign: 'center', marginTop: Spacing.sm },
   declareButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, minHeight: 46, backgroundColor: Colors.accent, borderRadius: BorderRadius.md, marginTop: Spacing.md },
   declareText: { color: Colors.textOnAccent, fontSize: 13, fontWeight: Typography.fontWeight.extrabold },
   stopEditingButton: { minHeight: 38, alignItems: 'center', justifyContent: 'center', marginTop: Spacing.xs },
@@ -469,7 +474,7 @@ const styles = StyleSheet.create({
   memberDone: { color: Colors.primaryDark, fontWeight: Typography.fontWeight.bold },
   cheerButton: { minWidth: 76, maxWidth: 126, minHeight: 34, paddingHorizontal: 10, borderRadius: BorderRadius.full, backgroundColor: Colors.accentLight, alignItems: 'center', justifyContent: 'center' },
   cheeredButton: { backgroundColor: Colors.surfaceGray },
-  cheerText: { fontSize: 10, fontWeight: Typography.fontWeight.bold, color: Colors.accentDark },
+  cheerText: { fontSize: 10, fontWeight: Typography.fontWeight.bold, color: Colors.accentText },
   rowActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   safetyButton: { width: 30, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: BorderRadius.full },
 });

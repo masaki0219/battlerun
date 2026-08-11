@@ -183,7 +183,7 @@ export default function AdminIndexScreen() {
   }
 
   function statusColor(status: Battle['status']): string {
-    return status === 'active' ? Colors.primary : status === 'upcoming' ? Colors.warning : Colors.textTertiary;
+    return status === 'active' ? Colors.primary : status === 'upcoming' ? Colors.warningText : Colors.textTertiary;
   }
 
   if (loading) {
@@ -375,7 +375,7 @@ const styles = StyleSheet.create({
   reportQueueTitle: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.bold, color: Colors.primaryDark },
   reportQueueDetail: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary, marginTop: 2 },
   reportQueueArrow: { fontSize: 26, color: Colors.primary },
-  manualNotice: { padding: Spacing.md, borderRadius: BorderRadius.md, backgroundColor: Colors.accentLight, borderWidth: 1, borderColor: Colors.warning },
+  manualNotice: { padding: Spacing.md, borderRadius: BorderRadius.md, backgroundColor: Colors.accentLight, borderWidth: 1, borderColor: Colors.warningText },
   manualNoticeTitle: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
   manualNoticeText: { marginTop: Spacing.xs, fontSize: Typography.fontSize.xs, lineHeight: 18, color: Colors.textSecondary },
   section: { gap: Spacing.sm },

@@ -5,6 +5,7 @@ import { buildVoiceCoachAnnouncement, DEFAULT_VOICE_COACH_SETTINGS, spokenPace }
 import { isQuietHours } from '../utils/notificationTiming';
 import { declarationDocumentId, declarationTimeLabel, localDateKey } from '../utils/declarations';
 import { validateDeclarationNote } from '../lib/validation/declaration';
+import { chartAxisLabel, niceChartMaximum } from '../utils/chartScale';
 import type { Activity } from '../types';
 
 function activity(startedAt: string, distanceKm: number): Activity {
@@ -49,6 +50,10 @@ assert.deepEqual(rolling.map((day) => day.label), ['水', '木', '金', '土', '
 assert.equal(rolling.reduce((sum, day) => sum + day.km, 0), 3);
 assert.equal(rolling[6].isToday, true);
 assert.equal(weekStartLabel(now), '7月6日〜'); // 日曜時点でも週の起点は月曜
+assert.equal(niceChartMaximum(3.87), 4);
+assert.equal(niceChartMaximum(8.2), 10);
+assert.equal(niceChartMaximum(0), 1);
+assert.equal(chartAxisLabel(2.5), '2.5');
 assert.equal(daysLeft('invalid', now), null);
 assert.equal(daysLeft('2026-07-14T12:00:00+09:00', now), 2);
 assert.equal(calendarWeekKey(new Date(2026, 6, 12, 12)), '2026-07-06');

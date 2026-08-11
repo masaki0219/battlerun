@@ -16,5 +16,7 @@ import './runShare.test';
 import './battleParticipation.test';
 import './declarations.test';
 import './avatarEmojis.test';
+import './designTokens.test';
+import './providerButtons.test';
 
 console.log('all unit tests passed');

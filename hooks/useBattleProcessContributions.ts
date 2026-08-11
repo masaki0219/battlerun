@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Timestamp,
   collection,
   onSnapshot,
-  orderBy,
   query,
+  Timestamp,
   where,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -15,6 +14,7 @@ import {
   type ProcessContribution,
   type ProcessDeclarationInput,
 } from '../utils/processContributions';
+import { listBattleActivitySummaries } from '../lib/activitySummaries';
 
 function startOfCalendarWeek(now: Date): Date {
   const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -28,13 +28,14 @@ function startOfCalendarWeek(now: Date): Date {
  */
 export function useBattleProcessContributions(
   battleId: string | undefined,
+  categoryId: string | undefined,
 ): Record<string, ProcessContribution> {
   const [declarations, setDeclarations] = useState<ProcessDeclarationInput[]>([]);
   const [activities, setActivities] = useState<ProcessActivityInput[]>([]);
   const [resolvedBattleId, setResolvedBattleId] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    if (!battleId) {
+    if (!battleId || !categoryId) {
       setDeclarations([]);
       setActivities([]);
       setResolvedBattleId(undefined);
@@ -49,54 +50,52 @@ export function useBattleProcessContributions(
     const now = new Date();
     const weekStart = startOfCalendarWeek(now);
     const weekStartKey = localDateKey(weekStart);
-    const todayKey = localDateKey(now);
-
+    // 宣言は安全上48時間で失効するため、保持中の同一チーム分だけを称賛表示に使う。
     const declarationsQuery = query(
       collection(db, 'battles', battleId, 'declarations'),
-      where('dateKey', '>=', weekStartKey),
-      where('dateKey', '<=', todayKey),
+      where('categoryId', '==', categoryId),
+      where('visible', '==', true),
+      where('expireAt', '>', Timestamp.now()),
     );
-    const activitiesQuery = query(
-      collection(db, 'activities'),
-      where('battleIds', 'array-contains', battleId),
-      where('visibility', '==', 'public_v2'),
-      where('startedAt', '>=', Timestamp.fromDate(weekStart)),
-      orderBy('startedAt', 'desc'),
-    );
-
     const unsubscribeDeclarations = onSnapshot(
       declarationsQuery,
       (snapshot) => {
-        setDeclarations(snapshot.docs.map((declaration) => ({
-          uid: (declaration.data()['uid'] as string) ?? '',
-          status: (declaration.data()['status'] as string) ?? '',
-        })));
+        setDeclarations(snapshot.docs
+          .filter((declaration) => ((declaration.data()['dateKey'] as string | undefined) ?? '') >= weekStartKey)
+          .map((declaration) => ({
+            uid: (declaration.data()['uid'] as string) ?? '',
+            status: (declaration.data()['status'] as string) ?? '',
+          })));
       },
       () => setDeclarations([]),
     );
-    const unsubscribeActivities = onSnapshot(
-      activitiesQuery,
-      (snapshot) => {
-        const next = snapshot.docs.flatMap((activity): ProcessActivityInput[] => {
-          const data = activity.data();
-          const timestamp = data['startedAt'] as { toDate?: () => Date } | undefined;
-          const startedAt = timestamp?.toDate?.();
-          if (!startedAt) return [];
-          return [{
-            userId: (data['userId'] as string) ?? '',
-            startedAt,
-          }];
-        });
-        setActivities(next);
-      },
-      () => setActivities([]),
-    );
+    let cancelled = false;
+    let loadingActivities = false;
+    const loadActivities = async () => {
+      if (cancelled || loadingActivities) return;
+      loadingActivities = true;
+      try {
+        const items = await listBattleActivitySummaries({ battleId, limit: 500, fromDayKey: weekStartKey });
+        if (cancelled) return;
+        setActivities(items.map((activity): ProcessActivityInput => ({
+          userId: activity.userId,
+          dayKey: activity.dayKey,
+        })));
+      } catch {
+        if (!cancelled) setActivities([]);
+      } finally {
+        loadingActivities = false;
+      }
+    };
+    void loadActivities();
+    const activityRefresh = setInterval(() => void loadActivities(), 60_000);
 
     return () => {
+      cancelled = true;
+      clearInterval(activityRefresh);
       unsubscribeDeclarations();
-      unsubscribeActivities();
     };
-  }, [battleId]);
+  }, [battleId, categoryId]);
 
   return useMemo(() => (
     battleId && resolvedBattleId === battleId

@@ -123,6 +123,7 @@ export const onUserDeleted = functionsV1.auth.user().onDelete(async (user) => {
   await Promise.all([
     db.doc(`users/${uid}`).delete(),
     db.doc(`publicProfiles/${uid}`).delete(),
+    db.doc(`inviteLookupAttempts/${uid}`).delete(),
   ]);
 
   // 5. 廃止済みの写真機能で保存された旧画像。移行完了までは削除保険を維持する。

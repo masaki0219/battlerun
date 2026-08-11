@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { Stack, useGlobalSearchParams, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -24,6 +24,7 @@ export default function RootLayout() {
     accountLinkingInProgress,
   } = useAuthStore();
   const segments = useSegments();
+  const searchParams = useGlobalSearchParams<{ replay?: string }>();
   const router = useRouter();
   const [onboardingChecked, setOnboardingChecked] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -101,7 +102,8 @@ export default function RootLayout() {
     const inProfileSetup = inAuth && authScreen === 'profile-setup';
     const inAccountLink = inAuth && authScreen === 'link-account';
     const inOnboarding = segments[0] === 'onboarding';
-    const inPublicInfo = segments[0] === 'legal' || segments[0] === 'help' || segments[0] === 'invite';
+    const isOnboardingReplay = inOnboarding && searchParams.replay === '1';
+    const inPublicInfo = segments[0] === 'legal' || segments[0] === 'help' || segments[0] === 'guide' || segments[0] === 'invite';
 
     // Firestoreだけ失敗した認証済みユーザーをログイン画面へ送らない。
     if (authSessionActive && profileError) return;
@@ -121,7 +123,7 @@ export default function RootLayout() {
           router.replace('/auth/login');
         }
       }
-    } else if (user && (inAuth || inOnboarding)) {
+    } else if (user && (inAuth || (inOnboarding && !isOnboardingReplay))) {
       if (accountLinkingInProgress && inAccountLink) return;
       router.replace('/(tabs)');
     }
@@ -135,9 +137,10 @@ export default function RootLayout() {
     segments,
     onboardingChecked,
     showOnboarding,
+    searchParams.replay,
   ]);
 
-  const inPublicInfo = segments[0] === 'legal' || segments[0] === 'help' || segments[0] === 'invite';
+  const inPublicInfo = segments[0] === 'legal' || segments[0] === 'help' || segments[0] === 'guide' || segments[0] === 'invite';
   if (!isLoading && authSessionActive && profileError && !user && !inPublicInfo) {
     return (
       <SafeAreaView style={styles.recoveryScreen}>
@@ -177,6 +180,7 @@ export default function RootLayout() {
         <Stack.Screen name="legal/terms" />
         <Stack.Screen name="legal/privacy" />
         <Stack.Screen name="help" />
+        <Stack.Screen name="guide" />
         <Stack.Screen name="invite" />
       </Stack>
       {!!user && authSessionActive && !!profileError && (

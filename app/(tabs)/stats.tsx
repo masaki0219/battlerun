@@ -165,7 +165,7 @@ export default function StatsScreen() {
           {pendingQueueHydrated && pendingActivityCount > 0 && (
             <View style={[styles.pendingCard, largeText && styles.pendingCardLargeText]} accessibilityLiveRegion="polite">
               <View style={styles.pendingIcon}>
-                <Ionicons name="cloud-upload-outline" size={20} color={Colors.accentDark} />
+                <Ionicons name="cloud-upload-outline" size={20} color={Colors.accentText} />
               </View>
               <View style={styles.pendingCopy}>
                 <Text style={styles.pendingTitle}>未送信の記録が{pendingActivityCount}件あります</Text>
@@ -180,7 +180,7 @@ export default function StatsScreen() {
                 accessibilityState={{ disabled: pendingQueueSending }}
               >
                 {pendingQueueSending
-                  ? <ActivityIndicator size="small" color={Colors.accentDark} />
+                  ? <ActivityIndicator size="small" color={Colors.accentText} />
                   : <Text style={styles.pendingButtonText}>再送する</Text>}
               </TouchableOpacity>
             </View>
@@ -414,7 +414,7 @@ function SummaryCard({
   return (
     <View style={[styles.summaryCard, accent && styles.summaryCardAccent]}>
       <View style={styles.summaryLabelRow}>
-        {icon && <Ionicons name={icon} size={13} color={Colors.accentDark} />}
+        {icon && <Ionicons name={icon} size={13} color={Colors.accentText} />}
         <Text style={[styles.statLabel, accent && styles.statLabelAccent]}>{label}</Text>
       </View>
       <Text style={[styles.summaryNumber, accent && styles.summaryNumberAccent, valuePrimary && styles.summaryNumberPrimary]}>
@@ -474,7 +474,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.accent,
   },
   pendingButtonLargeText: { alignSelf: 'stretch' },
-  pendingButtonText: { fontSize: 11, fontWeight: Typography.fontWeight.bold, color: Colors.accentDark },
+  pendingButtonText: { fontSize: 11, fontWeight: Typography.fontWeight.bold, color: Colors.accentText },
 
   sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.md },
   sectionTitle: { fontSize: Typography.fontSize.lg, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
@@ -499,12 +499,12 @@ const styles = StyleSheet.create({
   summaryCard: { width: '48%', flexGrow: 1, backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, borderWidth: 1, borderColor: Colors.border, padding: Spacing.lg, ...Shadow.sm },
   summaryCardAccent: { borderColor: Colors.accent },
   summaryLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  statLabelAccent: { color: Colors.accentDark },
+  statLabelAccent: { color: Colors.accentText },
   summaryNumber: { fontSize: 24, fontWeight: Typography.fontWeight.semibold, color: Colors.textPrimary, marginTop: Spacing.sm, fontVariant: ['tabular-nums'] },
-  summaryNumberAccent: { color: Colors.accent },
+  summaryNumberAccent: { color: Colors.accentText },
   summaryNumberPrimary: { color: Colors.primaryDark },
   summaryNote: { fontSize: 10, color: Colors.textSecondary, marginTop: 3 },
-  summaryNoteAccent: { color: Colors.accentDark },
+  summaryNoteAccent: { color: Colors.accentText },
 
   personalRecordsCard: { backgroundColor: Colors.surface, borderRadius: BorderRadius.lg, borderWidth: 1, borderColor: Colors.border, padding: Spacing.lg, ...Shadow.sm },
   personalRecordsRow: { flexDirection: 'row', gap: Spacing.md },
@@ -542,7 +542,7 @@ const styles = StyleSheet.create({
   rowMain: { flex: 1, minWidth: 0 },
   distanceLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   rowDistance: { fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.semibold, color: Colors.textPrimary, fontVariant: ['tabular-nums'] },
-  bestBadge: { backgroundColor: Colors.accentLight, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, color: Colors.accentDark, fontSize: 9, fontWeight: Typography.fontWeight.bold },
+  bestBadge: { backgroundColor: Colors.accentLight, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, color: Colors.accentText, fontSize: 9, fontWeight: Typography.fontWeight.bold },
   rowDetail: { fontSize: 11, fontWeight: Typography.fontWeight.medium, color: Colors.textSecondary, marginTop: 3 },
   rowEnd: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   rowDate: { fontSize: 11, fontWeight: Typography.fontWeight.medium, color: Colors.textSecondary },

@@ -24,7 +24,9 @@ export { submitActivity } from './submitActivity';
 export { deleteActivity } from './deleteActivity';
 export { awardBadgesOnActivityAggregated, syncMyBadges } from './badges';
 export { lookupBattleByInviteCode } from './lookupBattle';
+export { createPrivateBattle } from './privateBattle';
 export { joinBattle, leaveBattle } from './battleParticipation';
+export { getBattleActivity, listBattleActivities } from './activityAccess';
 export { backfillMonthlyStats } from './monthlyStatsBackfill';
 export {
   completeDeclarationOnActivityCreated,

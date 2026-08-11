@@ -19,11 +19,11 @@ import { EmptyState } from '../components/ui/EmptyState';
 function notificationIcon(type: NotificationType): { name: any; color: string } {
   switch (type) {
     case 'rank_change':     return { name: 'trending-up-outline', color: Colors.primary };
-    case 'battle_end_soon': return { name: 'timer-outline', color: Colors.accent };
-    case 'title_earned':    return { name: 'ribbon-outline', color: Colors.accentYellow };
+    case 'battle_end_soon': return { name: 'timer-outline', color: Colors.accentText };
+    case 'title_earned':    return { name: 'ribbon-outline', color: Colors.goldText };
     case 'battle_ended':    return { name: 'flag-outline', color: Colors.textSecondary };
-    case 'reaction':        return { name: 'heart-outline', color: Colors.accent };
-    case 'declaration_cheer': return { name: 'flame-outline', color: Colors.accent };
+    case 'reaction':        return { name: 'heart-outline', color: Colors.accentText };
+    case 'declaration_cheer': return { name: 'flame-outline', color: Colors.accentText };
     case 'presence_cheer': return { name: 'radio-outline', color: Colors.primary };
     default:                return { name: 'notifications-outline', color: Colors.textTertiary };
   }

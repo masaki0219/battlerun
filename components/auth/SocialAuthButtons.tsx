@@ -72,6 +72,7 @@ export function SocialAuthButtons({ mode }: Props) {
         onPress={() => run('google.com')}
         loading={busyProvider === 'google.com'}
         disabled={busy}
+        mode={mode}
       />
     </View>
   );

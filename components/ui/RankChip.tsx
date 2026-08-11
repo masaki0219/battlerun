@@ -31,7 +31,7 @@ export function RankChip({ rank, total, totalUnit }: Props) {
 function palette(rank: number): { bg: string; fg: string } {
   switch (rank) {
     case 1:
-      return { bg: Colors.rank1 + '26', fg: Colors.accentDark };
+      return { bg: Colors.rank1 + '26', fg: Colors.rank1Text };
     case 2:
       return { bg: Colors.rank2 + '26', fg: Colors.textPrimary };
     case 3:

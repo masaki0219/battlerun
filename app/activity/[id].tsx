@@ -26,6 +26,7 @@ import { isPro } from '../../lib/pro';
 import { useRunSharePreference } from '../../hooks/useRunSharePreference';
 import { Avatar } from '../../components/ui/Avatar';
 import { cachedPublicProfile } from '../../lib/publicProfileCache';
+import { dayKeyToDisplayDate, getBattleActivitySummary } from '../../lib/activitySummaries';
 
 const ROUTE_PACE_COLOR: Record<RoutePaceBand, string> = {
   fast: RoutePaceColors.fast,
@@ -85,7 +86,7 @@ interface ReactionCount {
 }
 
 export default function ActivityDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, battleId } = useLocalSearchParams<{ id: string; battleId?: string }>();
   const { user, proEntitlement } = useAuthStore();
   const userIsPro = isPro(user?.plan, proEntitlement);
   const [activity, setActivity] = useState<ActivityData | null>(null);
@@ -108,13 +109,6 @@ export default function ActivityDetailScreen() {
     const load = async () => {
       setLoading(true);
       try {
-        const snap = await getDoc(doc(db, 'activities', id));
-        if (!snap.exists()) return;
-        const d = snap.data();
-
-        const startMs: number = d['startedAt']?.toMillis?.() ?? (d['startedAt']?.seconds ? d['startedAt'].seconds * 1000 : Date.now());
-        const endMs: number = d['endedAt']?.toMillis?.() ?? (d['endedAt']?.seconds ? d['endedAt'].seconds * 1000 : Date.now());
-
         const toRoutePoint = (p: any): RoutePoint => {
           const point: RoutePoint = {
             lat: p['lat'] as number,
@@ -127,50 +121,86 @@ export default function ActivityDetailScreen() {
           if (p['seg'] === true) point.seg = true;
           return point;
         };
-        let route: RoutePoint[] = ((d['route'] as any[]) ?? []).map(toRoutePoint);
-        if ((d['userId'] as string) === user.id && route.length === 0) {
-          const chunks = await getDocs(query(
-            collection(db, 'users', user.id, 'activityRoutes', id, 'chunks'),
-            orderBy('index', 'asc'),
-          ));
-          route = chunks.docs.flatMap((chunk) => ((chunk.data()['points'] as any[]) ?? []).map(toRoutePoint));
+        const setOwnerActivity = async () => {
+          const snap = await getDoc(doc(db, 'activities', id));
+          if (!snap.exists()) throw new Error('activity-not-found');
+          const d = snap.data();
+          const startMs: number = d['startedAt']?.toMillis?.()
+            ?? (d['startedAt']?.seconds ? d['startedAt'].seconds * 1000 : Date.now());
+          const endMs: number = d['endedAt']?.toMillis?.()
+            ?? (d['endedAt']?.seconds ? d['endedAt'].seconds * 1000 : Date.now());
+          let route: RoutePoint[] = ((d['route'] as any[]) ?? []).map(toRoutePoint);
+          if (route.length === 0) {
+            const chunks = await getDocs(query(
+              collection(db, 'users', user.id, 'activityRoutes', id, 'chunks'),
+              orderBy('index', 'asc'),
+            ));
+            route = chunks.docs.flatMap((chunk) => ((chunk.data()['points'] as any[]) ?? []).map(toRoutePoint));
+          }
+          const ownerBattleIds = ((d['battleIds'] as string[] | undefined) ?? []);
+          const impactMap = (d['aggregationImpacts'] as Record<string, { creditedDistanceKm?: number }> | undefined) ?? {};
+          const activityDistanceKm = (d['distanceKm'] as number) ?? 0;
+          const profile = await cachedPublicProfile(user.id).catch(() => null);
+          setActivity({
+            id: snap.id,
+            userId: user.id,
+            displayName: profile?.name ?? (d['displayName'] as string) ?? 'メンバー',
+            avatarEmoji: profile?.avatarEmoji,
+            battleIds: ownerBattleIds,
+            distanceKm: activityDistanceKm,
+            steps: (d['steps'] as number | null) ?? null,
+            durationSeconds: (d['durationSeconds'] as number) ?? 0,
+            measurementType: (d['measurementType'] as string) ?? 'gps',
+            route,
+            startedAt: new Date(startMs).toISOString(),
+            endedAt: new Date(endMs).toISOString(),
+          });
+          const contributions = await Promise.all(
+            ownerBattleIds.map(async (ownerBattleId) => {
+              const battleSnap = await getDoc(doc(db, 'battles', ownerBattleId)).catch(() => null);
+              return battleSnap?.exists() ? {
+                battleId: ownerBattleId,
+                battleTitle: battleSnap.data()['title'] as string,
+                creditedDistanceKm: typeof impactMap[ownerBattleId]?.creditedDistanceKm === 'number'
+                  ? impactMap[ownerBattleId].creditedDistanceKm!
+                  : activityDistanceKm,
+              } : null;
+            }),
+          );
+          setBattleContributions(contributions.filter((item): item is BattleContribution => item !== null));
+        };
+
+        if (battleId) {
+          const shared = await getBattleActivitySummary(battleId, id);
+          if (shared.activity.userId === user.id) {
+            await setOwnerActivity();
+          } else {
+            const profile = await cachedPublicProfile(shared.activity.userId).catch(() => null);
+            const displayDate = dayKeyToDisplayDate(shared.activity.dayKey);
+            if (Number.isNaN(displayDate.getTime())) throw new Error('activity-date-invalid');
+            setActivity({
+              id: shared.activity.id,
+              userId: shared.activity.userId,
+              displayName: profile?.name ?? shared.activity.displayName ?? 'メンバー',
+              avatarEmoji: profile?.avatarEmoji,
+              battleIds: [],
+              distanceKm: shared.activity.distanceKm,
+              steps: shared.activity.steps,
+              durationSeconds: shared.activity.durationSeconds,
+              measurementType: shared.activity.measurementType,
+              route: [],
+              startedAt: displayDate.toISOString(),
+              endedAt: displayDate.toISOString(),
+            });
+            setBattleContributions([{
+              battleId,
+              battleTitle: shared.contribution.battleTitle,
+              creditedDistanceKm: shared.contribution.creditedDistanceKm,
+            }]);
+          }
+        } else {
+          await setOwnerActivity();
         }
-
-        const battleIds = ((d['battleIds'] as string[] | undefined) ?? []);
-        const impactMap = (d['aggregationImpacts'] as Record<string, { creditedDistanceKm?: number }> | undefined) ?? {};
-        const activityDistanceKm = (d['distanceKm'] as number) ?? 0;
-
-        const activityUserId = d['userId'] as string;
-        const profile = await cachedPublicProfile(activityUserId).catch(() => null);
-        setActivity({
-          id: snap.id,
-          userId: activityUserId,
-          displayName: profile?.name ?? (d['displayName'] as string) ?? 'メンバー',
-          avatarEmoji: profile?.avatarEmoji,
-          battleIds,
-          distanceKm: activityDistanceKm,
-          steps: (d['steps'] as number | null) ?? null,
-          durationSeconds: (d['durationSeconds'] as number) ?? 0,
-          measurementType: (d['measurementType'] as string) ?? 'gps',
-          route,
-          startedAt: new Date(startMs).toISOString(),
-          endedAt: new Date(endMs).toISOString(),
-        });
-
-        // 反映先バトル名を全件取得（複数バトル参加中の場合すべて表示する）
-        const contributions = await Promise.all(
-          battleIds.map(async (bid) => {
-            const bSnap = await getDoc(doc(db, 'battles', bid)).catch(() => null);
-            return bSnap?.exists() ? {
-              battleId: bid,
-              battleTitle: bSnap.data()['title'] as string,
-              creditedDistanceKm: typeof impactMap[bid]?.creditedDistanceKm === 'number'
-                ? impactMap[bid].creditedDistanceKm!
-                : activityDistanceKm,
-            } : null;
-          })
-        );
-        setBattleContributions(contributions.filter((c): c is BattleContribution => c !== null));
 
         // リアクション取得
         const rSnap = await getDocs(collection(db, 'activities', id, 'reactions'));
@@ -194,7 +224,7 @@ export default function ActivityDetailScreen() {
       }
     };
     load();
-  }, [id, user]);
+  }, [battleId, id, user?.id]);
 
   function handleDelete() {
     if (!id || !activity) return;
@@ -508,7 +538,7 @@ export default function ActivityDetailScreen() {
                 onPress={() => router.push(`/battle/${c.battleId}` as any)}
                 activeOpacity={0.75}
               >
-                <Ionicons name="flash" size={18} color={Colors.accent} />
+                <Ionicons name="flash" size={18} color={Colors.accentText} />
                 <View style={{ flex: 1 }}>
                   <Text style={s.battleTitle}>{c.battleTitle}</Text>
                   <Text style={s.battleContrib}>+{formatRunDistanceKm(c.creditedDistanceKm)}km 貢献</Text>
@@ -698,7 +728,7 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: `${Colors.accent}30`,
   },
   battleTitle: { fontSize: 13, fontWeight: '800', color: Colors.textPrimary },
-  battleContrib: { fontSize: 12, color: Colors.accent, fontWeight: '700', marginTop: 1, fontVariant: ['tabular-nums'] },
+  battleContrib: { fontSize: 12, color: Colors.accentText, fontWeight: '700', marginTop: 1, fontVariant: ['tabular-nums'] },
 
   routeShareToggle: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
