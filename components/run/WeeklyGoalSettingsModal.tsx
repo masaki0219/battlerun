@@ -65,6 +65,8 @@ export function WeeklyGoalSettingsModal({ visible, currentGoal, onSave, onClear,
                 style={[styles.segmentButton, type === item && styles.segmentButtonActive]}
                 onPress={() => changeType(item)}
                 disabled={saving}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: type === item, disabled: saving }}
               >
                 <Text style={[styles.segmentText, type === item && styles.segmentTextActive]}>
                   {t(item === 'distance' ? 'goal.distance' : 'goal.runningDays')}
@@ -84,6 +86,8 @@ export function WeeklyGoalSettingsModal({ visible, currentGoal, onSave, onClear,
                   style={[styles.option, active && styles.optionActive]}
                   onPress={() => setValue(option)}
                   disabled={saving}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: active, disabled: saving }}
                 >
                   <Text style={[styles.optionValue, active && styles.optionValueActive]}>
                     {option}<Text style={[styles.optionUnit, active && styles.optionValueActive]}>{type === 'distance' ? 'km' : t('profile.dayUnit')}</Text>
@@ -100,6 +104,7 @@ export function WeeklyGoalSettingsModal({ visible, currentGoal, onSave, onClear,
             style={styles.saveButton}
             onPress={() => void run(() => onSave({ type, value }))}
             disabled={saving}
+            accessibilityRole="button"
           >
             {saving ? <ActivityIndicator color={Colors.textOnPrimary} /> : <Text style={styles.saveText}>{t('goal.save')}</Text>}
           </TouchableOpacity>
@@ -108,6 +113,7 @@ export function WeeklyGoalSettingsModal({ visible, currentGoal, onSave, onClear,
               style={styles.clearButton}
               onPress={() => void run(onClear)}
               disabled={saving}
+              accessibilityRole="button"
             >
               <Text style={styles.clearText}>{t('goal.clear')}</Text>
             </TouchableOpacity>

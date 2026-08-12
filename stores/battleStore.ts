@@ -23,6 +23,7 @@ import type { Battle, CategoryStats, Season, Category, BattleParticipation, RunD
 import { isBattleVisibleInMarket, isMarket, resolveBattleMarket } from '../lib/market';
 import { inferMarket } from '../lib/deviceLocale';
 import { translate } from '../lib/i18n';
+import { isPro } from '../lib/pro';
 
 interface CreateBattleParams {
   title: string;
@@ -331,9 +332,9 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
     if (endAt <= startAt) throw new Error(translate('battle.invalidPeriod'));
     if (!validTermMetadata(termIndex, termCount)) throw new Error(translate('battle.invalidTermMetadata'));
 
-    const plan = useAuthStore.getState().user?.plan ?? 'free';
+    const { user, proEntitlement } = useAuthStore.getState();
 
-    if (!isPublic && plan !== 'pro') {
+    if (!isPublic && !isPro(user?.plan, proEntitlement)) {
       throw new Error(`PRO_REQUIRED: ${translate('battle.privateProRequired')}`);
     }
 

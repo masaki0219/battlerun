@@ -1,6 +1,7 @@
+import { createHash } from 'node:crypto';
 import { onDocumentCreated, onDocumentUpdated, onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { logger } from 'firebase-functions/v2';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { sendPushToUser } from './push';
 import { notificationCopy, resolveUiLanguage, userUiLanguage } from './i18n';
 
@@ -11,6 +12,51 @@ interface UserTitle {
   teamName: string;
   rank: number;
   awardedAt: string;
+}
+
+const REACTION_NOTIFICATION_COOLDOWN_MS = 30 * 60 * 1_000;
+const REACTION_GUARD_RETENTION_MS = 7 * 24 * 60 * 60 * 1_000;
+
+function reactionNotificationGuardId(activityId: string, reactorId: string): string {
+  return createHash('sha256').update(activityId).update('\0').update(reactorId).digest('hex');
+}
+
+async function createReactionNotificationWithinCooldown(params: {
+  activityId: string;
+  reactorId: string;
+  activityOwnerId: string;
+  title: string;
+  body: string;
+}): Promise<boolean> {
+  const db = getFirestore();
+  const now = Timestamp.now();
+  const guardRef = db.doc(
+    `reactionNotificationGuards/${reactionNotificationGuardId(params.activityId, params.reactorId)}`,
+  );
+  const notificationRef = db.collection(`users/${params.activityOwnerId}/notifications`).doc();
+  return db.runTransaction(async (transaction) => {
+    const guard = await transaction.get(guardRef);
+    const lastNotifiedAt = guard.data()?.['lastNotifiedAt'];
+    if (
+      lastNotifiedAt instanceof Timestamp
+      && now.toMillis() - lastNotifiedAt.toMillis() < REACTION_NOTIFICATION_COOLDOWN_MS
+    ) return false;
+
+    transaction.set(guardRef, {
+      lastNotifiedAt: now,
+      expireAt: Timestamp.fromMillis(now.toMillis() + REACTION_GUARD_RETENTION_MS),
+    });
+    transaction.create(notificationRef, {
+      type: 'reaction',
+      title: params.title,
+      body: params.body,
+      isRead: false,
+      relatedBattleId: null,
+      relatedActivityId: params.activityId,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    return true;
+  });
 }
 
 async function hasBlockBetween(firstUid: string, secondUid: string): Promise<boolean> {
@@ -59,15 +105,17 @@ export const onReactionCreated = onDocumentCreated(
     const reactorName = (reactorSnap.data()?.['name'] as string) ?? notificationCopy.member(language);
     const { title, body } = notificationCopy.reaction(language, reactorName, reactionType);
 
-    await db.collection(`users/${activityOwnerId}/notifications`).add({
-      type: 'reaction',
+    const created = await createReactionNotificationWithinCooldown({
+      activityId,
+      reactorId,
+      activityOwnerId,
       title,
       body,
-      isRead: false,
-      relatedBattleId: null,
-      relatedActivityId: activityId,
-      createdAt: FieldValue.serverTimestamp(),
     });
+    if (!created) {
+      logger.info('onReactionCreated: notification cooldown active, skipping', { activityId, reactorId });
+      return;
+    }
     await sendPushToUser(activityOwnerId, title, body, { type: 'reaction', relatedActivityId: activityId });
   },
 );

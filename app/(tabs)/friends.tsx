@@ -29,7 +29,7 @@ import { parseLocalDate } from '../../utils/dateInput';
 import { BorderRadius, Colors, Shadow, Spacing, TeamColorOptions, Typography } from '../../design_tokens';
 import type { Battle, Category, TeamColorId } from '../../types';
 import { useTranslation } from '../../lib/i18n';
-import { userFacingError } from '../../lib/userError';
+import { userFacingError, userErrorReason } from '../../lib/userError';
 
 type PrivateView = 'list' | 'create' | 'join_code' | 'join_select';
 
@@ -205,6 +205,10 @@ export default function FriendsScreen() {
 
   async function handleCreateBattle() {
     if (!user) return;
+    if (proEntitlement && user.plan !== 'pro') {
+      Alert.alert(t('friends.proSyncTitle'), t('friends.proSyncBody'));
+      return;
+    }
     if (!createTitle.trim()) {
       Alert.alert(t('friends.inputError'), t('friends.titleRequired'));
       return;
@@ -250,7 +254,11 @@ export default function FriendsScreen() {
       setPrivateView('list');
       Alert.alert(t('friends.createdTitle'), t('friends.createdBody'));
     } catch (error: any) {
-      Alert.alert(t('common.error'), userFacingError(error, t('friends.createFailed')));
+      if (userErrorReason(error) === 'pro-plan-not-synced' && proEntitlement) {
+        Alert.alert(t('friends.proSyncTitle'), t('friends.proSyncBody'));
+      } else {
+        Alert.alert(t('common.error'), userFacingError(error, t('friends.createFailed')));
+      }
     } finally {
       setCreating(false);
     }

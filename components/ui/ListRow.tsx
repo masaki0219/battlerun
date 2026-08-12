@@ -84,7 +84,7 @@ export function ListRow({
 
   if (onPress) {
     return (
-      <TouchableOpacity onPress={onPress} activeOpacity={0.6}>
+      <TouchableOpacity onPress={onPress} activeOpacity={0.6} accessibilityRole="button">
         {body}
       </TouchableOpacity>
     );

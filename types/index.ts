@@ -87,6 +87,8 @@ export interface User {
   market: Market;
   /** Last OS/app UI language synced for server-generated notifications. */
   uiLanguage: 'ja' | 'en';
+  /** IANA timezone used for server-generated notification quiet hours. */
+  timezone?: string;
   createdAt: string;
   titles?: UserTitle[];
   battleIds: string[];   // 未参加なら [] （authListener が常に配列を返す）

@@ -1,6 +1,6 @@
 # App Store 提出情報（下書き）
 
-最終更新: 2026-08-10
+最終更新: 2026-08-12
 
 App Store Connectへ転記するための下書き。提出直前に、実際のビルド・有効なデモアカウント・連絡担当者情報と照合すること。
 
@@ -87,10 +87,12 @@ Terms of Service: https://masaki0219.github.io/app-support/zelio/terms.html
 
 ## 提出直前チェック
 
-- [ ] iOS先行またはAndroid同時公開の方針を決定し、対象OSの実機E2Eを完了
+- [x] 初回リリース対象をiOSのみに確定（2026-08-12ユーザー決定）。Androidは今回の提出・実機ゲート対象外
+- [ ] 現行差分からXcode 26 / iOS 26 SDKを使うArchiveを作成し、App Store Connectへアップロード（2026-04-28以降の必須要件）
+- [ ] App Store Connectの更新後の年齢レーティング質問へ回答し、現行UGC・位置情報・課金機能と一致させる
 - [ ] Support / Privacy / Termsの公開URLがログアウト状態で200を返す
 - [ ] デモアカウントでログインでき、公式チャレンジと相手区分が表示される
-- [ ] monthly商品だけが審査対象ビルドに表示され、購入・復元できる
+- [x] monthly商品だけが審査対象ビルドに表示され、購入・復元できる（2026-08-12ユーザー確認済み）
 - [ ] yearly商品は将来用として保持する場合も、App Store Connectで審査提出・販売対象にせず、RevenueCatのCurrent Offeringから外す
 - [ ] App Privacy回答が本ファイルと実際のSDK構成に一致する
 - [ ] Apple／Google新規登録、同一メールのproviderリンク、provider別再認証・アカウント削除をTestFlight実機で確認する

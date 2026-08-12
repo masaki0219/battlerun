@@ -196,7 +196,7 @@ function parseGpsQuality(value: unknown, processingVersion: number): GpsQualityS
  * userId・表示名・反映先バトルはクライアント値を信用せずサーバーで確定する。
  */
 export const submitActivity = onCall(
-  {},
+  { maxInstances: 10 },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError('unauthenticated', 'ログインが必要です。');

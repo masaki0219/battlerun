@@ -2,6 +2,7 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions/v2';
 import { defineSecret } from 'firebase-functions/params';
 import { getFirestore } from 'firebase-admin/firestore';
+import { timingSafeEqual } from 'node:crypto';
 
 // RevenueCatダッシュボードのWebhook設定で Authorization ヘッダに設定する固定トークン。
 // `firebase functions:secrets:set REVENUECAT_WEBHOOK_AUTH` で設定する。
@@ -18,6 +19,13 @@ const PRO_EVENT_TYPES = new Set([
 // Free化するイベント（CANCELLATIONは解約予約のため期限まではPro維持＝何もしない）
 const FREE_EVENT_TYPES = new Set(['EXPIRATION']);
 
+function authorizationMatches(actual: string | undefined, expected: string): boolean {
+  if (!actual) return false;
+  const actualBytes = Buffer.from(actual);
+  const expectedBytes = Buffer.from(expected);
+  return actualBytes.length === expectedBytes.length && timingSafeEqual(actualBytes, expectedBytes);
+}
+
 /**
  * RevenueCat Webhook を受信し、`users/{app_user_id}.plan` を更新する。
  *
@@ -25,9 +33,9 @@ const FREE_EVENT_TYPES = new Set(['EXPIRATION']);
  * Firestore の users ドキュメントIDと一致する前提。
  */
 export const revenuecatWebhook = onRequest(
-  { secrets: [REVENUECAT_WEBHOOK_AUTH] },
+  { secrets: [REVENUECAT_WEBHOOK_AUTH], maxInstances: 5 },
   async (req, res) => {
-    if (req.get('Authorization') !== REVENUECAT_WEBHOOK_AUTH.value()) {
+    if (!authorizationMatches(req.get('Authorization'), REVENUECAT_WEBHOOK_AUTH.value())) {
       logger.warn('revenuecatWebhook: unauthorized request');
       res.status(401).send('Unauthorized');
       return;

@@ -166,6 +166,10 @@ async function seed() {
     await setDoc(doc(db, 'users/alice/monthlyStats/2026-07'), {
       km: 12.5, count: 3, durationSec: 5400, elevationM: 120,
     });
+    await setDoc(doc(db, 'reactionNotificationGuards/existingGuard'), {
+      activityId: 'act1', reactorId: 'bob', lastNotifiedAt: Timestamp.now(),
+      expireAt: Timestamp.fromMillis(Date.now() + 86_400_000),
+    });
     await setDoc(doc(db, 'battles/battle1/presence/carol'), {
       sessionId: 'carol-stale-session',
       startedAt: Timestamp.fromMillis(Date.now() - 10 * 60_000),
@@ -199,6 +203,7 @@ async function run() {
   const carolDb = testEnv.authenticatedContext('carol').firestore();
   const daveDb = testEnv.authenticatedContext('dave').firestore();
   const erinDb = testEnv.authenticatedContext('erin').firestore();
+  const unauthenticatedDb = testEnv.unauthenticatedContext().firestore();
 
   // ── category_stats ────────────────────────────────────────────────
   await check(
@@ -350,6 +355,11 @@ async function run() {
     'succeed',
   );
   await check(
+    'publicProfiles: 認証済みでも公開プロフィール全体は列挙できない',
+    getDocs(collection(bobDb, 'publicProfiles')),
+    'fail',
+  );
+  await check(
     'users/{uid}: 明白な嫌がらせ表現を含むニックネームは拒否',
     updateDoc(doc(aliceDb, 'users/alice'), { name: '消えろ' }),
     'fail',
@@ -361,8 +371,18 @@ async function run() {
   );
   await check(
     'users/{uid}: 英語禁止語の単語内部分一致は誤検知しない',
-    updateDoc(doc(aliceDb, 'users/alice'), { name: 'Grape Runners' }),
+    updateDoc(doc(aliceDb, 'users/alice'), { name: 'Grape Crew' }),
     'succeed',
+  );
+  await check(
+    'users/{uid}: 13文字の表示名は拒否',
+    updateDoc(doc(aliceDb, 'users/alice'), { name: '1234567890123' }),
+    'fail',
+  );
+  await check(
+    'publicProfiles: 13文字の公開名は拒否',
+    updateDoc(doc(aliceDb, 'publicProfiles/alice'), { name: '1234567890123' }),
+    'fail',
   );
   await check(
     'users/{uid}: アプリ内アバターアイコンは更新できる',
@@ -653,6 +673,14 @@ async function run() {
   await check(
     'participants: 本人は終了済み直前タームの参加チームを参照できる',
     getDoc(doc(aliceDb, 'battles/seriesTerm1/participants/alice')),
+    'succeed',
+  );
+  await check(
+    'participants: 参加者は自チームに絞ってランキングを購読できる',
+    getDocs(query(
+      collection(aliceDb, 'battles/battle1/participants'),
+      where('categoryId', '==', 'teamA'),
+    )),
     'succeed',
   );
   await check(
@@ -1268,6 +1296,21 @@ async function run() {
     'fail',
   );
   await check(
+    'users/{uid}: 本人はIANAタイムゾーンを同期できる',
+    updateDoc(doc(aliceDb, 'users/alice'), { timezone: 'America/Los_Angeles' }),
+    'succeed',
+  );
+  await check(
+    'users/{uid}: 空のタイムゾーンを拒否',
+    updateDoc(doc(aliceDb, 'users/alice'), { timezone: '' }),
+    'fail',
+  );
+  await check(
+    'users/{uid}: 過大なタイムゾーンを拒否',
+    updateDoc(doc(aliceDb, 'users/alice'), { timezone: 'A'.repeat(65) }),
+    'fail',
+  );
+  await check(
     'users/{uid}: titlesの自己更新は拒否（Cloud Functionsのみ付与可）',
     updateDoc(doc(aliceDb, 'users/alice'), {
       titles: [{ seasonId: '', battleId: 'battle1', battleTitle: 't', teamName: 'teamA', rank: 1, awardedAt: '' }],
@@ -1374,6 +1417,41 @@ async function run() {
   await check(
     'inviteLookupAttempts: 本人でも試行回数を読めない',
     getDoc(doc(aliceDb, 'inviteLookupAttempts/alice')),
+    'fail',
+  );
+  await check(
+    'reactionNotificationGuards: 認証済み本人でも読み取れない',
+    getDoc(doc(aliceDb, 'reactionNotificationGuards/existingGuard')),
+    'fail',
+  );
+  await check(
+    'reactionNotificationGuards: 認証済み本人でも作成できない',
+    setDoc(doc(aliceDb, 'reactionNotificationGuards/newGuard'), {
+      activityId: 'act1', reactorId: 'alice', lastNotifiedAt: serverTimestamp(),
+      expireAt: Timestamp.fromMillis(Date.now() + 86_400_000),
+    }),
+    'fail',
+  );
+  await check(
+    'reactionNotificationGuards: 認証済み本人でも更新できない',
+    updateDoc(doc(aliceDb, 'reactionNotificationGuards/existingGuard'), {
+      lastNotifiedAt: serverTimestamp(),
+    }),
+    'fail',
+  );
+  await check(
+    'reactionNotificationGuards: 認証済み本人でも削除できない',
+    deleteDoc(doc(aliceDb, 'reactionNotificationGuards/existingGuard')),
+    'fail',
+  );
+  await check(
+    'reactionNotificationGuards: 認証済み本人でも列挙できない',
+    getDocs(collection(aliceDb, 'reactionNotificationGuards')),
+    'fail',
+  );
+  await check(
+    'reactionNotificationGuards: 未認証でも読み取れない',
+    getDoc(doc(unauthenticatedDb, 'reactionNotificationGuards/existingGuard')),
     'fail',
   );
   await check(

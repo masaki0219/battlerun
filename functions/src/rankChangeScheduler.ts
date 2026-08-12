@@ -1,20 +1,18 @@
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions/v2';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-import { sendPushToUser } from './push';
-import { notificationCopy, userUiLanguage } from './i18n';
+import { sendPushToToken } from './push';
+import { notificationCopy, resolveUiLanguage } from './i18n';
+import { notificationLocalState, notificationTimeZone } from './rankNotificationTiming';
+export { notificationLocalState, notificationTimeZone } from './rankNotificationTiming';
 
-// 1バトルあたりのrank_change通知は1日3回まで（通知過多によるアンインストールを防ぐため）
+// 1ユーザー・1バトルあたりのrank_change通知は現地日付で1日3回まで。
 const MAX_DAILY_NOTIFY_COUNT = 3;
 
 interface RankedCategory {
   categoryId: string;
   value: number;
   rank: number;
-}
-
-function todayStr(): string {
-  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
 /**
@@ -24,10 +22,11 @@ function todayStr(): string {
  *
  * - 初回実行時（lastRankSnapshotが無い）は通知せずスナップショットのみ保存する
  * - 順位が変わった陣営には、比較や行動を煽らない中立的な更新通知を送る
- * - 1バトルあたり1日3回まで（rankChangeNotifyCount/rankChangeNotifyDateで制御）
+ * - 1ユーザー・1バトルあたり現地日付で1日3回まで（participant上の状態で制御）
  */
 export async function runRankChangeScan(): Promise<void> {
   const db = getFirestore();
+  const scanTime = new Date();
 
   const activeSnap = await db.collection('battles').where('status', '==', 'active').get();
 
@@ -66,45 +65,67 @@ export async function runRankChangeScan(): Promise<void> {
 
     if (changes.length === 0) continue;
 
-    const today = todayStr();
-    let notifyCount = battle['rankChangeNotifyCount'] as number | undefined ?? 0;
-    let notifyDate = battle['rankChangeNotifyDate'] as string | undefined ?? '';
-    if (notifyDate !== today) {
-      notifyCount = 0;
-      notifyDate = today;
-    }
+    let notificationCount = 0;
+    let quietPushCount = 0;
+    await Promise.all(changes.map(async (change) => {
+      const participantsSnap = await battleDoc.ref
+        .collection('participants')
+        .where('categoryId', '==', change.categoryId)
+        .get();
 
-    if (notifyCount < MAX_DAILY_NOTIFY_COUNT) {
-      await Promise.all(changes.map(async (change) => {
-        const participantsSnap = await battleDoc.ref
-          .collection('participants')
-          .where('categoryId', '==', change.categoryId)
-          .get();
+      await Promise.all(participantsSnap.docs.map(async (participant) => {
+        const userSnap = await db.doc(`users/${participant.id}`).get();
+        if (!userSnap.exists) return;
+        const user = userSnap.data()!;
+        const timezone = notificationTimeZone(user, battle['market']);
+        const local = notificationLocalState(scanTime, timezone);
+        const previousDate = participant.data()['rankChangeNotifyDate'];
+        const previousCount = participant.data()['rankChangeNotifyCount'];
+        const count = previousDate === local.dateKey && typeof previousCount === 'number'
+          ? Math.max(0, Math.floor(previousCount))
+          : 0;
+        if (count >= MAX_DAILY_NOTIFY_COUNT) return;
 
-        await Promise.all(participantsSnap.docs.map(async (p) => {
-          const language = await userUiLanguage(db, p.id);
-          const { title, body } = notificationCopy.rankChanged(language, change.rank);
-          await db.collection(`users/${p.id}/notifications`).add({
-            type: 'rank_change',
+        const language = resolveUiLanguage(user['uiLanguage']);
+        const { title, body } = notificationCopy.rankChanged(language, change.rank);
+        await db.collection(`users/${participant.id}/notifications`).add({
+          type: 'rank_change',
+          title,
+          body,
+          isRead: false,
+          relatedBattleId: battleDoc.id,
+          relatedActivityId: null,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+        // 静音時間中も通知センターには残すが、端末を鳴らすPushは送らない。
+        if (local.quietHours) {
+          quietPushCount += 1;
+        } else {
+          await sendPushToToken(
+            participant.id,
+            user['expoPushToken'] as string | undefined,
             title,
             body,
-            isRead: false,
-            relatedBattleId: battleDoc.id,
-            relatedActivityId: null,
-            createdAt: FieldValue.serverTimestamp(),
-          });
-          await sendPushToUser(p.id, title, body, { type: 'rank_change', relatedBattleId: battleDoc.id });
-        }));
+            { type: 'rank_change', relatedBattleId: battleDoc.id },
+          );
+        }
+        await participant.ref.update({
+          rankChangeNotifyDate: local.dateKey,
+          rankChangeNotifyCount: count + 1,
+        });
+        notificationCount += 1;
       }));
+    }));
 
-      notifyCount += 1;
-      logger.info('rankChangeScheduler: notified rank changes', { battleId: battleDoc.id, changes: changes.length });
-    }
+    logger.info('rankChangeScheduler: processed rank changes', {
+      battleId: battleDoc.id,
+      changes: changes.length,
+      notifications: notificationCount,
+      quietPushesSkipped: quietPushCount,
+    });
 
     await battleDoc.ref.update({
       lastRankSnapshot: newSnapshot,
-      rankChangeNotifyCount: notifyCount,
-      rankChangeNotifyDate: notifyDate,
     });
   }
 }

@@ -14,7 +14,7 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
-import { doc, updateDoc } from 'firebase/firestore';
+import { deleteField, doc, runTransaction, updateDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import type { Battle } from '../types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -22,7 +22,19 @@ import { isQuietHours } from '../utils/notificationTiming';
 import { translate } from './translate';
 
 const DECLARATION_REMINDERS_KEY = '@battlerun_declaration_reminders_v1';
+const EXPO_PUSH_TOKEN_KEY = '@battlerun_expo_push_token_v1';
 export const DECLARATION_REMINDER_MIN_LEAD_MS = 15 * 60_000;
+
+async function currentExpoPushToken(): Promise<string | null> {
+  if (!Device.isDevice) return null;
+  const current = await Notifications.getPermissionsAsync();
+  if (current.status !== 'granted') return null;
+  const projectId =
+    (Constants.expoConfig?.extra as Record<string, any>)?.eas?.projectId as string | undefined;
+  if (!projectId) return null;
+  const { data } = await Notifications.getExpoPushTokenAsync({ projectId });
+  return data;
+}
 
 // フォアグラウンドでも通知を表示する
 Notifications.setNotificationHandler({
@@ -62,21 +74,55 @@ export async function registerPushToken(userId: string, askPermission = false): 
     : askPermission ? await requestNotificationPermission() : false;
   if (!granted) return false;
 
-  const projectId =
-    (Constants.expoConfig?.extra as Record<string, any>)?.eas?.projectId as string | undefined;
-  if (!projectId) {
-    console.warn('[Notifications] EAS projectId が未設定のため Push Token を取得できません');
-    return false;
-  }
-
   try {
-    const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
+    const token = await currentExpoPushToken();
+    if (!token) {
+      console.warn('[Notifications] EAS projectId または通知権限がないため Push Token を取得できません');
+      return false;
+    }
+    // ログアウト時にExpoへ再問い合わせせず、この端末のtokenだけを削除できるよう保持する。
+    await AsyncStorage.setItem(EXPO_PUSH_TOKEN_KEY, token).catch((error) => {
+      console.warn('[Notifications] Push Token の端末保存に失敗:', error);
+    });
     await updateDoc(doc(db, 'users', userId), { expoPushToken: token });
     return true;
   } catch (e) {
     console.warn('[Notifications] Push Token の取得・保存に失敗:', e);
     return false;
   }
+}
+
+/** 保存値がこの端末のtokenと一致する場合だけ削除し、別端末のtokenを消さない。 */
+export async function removeCurrentPushTokenForSignOut(userId: string): Promise<void> {
+  // getExpoPushTokenAsync() は通信待ちになるため、ログアウト経路では呼ばない。
+  const token = await AsyncStorage.getItem(EXPO_PUSH_TOKEN_KEY).catch(() => null);
+  if (!token) return;
+  const userRef = doc(db, 'users', userId);
+  await runTransaction(db, async (transaction) => {
+    const user = await transaction.get(userRef);
+    if (user.data()?.['expoPushToken'] === token) {
+      transaction.update(userRef, { expoPushToken: deleteField() });
+    }
+  });
+}
+
+/**
+ * ログアウト時に、この端末へ紐づいたリモート／ローカル通知を解除する。
+ * Firestore のトークン削除は認証が必要なため authStore 側で先に行う。
+ */
+export async function clearDeviceNotificationsForSignOut(): Promise<void> {
+  const results = await Promise.allSettled([
+    Notifications.cancelAllScheduledNotificationsAsync(),
+    Notifications.dismissAllNotificationsAsync(),
+    Notifications.unregisterForNotificationsAsync(),
+    AsyncStorage.removeItem(DECLARATION_REMINDERS_KEY),
+    AsyncStorage.removeItem(EXPO_PUSH_TOKEN_KEY),
+  ]);
+  results.forEach((result) => {
+    if (result.status === 'rejected') {
+      console.warn('[Notifications] ログアウト時の通知解除に失敗:', result.reason);
+    }
+  });
 }
 
 /**

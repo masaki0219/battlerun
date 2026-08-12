@@ -12,23 +12,25 @@ App Store Connectへ入力するSupport URL、App Privacy回答案、審査ノ�
 
 ### 1-1. デプロイコマンド一覧
 
-順番に実行する（rulesとindexesはFirestoreの整合性に関わるため、機能追加前に必ず反映すること）。
+順番に実行する（新しいqueryやTTLを使うFunctionsより、対応するindex / field configurationを先に有効化する）。
 
 ```bash
+# Firestore インデックス／TTL（活動履歴・滞留集計・期限切れguardなど）
+firebase deploy --only firestore:indexes
+
+# Firebase / Google Cloudコンソールで追加したindex・TTLが有効になるまで待つ
+
 # Firestore セキュリティルール
 firebase deploy --only firestore:rules
-
-# Firestore インデックス（活動履歴・滞留集計の回収クエリなど）
-firebase deploy --only firestore:indexes
 
 # Cloud Functions（ビルドしてからデプロイ）
 cd functions && npm install && npm run build && cd ..
 firebase deploy --only functions
 ```
 
-インデックスの反映には数分〜数十分かかる場合がある。デプロイ直後に該当クエリを叩くと
+インデックスとTTL field configurationの反映には数分〜数十分かかる場合がある。デプロイ直後に該当クエリを叩くと
 `FAILED_PRECONDITION` エラーになることがあるため、Firebaseコンソールの
-「Firestore → インデックス」でステータスが「有効」になったことを確認してから
+「Firestore → インデックス／TTL」でステータスが「有効」になったことを確認してから
 本番トラフィックを流すこと。
 
 ### 1-2. RevenueCat Webhook のシークレット設定
@@ -179,6 +181,11 @@ Firebaseコンソールで突き合わせ、Functionsログ（`firebase function
 失敗時は活動に座標や例外本文を含まない `aggregationError`、試行回数、最終試行時刻が残る。
 Cloud Monitoringでは `activity_aggregation_failed` が1件以上、または
 `recoverStaleActivityAggregations` の実行失敗が1件以上で通知するログベースのアラートを設定する。
+
+`category_stats/{categoryId}` はチーム単位の集計ドキュメントなので、利用増加時は単一ドキュメントの
+競合候補になる。ただし「1 write/秒」のような固定閾値では判断しない。負荷試験と本番ログで
+`ABORTED`、高レイテンシ、`activity_aggregation_failed` / `aggregationError` の増加を確認し、
+通常トラフィックで持続的に発生する前に分散カウンタ／shard方式を設計する。
 
 ---
 

@@ -20,5 +20,8 @@ import './avatarEmojis.test';
 import './designTokens.test';
 import './providerButtons.test';
 import './localizationMarket.test';
+import './releaseHardening.test';
+import './rankNotificationTiming.test';
+import './stepCounter.test';
 
 console.log('all unit tests passed');

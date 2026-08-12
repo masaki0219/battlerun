@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { finishBattle } from '../functions/src/finishBattle';
-import { runRankChangeScan } from '../functions/src/rankChangeScheduler';
+import { notificationLocalState, runRankChangeScan } from '../functions/src/rankChangeScheduler';
 
 const functionsRequire = createRequire(path.resolve(__dirname, '../functions/package.json'));
 const { initializeApp } = functionsRequire('firebase-admin/app') as typeof import('firebase-admin/app');
@@ -67,7 +67,7 @@ async function callFunction(
   name: string,
   idToken: string,
   data: Record<string, unknown>,
-): Promise<{ ok: true; result: Record<string, unknown> } | { ok: false; code: string; message: string }> {
+): Promise<{ ok: true; result: Record<string, unknown> } | { ok: false; code: string; message: string; details?: Record<string, unknown> }> {
   const response = await fetch(`http://${FUNCTIONS_HOST}/${PROJECT_ID}/${CALLABLE_REGION}/${name}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
@@ -75,9 +75,14 @@ async function callFunction(
   });
   const body = await response.json() as {
     result?: Record<string, unknown>;
-    error?: { status?: string; message?: string };
+    error?: { status?: string; message?: string; details?: Record<string, unknown> };
   };
-  if (body.error) return { ok: false, code: body.error.status ?? 'UNKNOWN', message: body.error.message ?? '' };
+  if (body.error) return {
+    ok: false,
+    code: body.error.status ?? 'UNKNOWN',
+    message: body.error.message ?? '',
+    ...(body.error.details ? { details: body.error.details } : {}),
+  };
   return { ok: true, result: body.result ?? {} };
 }
 
@@ -124,6 +129,14 @@ async function scenarioReactionNotification(): Promise<void> {
     (notification.data()['title'] as string).includes('応援する人'),
     '通知タイトルへリアクションした人の表示名が入る',
   );
+
+  // 削除して付け直しても、サーバー専用guardが残るためクールダウン中は再通知しない。
+  await db.doc(`activities/${activityId}/reactions/${reactor.uid}`).delete();
+  await db.doc(`activities/${activityId}/reactions/${reactor.uid}`).set({ type: '🔥', userId: reactor.uid });
+  await assertStaysEmpty('リアクションの付け直しで通知が重複した', async () => {
+    const snap = await db.collection(`users/${owner.uid}/notifications`).where('type', '==', 'reaction').get();
+    return snap.size - 1;
+  });
 
   // 自分のリアクションは通知しない。
   await db.doc(`activities/${activityId}/reactions/${owner.uid}`).set({ type: '👏', userId: owner.uid });
@@ -204,7 +217,10 @@ async function scenarioRankChangeNotification(): Promise<void> {
 
   // 1日3回の上限を超えたら通知しない。
   const battleRef = db.doc(`battles/${battleId}`);
-  await battleRef.update({ rankChangeNotifyCount: 3 });
+  await db.doc(`battles/${battleId}/participants/${runner.uid}`).update({
+    rankChangeNotifyCount: 3,
+    rankChangeNotifyDate: notificationLocalState(new Date(), 'UTC').dateKey,
+  });
   await db.doc(`battles/${battleId}/category_stats/team-b`).update({ totalDistanceKm: 99, avgDistanceKm: 99 });
   await runRankChangeScan();
   const afterCap = await db.collection(`users/${runner.uid}/notifications`)
@@ -390,6 +406,7 @@ async function scenarioPrivateBattleSecurity(): Promise<void> {
     inviteCode: 'WRONG1',
   });
   assert.equal(wrongCode.ok, false, '誤った招待コードでprivateへ参加できてしまう');
+  if (!wrongCode.ok) assert.equal(wrongCode.details?.['reason'], 'invite-code-incorrect');
   const beforeCorrectJoin = await db.doc(`battles/${privateBattleId}/participants/${invited.uid}`).get();
   assert.equal(beforeCorrectJoin.exists, false, '拒否後にparticipantが作成された');
 
@@ -452,6 +469,25 @@ async function scenarioPrivateBattleSecurity(): Promise<void> {
   const detailActivity = detail.result['activity'] as Record<string, unknown>;
   assert.equal('startedAt' in detailActivity, false, '詳細要約に開始時刻が含まれる');
   assert.equal('aggregationImpacts' in detailActivity, false, '詳細要約に内部集計値が含まれる');
+
+  await db.doc(`users/${creator.uid}/blocks/${invited.uid}`).set({
+    blockerUid: creator.uid,
+    blockedUid: invited.uid,
+    displayName: '参加者',
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  const blockedList = await callFunction('listBattleActivities', invited.idToken, {
+    battleId: privateBattleId,
+    limit: 10,
+  });
+  assert.ok(blockedList.ok, `ブロック適用後の活動一覧取得に失敗: ${JSON.stringify(blockedList)}`);
+  assert.deepEqual(blockedList.result['activities'], [], 'ブロック関係にある相手の公開活動要約が返された');
+  const blockedDetail = await callFunction('getBattleActivity', invited.idToken, {
+    battleId: privateBattleId,
+    activityId,
+  });
+  assert.equal(blockedDetail.ok, false, 'ブロック関係にある相手の公開活動詳細を取得できてしまう');
+  if (!blockedDetail.ok) assert.equal(blockedDetail.code, 'NOT_FOUND');
 
   const duplicateCode = 'DUP123';
   await Promise.all(['a', 'b'].map((suffix) => db.doc(`battles/e2e-duplicate-${suffix}`).set({

@@ -28,7 +28,7 @@ export function EmptyState({ icon, title, hint, ctaLabel, onCtaPress, dark }: Pr
       <Text style={[styles.title, { color: titleColor }]}>{title}</Text>
       {hint ? <Text style={[styles.hint, { color: hintColor }]}>{hint}</Text> : null}
       {ctaLabel && onCtaPress ? (
-        <TouchableOpacity style={styles.cta} onPress={onCtaPress} activeOpacity={0.85}>
+        <TouchableOpacity style={styles.cta} onPress={onCtaPress} activeOpacity={0.85} accessibilityRole="button">
           <Text style={styles.ctaLabel}>{ctaLabel}</Text>
         </TouchableOpacity>
       ) : null}

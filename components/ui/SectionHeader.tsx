@@ -29,7 +29,7 @@ export function SectionHeader({ label, labelColor, actionLabel, onActionPress, d
         {label}
       </Text>
       {actionLabel ? (
-        <TouchableOpacity onPress={onActionPress} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <TouchableOpacity onPress={onActionPress} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button">
           <Text style={[styles.action, { color: dark ? DarkColors.primary : Colors.primary }]}>
             {actionLabel}
           </Text>

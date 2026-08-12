@@ -14,13 +14,23 @@ interface Props {
   myCatId?: string | null;
   expanded: boolean;
   onToggleExpand: () => void;
+  onPressDetails?: () => void;
+  detailsAccessibilityLabel?: string;
 }
 
 /**
  * 一覧カードの陣営ランキング行（上位3＋自陣営、残りは折りたたみ）。表示専用。
  * 展開状態は親が保持し expanded / onToggleExpand で受け渡す。
  */
-export function BattleRankRows({ battle, sorted, myCatId, expanded, onToggleExpand }: Props) {
+export function BattleRankRows({
+  battle,
+  sorted,
+  myCatId,
+  expanded,
+  onToggleExpand,
+  onPressDetails,
+  detailsAccessibilityLabel,
+}: Props) {
   const { language, t } = useTranslation();
   if (sorted.length === 0) return null;
   const rt = battle.rankingType;
@@ -52,18 +62,30 @@ export function BattleRankRows({ battle, sorted, myCatId, expanded, onToggleExpa
 
   return (
     <View style={styles.rankSection}>
-      {visible.map((s) => row(s))}
-      {showMyExtra && (
-        <>
-          <Text style={styles.ellipsis}>⋯</Text>
-          {row(sorted[myIdx])}
-        </>
-      )}
+      <TouchableOpacity
+        style={styles.rankDetails}
+        activeOpacity={onPressDetails ? 0.7 : 1}
+        onPress={onPressDetails}
+        disabled={!onPressDetails}
+        accessibilityRole={onPressDetails ? 'button' : undefined}
+        accessibilityLabel={detailsAccessibilityLabel}
+      >
+        <View style={styles.rankRows}>
+          {visible.map((s) => row(s))}
+          {showMyExtra && (
+            <>
+              <Text style={styles.ellipsis}>⋯</Text>
+              {row(sorted[myIdx])}
+            </>
+          )}
+        </View>
+      </TouchableOpacity>
       {hiddenCount > 0 && (
         <TouchableOpacity
           onPress={onToggleExpand}
           style={styles.collapseBtn}
           hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          accessibilityRole="button"
         >
           <Text style={styles.collapseText}>{expanded ? t('common.close') : t('battle.otherTeams', { count: hiddenCount })}</Text>
           <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color={Colors.textTertiary} />
@@ -75,6 +97,8 @@ export function BattleRankRows({ battle, sorted, myCatId, expanded, onToggleExpa
 
 const styles = StyleSheet.create({
   rankSection: { gap: Spacing.md, marginBottom: Spacing.sm },
+  rankDetails: { paddingVertical: Spacing.xs, marginVertical: -Spacing.xs },
+  rankRows: { gap: Spacing.md },
   rankRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   rankNum: { width: 16, fontSize: Typography.fontSize.sm, fontWeight: '700', color: Colors.textTertiary, textAlign: 'center', fontVariant: ['tabular-nums'] },
   rankNumMine: { color: Colors.primary },

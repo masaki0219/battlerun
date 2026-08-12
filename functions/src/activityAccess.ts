@@ -3,6 +3,8 @@ import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { tokyoDayKey } from './battleCredit';
 
 const MAX_ACTIVITY_LIST_SIZE = 500;
+const MAX_ACTIVITY_CANDIDATES = 1_000;
+const BLOCK_READ_BATCH_SIZE = 200;
 const TOKYO_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 function requiredId(value: unknown, label: string): string {
@@ -53,6 +55,40 @@ async function authorizedBattle(uid: string, battleId: string): Promise<Firebase
   return battle;
 }
 
+async function blockedCandidateUserIds(uid: string, candidateUserIds: string[]): Promise<Set<string>> {
+  const db = getFirestore();
+  const candidates = [...new Set(candidateUserIds)].filter((candidate) => candidate !== uid);
+  const refToCandidate = new Map<string, string>();
+  for (const candidate of candidates) {
+    const outgoing = db.doc(`users/${uid}/blocks/${candidate}`);
+    const incoming = db.doc(`users/${candidate}/blocks/${uid}`);
+    refToCandidate.set(outgoing.path, candidate);
+    refToCandidate.set(incoming.path, candidate);
+  }
+
+  const refs = [...refToCandidate.keys()].map((path) => db.doc(path));
+  const blocked = new Set<string>();
+  for (let offset = 0; offset < refs.length; offset += BLOCK_READ_BATCH_SIZE) {
+    const snapshots = await db.getAll(...refs.slice(offset, offset + BLOCK_READ_BATCH_SIZE));
+    snapshots.forEach((snapshot) => {
+      if (!snapshot.exists) return;
+      const candidate = refToCandidate.get(snapshot.ref.path);
+      if (candidate) blocked.add(candidate);
+    });
+  }
+  return blocked;
+}
+
+async function hasBlockBetween(uid: string, otherUid: string): Promise<boolean> {
+  if (uid === otherUid) return false;
+  const db = getFirestore();
+  const [outgoing, incoming] = await Promise.all([
+    db.doc(`users/${uid}/blocks/${otherUid}`).get(),
+    db.doc(`users/${otherUid}/blocks/${uid}`).get(),
+  ]);
+  return outgoing.exists || incoming.exists;
+}
+
 function activitySummary(
   id: string,
   data: FirebaseFirestore.DocumentData,
@@ -99,7 +135,10 @@ export const listBattleActivities = onCall({ maxInstances: 20 }, async (request)
     .where('battleIds', 'array-contains', battleId)
     .where('visibility', '==', 'public_v2');
   if (from) query = query.where('startedAt', '>=', from);
-  const snapshot = await query.orderBy('startedAt', 'desc').limit(limit).select(
+  // ブロック除外後も要求件数へ近づけるため候補を多めに取り、候補との関係だけを確認する。
+  // 全世界のincoming blockを列挙せず、読み取り量を明示的に上限内へ収める。
+  const candidateLimit = Math.min(MAX_ACTIVITY_CANDIDATES, Math.max(limit, limit * 2));
+  const snapshot = await query.orderBy('startedAt', 'desc').limit(candidateLimit).select(
     'userId',
     'displayName',
     'distanceKm',
@@ -108,11 +147,18 @@ export const listBattleActivities = onCall({ maxInstances: 20 }, async (request)
     'steps',
     'startedAt',
   ).get();
+  const summaries = snapshot.docs.flatMap((doc) => {
+    const summary = activitySummary(doc.id, doc.data());
+    return summary ? [summary] : [];
+  });
+  const blockedUserIds = await blockedCandidateUserIds(
+    uid,
+    summaries.map((summary) => summary['userId'] as string),
+  );
   return {
-    activities: snapshot.docs.flatMap((doc) => {
-      const summary = activitySummary(doc.id, doc.data());
-      return summary ? [summary] : [];
-    }),
+    activities: summaries
+      .filter((summary) => !blockedUserIds.has(summary['userId'] as string))
+      .slice(0, limit),
   };
 });
 
@@ -134,6 +180,10 @@ export const getBattleActivity = onCall({ maxInstances: 20 }, async (request) =>
   ) throw new HttpsError('not-found', '記録が見つかりません。');
   const summary = activitySummary(activityId, activity!);
   if (!summary) throw new HttpsError('not-found', '記録が見つかりません。');
+  if (await hasBlockBetween(uid, summary['userId'] as string)) {
+    // ブロック関係と記録の存在を呼び出し元へ区別させない。
+    throw new HttpsError('not-found', '記録が見つかりません。');
+  }
   const impact = activity?.['aggregationImpacts']?.[battleId] as Record<string, unknown> | undefined;
   const creditedDistanceKm = typeof impact?.['creditedDistanceKm'] === 'number'
     && Number.isFinite(impact['creditedDistanceKm'])

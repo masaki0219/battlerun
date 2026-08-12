@@ -28,6 +28,17 @@ export async function sendPushToUser(
   if (!userSnap.exists) return;
 
   const token = userSnap.data()?.['expoPushToken'] as string | undefined;
+  await sendPushToToken(userId, token, title, body, data);
+}
+
+/** 取得済みユーザードキュメントのtokenを使い、同じドキュメントの二重readを避ける。 */
+export async function sendPushToToken(
+  userId: string,
+  token: string | undefined,
+  title: string,
+  body: string,
+  data?: Record<string, unknown>,
+): Promise<void> {
   if (!token) return;
 
   if (!Expo.isExpoPushToken(token)) {
@@ -48,6 +59,7 @@ export async function sendPushToUser(
     if (ticket.status === 'error') {
       logger.warn('sendPushToUser: push ticket error', { userId, ticket });
       if (ticket.details?.error === 'DeviceNotRegistered') {
+        const userRef = getFirestore().doc(`users/${userId}`);
         await userRef.update({ expoPushToken: null });
       }
     }

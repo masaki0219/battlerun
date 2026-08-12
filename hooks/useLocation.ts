@@ -8,6 +8,7 @@ import {
   GPS_ANDROID_TIME_INTERVAL_MS,
   GPS_DISTANCE_INTERVAL_M,
 } from '../utils/gpsProcessing';
+import { translate } from '../lib/translate';
 
 // バックグラウンド追跡が登録済みでも位置更新が届かなくなる「静かな停止」を検知するまでの猶予時間
 const WATCHDOG_TIMEOUT_MS = 20000;
@@ -172,8 +173,8 @@ export function useLocation({ enabled }: { enabled: boolean }) {
               pausesUpdatesAutomatically: false,
               showsBackgroundLocationIndicator: true,
               foregroundService: {
-                notificationTitle: '記録中',
-                notificationBody: 'ZELIO がGPSを追跡しています',
+                notificationTitle: translate('run.foregroundServiceTitle'),
+                notificationBody: translate('run.foregroundServiceBody'),
               },
             });
           }

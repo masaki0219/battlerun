@@ -8,23 +8,70 @@
 
 ## 現在の状態
 
-`feat/ui-consolidation` ブランチで作業中。アプリ名（`expo.name` / `CFBundleDisplayName`、ランチャー表示）とアプリ内UI表記は `ZELIO` に統一済み。Bundle Identifier / Android package は `com.masaki.zelio`、ディープリンク scheme は `zelio`。
+リリース候補差分は`feat/ui-consolidation`から`main`へfast-forward統合済み。アプリ名（`expo.name` / `CFBundleDisplayName`、ランチャー表示）とアプリ内UI表記は `ZELIO` に統一済み。Bundle Identifier / Android package は `com.masaki.zelio`、ディープリンク scheme は `zelio`。
+
+**初回リリース対象はiOSのみ**（2026-08-12ユーザー決定）。Androidのコードと設定は将来用に維持するが、今回の提出、署名、実機E2E、Google Play対応の対象外とする。
 
 **Firebase は新プロジェクト `zelio-run` へ移行済み**（2026-07-19 に再度方針転換し移行を実施。`.env` / `eas.json` 3プロファイル / `.firebaserc` / `lib/legal.ts` を zelio-run へ更新し、ルール・インデックス・Hosting・Functions 全14関数・シークレット・Authユーザー2件を zelio-run へデプロイ/移行した）。旧 `battlerun-75eb6` は Firestore テストデータのコピー完了を確認するまで残しておくこと。残作業は「未解決・要確認」を参照。
 
 **RevenueCat はダッシュボード設定が正**。Entitlement は `Zelio Pro`、Offering は `default`。リリース初期は月額だけを販売する方針へ変更し、アプリは Package `$rc_monthly` / Product `monthly` だけを表示・購入する。年額商品 `yearly` は将来用に残してよいが、初期リリースでは審査提出・販売対象およびRevenueCatのCurrent Offeringから外す。APIキーは `.env` / `eas.json`（3プロファイル）とも設定済み。
 
+**RevenueCat Sandbox課金経路はユーザー確認により完了（2026-08-12）**。購入、entitlement、WebhookによるFirestore `plan`反映、購入復元、private Battle作成までを課金シナリオ完了扱いとする。
+
 Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*` 等）は従来値を維持している。
 
 距離表示は、週間・月間・累計・チーム合計などの**合計値を0.1km（100m）単位**、1回のランとそのチャレンジ加算値を**0.01km（10m）単位**に統一している。
 
-**デプロイ方針（2026-08-12 ユーザー許可更新）**: 実装に伴う Firebase Functions / Firestore Rules・Indexes・Hosting の必要部分は、必須テストとビルドが成功した後、Codexが `zelio-run` へ都度の再確認なしでデプロイしてよい。クライアント確認用のEAS development / previewビルドも同様に実行してよい。実行前に対象サービス／プロファイルを特定し、不要な一括デプロイは避け、完了・失敗を報告する。App Store / Google Playへの提出・公開、productionリリース、破壊的なデータ変更、課金設定、秘密情報の追加・変更は別途ユーザー確認が必要。commit / push / reset / rebase も従来どおり別途ユーザー許可が必要。2026-08-12のターム制バックエンド対応は同日13:40 JSTにユーザーの明示承認を得て限定デプロイ済み。
+**デプロイ方針（2026-08-12 ユーザー許可更新）**: 実装に伴う Firebase Functions / Firestore Rules・Indexes・Hosting の必要部分は、必須テストとビルドが成功した後、Codexが `zelio-run` へ都度の再確認なしでデプロイしてよい。**この許可範囲ではデプロイ可否の確認質問を挟まず、対象を限定して実行する。** クライアント確認用のEAS development / previewビルドも同様に実行してよい。実行前に対象サービス／プロファイルを特定し、不要な一括デプロイは避け、完了・失敗を報告する。App Store / Google Playへの提出・公開、productionリリース、破壊的なデータ変更、課金設定、秘密情報の追加・変更は別途ユーザー確認が必要。commit / push / reset / rebase も従来どおり別途ユーザー許可が必要。2026-08-12のターム制バックエンド対応は同日13:40 JSTにユーザーの明示承認を得て限定デプロイ済み。
 
 `inst_v3/BattleRunホーム画面作成.zip`（Figma Make のホーム画面デザイン・最終版）を反映し、パレットをディープパイン系に刷新した。レイアウトの作り直しはホームタブとランタブの2画面に限定し、他画面は `design_tokens.ts` 経由で色だけ追従している。
 
 ※ 同フォルダの `BattleRunホーム画面作成 (コピー).zip` は旧版。パレット（`theme.css`）は同一だが、ヒーローが2陣営のVSゲージで、チーム内ランキングが無い。**最終版はこちら（コピーでない方）**。
 
 ## 最後に完了したこと
+
+### 2026-08-12 iOSリリース用の整理とXcode Releaseビルド
+
+- 初回リリース対象をiOSのみに確定した。Androidのコードと設定は将来用に維持するが、今回の署名、提出、実機E2E、Google Play対応から外した。`APP_STORE_SUBMISSION.md`と`RELEASE_TEST_CHECKLIST.md`もiOS専用の提出経路へ更新した。
+- 一時的なレビュー報告書`RELEASE_REVIEW_20260812.md` / `_R2.md` / `_R3.md`と、参照されていない旧`docs/CODEX_FEATURE_GAP_REPORT_2026-07-20.md`を削除した。最終判断と未解決事項は本HANDOFF、提出条件は`APP_STORE_SUBMISSION.md`、実機手順は`RELEASE_TEST_CHECKLIST.md`を正とする。
+- `ios/Zelio.xcworkspace`は権限付き`xcodebuild -list`で正常認識し、`Podfile.lock`と`Pods/Manifest.lock`も一致した。ネイティブ依存の変更がないためworkspace再生成は不要と判断した。
+- Xcode 26.6 / iPhoneOS 26.5 SDKで、`Zelio` schemeをRelease・generic iOS device・arm64・署名なしでビルドし、Store validationを含めて`BUILD SUCCEEDED`。生成先は`/private/tmp/zelio-ios-release`で、git対象外。
+- 最終確認は`npx tsc --noEmit`、tests型検査、全unit 25スイート、Functions build、`git diff --check`が成功。直前のRules 202チェック、aggregation、record reflection / release scenarios E2Eも成功済み。Firebase側の追加変更・追加デプロイはない。
+- 現行差分は`feat/ui-consolidation`へcommit/pushした後、履歴がfast-forward可能であることを確認して`main`へ統合・pushする。Xcodeで開く対象は`ios/Zelio.xcworkspace`。
+
+### 2026-08-12 R3-1修正とCodex最終リリースレビュー
+
+- R3-1の二重防御を実装した。`hooks/useStepCounter.ts`はPedometerの累積基準を先に更新し、Record Storeの最新状態が記録中かつ非停止中の場合だけ歩数・距離を加算する。`utils/stepCounter.ts`へ純粋関数を分離し、`tests/stepCounter.test.ts`で通常加算、停止中、記録終了後、0増分を回帰検査する。
+- ClaudeのR3-1再現説明は誇張だった。呼び出し元は修正前から`isRecording && !isPaused && measurementType === 'steps'`の間だけHookを有効化しており、通常停止では購読を解除する。今回の修正はeffect cleanup前後の競合・遅延callback・復旧経路をStore側でも閉じる防御として採用した。
+- 全差分、Firestore Rules、Callable認可、通知、課金連携、依存監査、EAS/ストア設定を再レビューし、**新しいP0/P1コード欠陥は検出0件**。R3-2〜R3-5、App Check、ルートErrorBoundary／クラッシュ監視、root audit high 12 / moderate 23とFunctions moderate 7は残余リスクだが、初期iOSリリースを止めるものとは判定しない。
+- 成功: `npx tsc --noEmit`、テストTS型検査、全unit（25スイート）、Functions build、Rules 202チェック、aggregation、record reflection E2E、release scenarios E2E、GPS fixture replay/v2比較、Expo Doctor 18/18、iOS/Android Expo export、`git diff --check`。
+- Firestore Rulesのレッドチーム監査結果は5/5。権限昇格、他人の非公開User/活動正本/GPS route取得、clientからのparticipant/category_stats/activity改ざんは見つからなかった。
+- **判定**: 現行ソースはiOSリリース候補。現行差分から新しい署名済みbuildを作り、実機最小ゲートとApp Store Connect提出設定を完了すればリリース可能。EAS上の最新iOS production buildは2026-07-12の旧commitで、現行差分のbuildではない。
+- Expo SDK 54のEAS `auto` imageはXcode 26 / iOS 26 SDKに対応し、2026年のApple SDK要件を満たせる。課金購入・復元はユーザー確認済みとして再試験条件から外す。レビュー判断は本HANDOFFと提出チェックリストへ統合し、一時レビュー報告書は削除する。Firebase側の変更はないため追加デプロイなし。
+
+### 2026-08-12 リリース前レビュー第2回をメタレビューして修正
+
+- 第2回レビューとChatGPTメタレビューを実コード・本番互換性まで再検証し、Claude案のうち危険な4案（カードの押せない擬似button、blockの`limit(200)`、market代表timezoneの恒久利用、reaction文書内`notifiedAt`）は採用しなかった。最終判断は本HANDOFFへ統合した。
+- ログアウト時は登録時にAsyncStorageへ保存した端末tokenを使い、Expoへの再問い合わせを廃止した。Firestore／端末通知cleanupは3秒で打ち切ってAuthログアウトへ進み、プロフィールへbusy表示と多重押下防止を追加した。オフライン時の残存リスクは軽減したが、A→logout→BのPush実配送は実機確認が必要。
+- Public Battleカードはタイトルと順位領域を実際の詳細buttonにし、順位展開・参加操作とは兄弟関係を維持した。a11yラベル全文を日英翻訳へ移し、GPS前景通知は非Hook`translate()`へ戻して言語変更とGPS effectを切り離した。
+- `listBattleActivities`は全incoming block列挙をやめ、最大1,000件の表示候補との双方向block文書だけをbatch-getする。要求件数の2倍を候補取得して除外後の目減りも緩和した。
+- Userへ端末IANA timezoneを保存し、順位変動Pushは受信者の現地22:00〜7:00を抑止、1日3回上限もparticipantごとの現地日付で数える。通知センターには静音中も残す。取得済みuser/tokenを再利用して同じuser文書の二重readも除いた。
+- reaction削除→再作成の通知連打は、`reactionNotificationGuards/{sha256}`へ30分cooldownを保存して抑止する。guardと通知作成は同じtransaction、guardはclient全面拒否・7日TTL。名前上限は本番`users`/`publicProfiles`計4文書に13文字以上が0件と確認後、Rulesを12文字へ統一した。
+- Pro購入直後に`plan`反映待ちなら「Proプランを反映中」と案内する。Sandbox課金はユーザー確認により完了扱い。Supabase RLSも前回の既知行監査でanon INSERT-only確認済み。
+- 成功: `npx tsc --noEmit`、全unit（timezone/静音境界を追加）、Functions build、テストコード型検査、Firestore Rules全件、Functions/Auth/FirestoreシナリオE2E、Rules本番dry-run、iOS/Android Expo export、`git diff --check`。Rules/E2Eではname/timezone/guard拒否、reaction削除→再作成の重複通知防止、順位通知の利用者現地日付上限まで確認した。
+- **本番反映済み（2026-08-12 17:07 JST）**: `reactionNotificationGuards.expireAt` TTLを先行デプロイし、操作`SUCCESSFUL`・TTL `ACTIVE`・単一フィールドindex除外を確認後、Firestore Rules（ruleset `066db2c0-69e5-470f-855e-4ae5b703ee8e`）と変更した5 Functions（`onReactionCreated` / `rankChangeScheduler` / `createPrivateBattle` / `getBattleActivity` / `listBattleActivities`）だけを`zelio-run`へ限定デプロイした。5件とも`ACTIVE`・Node.js 22・`maxInstances: 20`・hash `4c055762270841d07930cde8352a19f664e084f2`、エラー0件。commit / pushは未実施。
+
+### 2026-08-12 リリース前レビューを再検証し、確定項目を修正
+
+- Claudeの一次レビューとコード、本番設定、ChatGPTメタレビューを突き合わせ、C-1の更新read計算、C-2の固定1 write/秒、S-2の「上限なし」、U-2の「空状態に前進導線なし」を誤りとして訂正し、S-7をリリース前確認へ昇格、U-1をリリース前対応へ統一した。最終判断は本HANDOFFへ統合した。
+- S-1: ログアウト前に現在端末と一致するPush tokenだけをFirestoreから削除し、予約通知・表示済み通知・端末通知登録・宣言リマインダーmapを解除する。別端末のtokenは誤って消さない。
+- U-1: `joinBattle` / `leaveBattle` / 招待コードlookupの `HttpsError.details.reason` を機械可読コード化し、日英翻訳へマップした。raw Firebase/Functionsメッセージは引き続きUIへ出さない。
+- S-2 / S-4 / S-5: 全Gen 2 Functionsの基準を`maxInstances: 20`、`submitActivity: 10`、`revenuecatWebhook: 5`とした。活動一覧・詳細は双方向ブロックをサーバー適用し、`publicProfiles`は認証済み単体getだけ許可してlistを拒否した。必要な`blocks.blockedUid` collection-group indexを追加した。
+- I-1 / A-1 / A-2 / S-6 / S-8: Android前景通知をi18n化、Public Battleカードのnested Touchableを兄弟操作へ分離、主要操作のrole/stateを補完、通知遷移IDを検証、Webhook比較を`timingSafeEqual`化した。`useTeamRanking`は全陣営ではなく自陣営だけを購読する。
+- Supabase `feedbacks` は本番anon権限で監査行 `zelio_rls_audit_20260812_153509` をINSERT後、その既知行に対するSELECT / UPDATE / DELETEがいずれも対象行を返さないことを確認した。実効権限はanon INSERT-only。監査行はRLSがDELETEを拒否したため受信箱に残り、Dashboardから手動削除可能。
+- 確認成功: `git diff --check`、`npx tsc --noEmit`、Functions build、全unit、Firestore Rules全件、Functions/Auth/FirestoreシナリオE2E、Rules本番dry-run、iOS/Android Expo export。参加エラーreasonと双方向ブロックはE2Eへ、通知・i18n・上限・a11y・routing等はrelease hardening unitへ回帰テストを追加した。
+- **本番反映済み（2026-08-12 15:49 JST）**: `blocks.blockedUid` indexを先行デプロイしてREADY確認後、Functions 27件（成功27 / エラー0）、Firestore Rulesを`zelio-run`へ反映した。rulesetは`ea18e8ea-5fd1-4ad7-a92f-493c3b32296f`。クライアント変更は未配布。commit / pushは未実施。
+- 今回見送ったもの: S-3の日次距離・件数上限、U-3の距離0記録、U-4の結果自動遷移、O-1のprivate Battle／招待予約の退会後処理は仕様判断が必要。C-2は固定閾値を設けず、負荷試験とABORTED / latency / `aggregationError`監視でsharding時期を決める。
 
 ### 2026-08-12 3ターム制の明示参加UXとテーマ振り返りを追加
 
@@ -146,7 +193,7 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 - ネイティブ経路はスクラッチ領域の複製で検証し、リポジトリの`ios/`とユーザーのXcode署名設定へは触れていない。iOS prebuild → `pod install`（**133 pods**）→ 署名なしDebugシミュレータ向け`xcodebuild`が**BUILD SUCCEEDED**（error 0件）。`SwiftUICore`リンク失敗は再現しなかった。Android prebuildも成功した。検証後にスクラッチ（9.0GB）は削除済み。
 - ネイティブ生成物を実測確認した: Podfileへ`$RNFirebaseDisableSPM` / `$RNFirebaseAsStaticFramework`が挿入され、`.app`内に`GoogleService-Info.plist`・Google逆引きURLスキーム・Apple Sign Inのentitlement（`com.apple.developer.applesignin`）が入り、`FIRAuth` / `FIRApp` / `GIDSignIn`が**静的リンク**されている（動的Firebase依存0件）。Android側は`android/app/google-services.json`と`com.google.gms.google-services`プラグイン、`applicationId com.masaki.zelio`を確認した。
 - `npm audit --omit=dev`はroot 35件（high 12 / moderate 23）で前回から増減なし、Functions 8件（moderateのみ。前回記録の9件から1件減）。
-- 実行できなかったもの: **Androidネイティブビルド**（このMacにAndroid SDKが無い。`ANDROID_HOME`未設定・`adb`/`sdkmanager`なし）。物理端末E2E、EAS build、実走GPS、RevenueCat購入／復元、Push実配送も従来どおり未実施。
+- 当時実行できなかったもの: **Androidネイティブビルド**（このMacにAndroid SDKが無い。`ANDROID_HOME`未設定・`adb`/`sdkmanager`なし）。物理端末E2E、EAS build、実走GPS、Push実配送は未実施。RevenueCat購入／復元は2026-08-12のユーザー確認で完了扱い。
 - **新たに判明した未解決2件**は「未解決・要確認」へ追記した（新規認証コードの自動テスト0件、公開プライバシーポリシーがHosting／GitHub Pagesとも未同期）。
 
 ### 2026-08-10 Apple／Google認証をリリース仕様まで実装（未commit・未push）
@@ -294,7 +341,7 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 - リリース初期の運用リスクを避けるため、プロフィールのPro購入UIから年額の表示・選択を削除した。ストア取得価格は月額1件だけを表示する。
 - RevenueCatラッパーは `$rc_monthly` だけを明示取得・購入するAPIへ変更した。Current Offeringに `$rc_annual` が残っていても、アプリから新規購入されない。既存購入の復元と `Zelio Pro` entitlement判定は周期を問わず維持する。
 - `APP_STORE_SUBMISSION.md` の審査ノートと提出チェックを月額のみの構成へ同期した。年額商品は将来用に保持してよいが、初期リリースではApp Store Connectの審査・販売対象およびRevenueCatのCurrent Offeringから外す運用とする。
-- `npm run typecheck`、`npm run test:unit`、iOS Expo export、`git diff --check` が成功。RevenueCat / App Store Connectの外部設定変更とSandbox購入・復元は未実施。
+- `npm run typecheck`、`npm run test:unit`、iOS Expo export、`git diff --check` が成功。この時点ではRevenueCat / App Store Connectの外部設定変更とSandbox購入・復元は未実施だったが、Sandbox課金は2026-08-12のユーザー確認で完了扱い。
 
 ### 画面OFF記録の設定フロー明確化（2026-07-31）
 
@@ -591,16 +638,15 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 
 ## 次にやること
 
-1. **EAS development/preview buildを2アカウントで確認し、Term 1参加→Term 2開催前は未参加→active後に同チーム継続／別チーム選択／2件上限拒否→Term 3終了後の3結果表示を通す。**
+1. **Xcodeで`ios/Zelio.xcworkspace`を開き、実機署名したArchive／TestFlightビルドで`RELEASE_TEST_CHECKLIST.md`の最小ゲート（GPS/画面ロック、歩数一時停止、Apple・Google認証、A→logout→BのPush、2アカウントUGC、日英・AX5・VoiceOver）を通す。**
 
 ## その次の候補
 - `lib/socialAuth.ts` の純粋ロジック（エラーコード分岐、idToken欠落時throw、pending linkの10分失効）を`tests/`へ載せられる形へ切り出し、ユニットテストを追加する
-- 現行差分とApple／Googleログインを含むTestFlightビルドを作成し、`RELEASE_TEST_CHECKLIST.md`を2台の物理端末で全項目通して、GPS実走（バックグラウンド／画面ロック／オフライン復帰）、RevenueCat購入／復元、Push実配送、AX5全画面を確認する
+- 現行差分とApple／Googleログインを含むTestFlightビルドを作成し、`RELEASE_TEST_CHECKLIST.md`を2台の物理端末で全項目通して、GPS実走（バックグラウンド／画面ロック／オフライン復帰）、Push実配送、AX5全画面を確認する（RevenueCat購入／復元はユーザー確認により完了済み）
 - 同一端末・同一コースでGPS v3を最低5回実走し、既知距離の中央値誤差±2%以内・単発±5%以内・10分静止20m未満と、90度/Uターンを削りすぎないことを確認する
 - シミュレータまたは実機で参加中チャレンジ切替（0〜3件、長いタイトル、最大文字サイズ、再起動、終了時フォールバック）を目視確認する
 - 2アカウントの実機またはTestFlightで、宣言作成→変更→応援→取消→再宣言→活動達成と通知を一連で確認する
-- RevenueCatのCurrent Offeringから年額を外し、App Store Connectでyearlyを審査・販売対象外にしたうえで、月額だけのSandbox購入・復元をTestFlightで確認する
-- 現行差分からEAS preview buildを作成し、物理端末でホーム画面アイコン、iOS full-screen splash、Android adaptive icon/Android 12 splashを確認する
+- 現行差分からiOS EAS preview buildを作成し、物理端末でホーム画面アイコンとiOS full-screen splashを確認する
 - 実機でオフライン停止→端末キュー保存→オンライン復帰後30秒以内の再送と、サマリー集計の15秒フォールバックを確認する
 - 実機で新機能を目視確認する: 一時停止/再開、カウントダウン、目標バー、1kmラップ、記録削除、開始前GPSチップ
 - `RELEASE_TEST_CHECKLIST.md` の通し確認（Day-0、GPS保存、再送、ランキング反映、アカウント削除を2アカウントの実機で）を行う
@@ -613,18 +659,28 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 
 ## 未解決・要確認
 
+- **iOSリリース最小ゲート（2026-08-12、Codex最終判定）**: R3-1と課金購入・復元は完了。残る出荷条件は、(1)現行差分の新しい署名済みbuild、(2)屋外2km以上のGPS実走（画面OFF・バックグラウンド、既知距離との誤差記録）、(3)歩数モードの一時停止→再開、(4)Apple／Googleサインイン・provider link・再認証退会、(5)Push実配送とA→ログアウト→Bのアカウント切替、(6)2アカウントで参加上限文言・通報・ブロック、(7)日英・AX5・VoiceOver、(8)App Store ConnectのPrivacy/年齢レーティング/審査連絡先・デモアカウント/Apple Private Email Relay/公開URL、(9)JP/US以外へ配信する場合のGLOBAL公開Battle。本項と`RELEASE_TEST_CHECKLIST.md`を正とする。
+- ~~歩数モードの停止中callback防御~~ **解決済み（2026-08-12）**: 呼び出し元は元から停止時に購読解除していたため長時間継続加算の再現説明は誇張だったが、Storeの最新`isRecording`/`isPaused`も検証して遅延callbackを拒否する二重防御を追加した。停止中の歩数を再開後へ持ち越さない順序とunit testも確認済み。
+- **クラッシュ監視とErrorBoundaryが未導入（2026-08-12）**: レンダーエラーで白画面またはネイティブクラッシュになり、利用者は復帰できず開発側にも情報が届かない。初期リリースは未知の不具合を拾う期間なので、ルートへErrorBoundaryを1枚入れることを推奨する。クラッシュ監視SDKはプライバシー申告が要るため最初のアップデートでも可。
+
+- ~~リリース前レビューの確定修正とSupabase RLS実効確認~~ **解決済み（2026-08-12）**: 実装・自動テスト・本番Functions/Rules/Indexes反映まで完了。Supabase anonは既知行を使ってINSERT-onlyを実証した。残るリリース前作業はクライアントbuild配布と2アカウント実機確認、GLOBAL配信する場合の公開Battle作成。
+
+- ~~第2回レビューのエミュレータ再確認と本番反映~~ **解決済み（2026-08-12）**: N-1 / N-3〜N-6 / NEW-1〜NEW-3 / NEW-5を修正し、NEW-4の二重readを解消した。Rules/E2Eを含む全検証成功後、TTL `ACTIVE`を待ってRulesと対象5 Functionsを限定デプロイし、本番`ACTIVE`まで確認した。N-7は監視項目、NEW-4のExpo batch化は規模拡大時とする。
+- ~~RevenueCat Webhook実疎通と課金シナリオ~~ **解決済み（2026-08-12、ユーザー確認）**: Sandbox課金をテスト済みとして購入・entitlement・Firestore plan反映・復元・private Battle作成まで完了扱い。コード側もplan反映待ちを専用文言で案内する。
+- **アカウント切替Pushは実機確認が必要（2026-08-12）**: tokenの端末cache、cleanup timeout、多重押下防止は実装済み。`unregisterForNotificationsAsync()`後にA→logout→BでBへ再登録でき、A向けPushが届かずB向けだけ届くことは物理端末で確認する。
+
 - **ターム制のクライアント配布が未実施（2026-08-12）**: Rules / `battleStatusScheduler` / `joinBattle`の本番反映は完了した。管理画面、開催前表示、直上順位の逆転目安を利用者へ届けるには新しいEAS/App Store buildが必要。
 - **3ターム継続UXの実機確認が未実施（2026-08-12）**: コード上は直前チーム表示、active後の明示参加、チーム選び直し、3Battleの振り返りまで実装済みで、型・unit・Market/i18n回帰・Firestore Rules全件は成功した。2アカウント実機で2件上限エラー文言、開催境界、長いチーム名／最大文字サイズ、全ターム終了表示を確認する。テーマ累計順位・総合優勝・テーマ称号は未解決ではなく、実装しない決定事項。
 
 - **GLOBAL Public Battleが本番に0件（2026-08-12）**: GLOBALは仕様どおり排他で、JP/US以外の地域は初期MarketがGLOBALになる。現在の本番公開Battle 5件はすべてmarket未設定のLegacy JPで、GLOBALユーザーの一覧は空になる。ロジックは変更せず、配信前に管理画面からGLOBAL Battleを最低1件用意する。
-- **集計境界はJST／月曜始まりのまま（2026-08-12）**: UI翻訳とMarket配信のスコープには含めず変更していない。US本格公開前にユーザーのtimezoneをlanguage/marketとは別概念として保持し、月次・週次の境界と週開始曜日の要件を決めてから変更する。
-- **i18n/Marketの実機目視とクライアント配布が未実施（2026-08-12）**: ローカルの型・unit・Rules 176件・Functions build・Expo iOS/Android exportは成功し、本番`zelio-run`のRulesと関連Functionsも反映済み。EAS Updateは構成していないため、UI側の修正を利用者へ届けるには新しいEAS/App Store buildが必要。日本語／英語の長文、Android地域Modal、最大文字サイズ、OSのアプリ別言語変更後の復帰、Market変更／再起動保持、Push実配送はEAS development buildの2言語／2アカウントで確認する。
+- **集計境界はJST／月曜始まりのまま（2026-08-12）**: UserのIANA timezone保存は順位Pushの静音時間と日次回数にだけ利用し、活動集計の月次・週次境界は変更していない。US本格公開前に週開始曜日を含む集計要件を決めてから変更する。
+- **i18n/MarketのiOS実機目視とクライアント配布が未実施（2026-08-12）**: ローカルの型・unit・Rules 176件・Functions build・Expo exportは成功し、本番`zelio-run`のRulesと関連Functionsも反映済み。EAS Updateは構成していないため、UI側の修正を利用者へ届けるには新しいEAS/App Store buildが必要。日本語／英語の長文、最大文字サイズ、OSのアプリ別言語変更後の復帰、Market変更／再起動保持、Push実配送はiOS development buildの2言語／2アカウントで確認する。
 - **旧形式ラン宣言の物理削除／TTL対象化は未実施（2026-08-11）**: 新規宣言の48時間TTLと同一チーム限定ルールは本番反映済み。デプロイ前に作成された`expireAt`なしの旧形式宣言は、新ルールにより本人／admin以外から読めないが、Firestore上ではTTL対象外のまま残る。物理削除または`expireAt`バックフィルは既存データを不可逆に変えるため、件数・対象を確認して別途明示承認後に行う。
 - ~~非公開チャレンジ侵入・活動正本公開・招待コード重複~~ **解決済み（2026-08-11）**: Functions 8件、Firestore ruleset `600bd584-fffe-4800-bd59-8cf09cf3b305`、新規3 Callableの`maxInstances: 20`を本番`zelio-run`へ反映済み。本番の認証済み拒否テストと招待なし／誤コード参加PoCも成功し、検証データは削除済み。
-- **Supabaseフィードバックの実RLSは最終確認が必要（2026-08-11）**: anonキーでSELECTを実行した結果はHTTP 200・`[]`で、フィードバック本文の露出は観測しなかった。ただしテーブルが空ならSELECT許可時も同じ結果になる。Supabaseダッシュボードで`feedbacks`のRLS有効、anonはINSERTのみ、SELECT/UPDATE/DELETEなしを確認する。
+- ~~Supabaseフィードバックの実RLSは最終確認が必要~~ **解決済み（2026-08-12）**: 本番anon権限で監査行をINSERTし、その既知行へのSELECT / UPDATE / DELETEがすべて0行であることを確認した。実効権限はINSERT-only。監査行 `zelio_rls_audit_20260812_153509` はDashboardから手動削除できる。
 - **Firebase外部防御の確認結果（2026-08-11）**: Authのメール列挙防止は有効。今回の公開Callable 7件はmax instances 20、`onUserDeleted`は外部HTTP受付のないAuth削除トリガー（Gen 1、上限3000）。App Checkは明示設定0件で未enforce。Functions deploy時にFirebase CLIがCloud Billing APIを自動有効化したが、課金予算額・通知先は所有者判断が必要なため予算アラートは未作成。App Checkは正規クライアントの登録・debug token・メトリクス確認後に段階導入する。
 - **アカウント削除後の作成済みprivateチャレンジ方針（監査で発見・要仕様決定）**: `onUserDeleted`は活動・GPS・プロフィール・参加・ソーシャルデータを消すが、本人が作成した`battles`のタイトル/説明/チーム名/`createdBy`/招待コードは残る。履歴を必要とする他参加者がいるため一律削除は勝手に決めず未変更。終了＋招待無効化＋投稿文匿名化のどこまで行うか決めてから実装する。
-- **Apple／Google認証の外部設定と物理端末E2Eが未完了（2026-08-11）**: iOSシミュレータでログイン画面の外観と通常ログイン／Apple／Googleの354×48pt同一boundsまでは確認済みだが、EAS署名付きbuildとApple／Google実アカウントでの全フローは未確認。Apple Developerでprivate email relayの送信元／ドメインを確認し、App Store ConnectのApp Privacyを更新する。Android同時リリースの場合はEAS/Play署名鍵を作成し、SHA-1をFirebaseへ登録して`google-services.json`を再取得する（現状EAS Android credentialsなし、Firebase SHA 0件）。このMacにはAndroid SDKが無いためAndroid APKのローカルcompileも未完了。
+- **Apple／Google認証の外部設定とiOS物理端末E2Eが未完了（2026-08-11）**: iOSシミュレータでログイン画面の外観と通常ログイン／Apple／Googleの354×48pt同一boundsまでは確認済みだが、EAS署名付きbuildとApple／Google実アカウントでの全フローは未確認。Apple Developerでprivate email relayの送信元／ドメインを確認し、App Store ConnectのApp Privacyを更新する。
 - **公開プライバシーポリシーの同期は【ユーザー担当】（2026-08-10）**: ローカル `public/legal/privacy.html` とアプリ内画面は8月10日版（Apple／Google記述あり）へ更新済み。公開先（`masaki0219/app-support` のGitHub Pages と Firebase Hosting）への反映はユーザーが行う。**エージェント側からは対応不要・再指摘不要。**
 - **認証ビジネスロジックの自動テストが0件（2026-08-11）**: Googleボタンの全幅48pt・ピル型・disabled表示・同梱Gマークは`tests/providerButtons.test.ts`で回帰検査するようになった。一方、`socialAuthErrorMessage()` のエラーコード分岐、`googleCredentialBundle()` のidToken欠落時throw、`getPendingAccountLink()` の10分失効はまだ自動実行されていない。`lib/socialAuth.ts`が`expo-constants`／`react-native`／`firebase/auth`をimportするため、現行のts-node直実行構成へ載せるには純粋ロジックの分割かモックが要る。
 - **画面遷移テストのエミュレータ接続が恒久化されていない（2026-08-10）**: `lib/firebase.ts`にエミュレータ接続コードが無いため、`npm run test:ui`を流すたびに一時ブロックの追加と`git checkout`での復元が要る。`EXPO_PUBLIC_USE_FIREBASE_EMULATOR`ガード付きで恒久化するかは未判断。恒久化しない限り、復元忘れで本番接続のまま配布する事故余地が残る。
@@ -641,7 +697,7 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 - 修正済み `revenuecatWebhook` のデプロイと zelio-run 残作業（Auth メール/パスワード有効化、Firestore データコピー、RevenueCat Webhook URL 変更）はユーザー報告により完了（2026-07-19）。
 - 実機での画面目視（PeriodPicker・月額/年額選択UI等）はユーザー報告により完了（2026-07-19）。
 - 2026-07-19 の functions デプロイで `revenuecatWebhook` が「No changes detected」でスキップされた＝それ以前に現行ソースでデプロイ済みだったことを意味する（他13関数は今回更新）。Webhook が us-central1 なのに対し Firestore トリガー系は asia-northeast1 と、リージョンが混在している点は把握しておく。
-- RevenueCat 側 Webhook 設定の URL（us-central1 の revenuecatWebhook）と Authorization ヘッダが `REVENUECAT_WEBHOOK_AUTH` シークレットと一致しているかは、ダッシュボードで要確認（コード側からは確認不可）。
+- ~~RevenueCat側Webhook URL／AuthorizationとSandbox実疎通の確認~~ **解決済み（2026-08-12、ユーザー確認）**。
 - zelio-run 移行の残作業（Auth メール/パスワード有効化・Firestore データコピー・Webhook URL 変更）はユーザー報告により完了。移行した Auth ユーザー2件のパスワード再設定は各アカウントの「パスワードを忘れた」から行う（未実施の場合）。
 - サポート窓口は `https://github.com/masaki0219/app-support/issues` を使用し、ZELIO Hostingの `/support.html` から案内する。個人情報を含む問い合わせを公開Issueへ書かせない注意文を表示済み。非公開窓口として2026-07-21にSupabase評価・ご要望フォームをヘルプへ併設した（返信不可のため、返信が必要な報告はGitHub Issueを継続使用）。
 - Supabase評価・ご要望フォームの実機/Expo Goでの目視（ヘルプ最上部のフォーム表示・星タップ・キーボードと送信ボタンの重なり・送信後のお礼表示・未設定時の非表示）は未実施。Hosting `/support.html` からのフォーム案内追記も未実施。
@@ -650,7 +706,7 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 - Firestore Rulesテストは一時Temurin 21 JREとローカルエミュレータで2026-08-01に全件成功。JREは`/tmp`だけに配置し、システムへインストールしていない。
 - `submitActivity` はサーバーで距離を再計算するが、Firebase App Checkのネイティブ導入は未実施。Firebase Apple/Android SDKの導入、App Attest/DeviceCheck・Play Integrity登録、debug token整備、メトリクス監視後に距離送信系から段階的にenforcementする。
 - クラッシュ監視・分析イベントはSDK/送信先・プライバシー申告を決める外部設定が必要なため未導入。App CheckもApple App Attest / DeviceCheck、Android Play Integrity、Firebase Console設定とdevelopment buildでの確認が必要。
-- リリース対象（iOS先行 / Android同時）はプロダクト判断のため未決定。公式チャレンジの実データ作成、テストユーザー配置、App Store Connectへの回答転記も人手の運用作業として残る。
+- 初回リリース対象はiOSのみに決定済み。公式チャレンジの実データ作成、テストユーザー配置、App Store Connectへの回答転記は人手の運用作業として残る。
 - `FactionColumns` のバー高さは首位100%の実距離比。正の小値だけ15%の最低表示、0kmは基線のみとし、各バー上に実数値を表示する。
 - `useTeamRanking` は participants サブコレクションを全件読む（既存の `useBattleParticipants` と同じ方式）。大規模バトルでは読み取り件数が増える。上位3名の users 読みは3件に固定。
 - ダーク面（記録中HUD・結果画面）がパイン系に変わったため、`battle/result/[id].tsx` など今回レイアウトを触っていないダーク画面の見え方は要確認。

@@ -26,8 +26,26 @@ import { isAvatarEmoji } from '../lib/avatarEmojis';
 import { getAppLanguage, translate } from '../lib/i18n';
 import { isMarket, resolveUserMarket } from '../lib/market';
 import { inferMarket } from '../lib/deviceLocale';
+import { deviceTimeZone } from '../utils/declarations';
+import {
+  clearDeviceNotificationsForSignOut,
+  removeCurrentPushTokenForSignOut,
+} from '../lib/notifications';
 
 let emailSignUpInProgress = false;
+const SIGN_OUT_CLEANUP_TIMEOUT_MS = 3_000;
+
+async function settleWithin(promise: Promise<unknown>, timeoutMs: number): Promise<boolean> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const completed = await Promise.race([
+    promise.then(() => true),
+    new Promise<false>((resolve) => {
+      timeout = setTimeout(() => resolve(false), timeoutMs);
+    }),
+  ]);
+  if (timeout) clearTimeout(timeout);
+  return completed;
+}
 
 function profileNameSuggestion(value: string | null | undefined): string {
   return (value ?? '').trim().slice(0, DISPLAY_NAME_MAX_LENGTH);
@@ -97,6 +115,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
         plan: 'free',
         market: inferMarket(),
         uiLanguage: getAppLanguage(),
+        timezone: deviceTimeZone(),
         runningPresenceVisible: false,
         runDeclarationVisible: false,
         createdAt: new Date(),
@@ -121,9 +140,25 @@ export const useAuthStore = create<AuthStore>((set) => ({
   },
 
   signOut: async () => {
-    const hadGoogleProvider = auth.currentUser?.providerData.some(
+    const currentUser = auth.currentUser;
+    const hadGoogleProvider = currentUser?.providerData.some(
       (provider) => provider.providerId === 'google.com',
     ) === true;
+    if (currentUser) {
+      const tokenRemoved = await settleWithin(
+        removeCurrentPushTokenForSignOut(currentUser.uid).catch((error) => {
+          // ネットワーク不通でもログアウト自体は妨げない。端末側の登録解除も続ける。
+          console.warn('[Auth] ログアウト時のPush Token削除に失敗:', error);
+        }),
+        SIGN_OUT_CLEANUP_TIMEOUT_MS,
+      );
+      if (!tokenRemoved) console.warn('[Auth] Push Token削除を待たずにログアウトを続行します');
+    }
+    const deviceCleared = await settleWithin(
+      clearDeviceNotificationsForSignOut(),
+      SIGN_OUT_CLEANUP_TIMEOUT_MS,
+    );
+    if (!deviceCleared) console.warn('[Auth] 端末通知解除を待たずにログアウトを続行します');
     await firebaseSignOut(auth);
     if (hadGoogleProvider) await signOutGoogleSession();
     set({
@@ -153,6 +188,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
         plan: 'free',
         market: inferMarket(),
         uiLanguage: getAppLanguage(),
+        timezone: deviceTimeZone(),
         runningPresenceVisible: false,
         runDeclarationVisible: false,
         createdAt: serverTimestamp(),
@@ -297,6 +333,7 @@ export function initAuthListener(): () => void {
             avatarUrl: deleteField(),
             ...(!isMarket(current['market']) ? { market: inferMarket() } : {}),
             ...(current['uiLanguage'] !== getAppLanguage() ? { uiLanguage: getAppLanguage() } : {}),
+            ...(current['timezone'] !== deviceTimeZone() ? { timezone: deviceTimeZone() } : {}),
           });
           profileBatch.set(doc(db, 'publicProfiles', firebaseUser.uid), {
             name: (current['name'] as string | undefined) ?? translate('common.user'),
@@ -379,6 +416,7 @@ function applyUserSnapshot(firebaseUid: string, data: Record<string, any>): void
     uiLanguage: data['uiLanguage'] === 'ja' || data['uiLanguage'] === 'en'
       ? data['uiLanguage']
       : getAppLanguage(),
+    timezone: typeof data['timezone'] === 'string' ? data['timezone'] : undefined,
     createdAt: data['createdAt']?.toDate?.()?.toISOString() ?? '',
     titles: (data['titles'] as UserTitle[] | undefined) ?? [],
     battleIds: (data['battleIds'] as string[] | undefined) ?? [],

@@ -1,6 +1,9 @@
 import { initializeApp } from 'firebase-admin/app';
+import { setGlobalOptions } from 'firebase-functions/v2';
 
 initializeApp();
+// 小規模リリースのコスト安全弁。個別関数の maxInstances 指定はこの値を上書きする。
+setGlobalOptions({ maxInstances: 20 });
 
 export { aggregateActivity } from './aggregateActivity';
 export {

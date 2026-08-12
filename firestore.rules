@@ -18,6 +18,7 @@ service cloud.firestore {
     // activities/{id}/reactions/{uid}: readable/writable only to an authorized viewer of a battle
     //   credited by the parent activity (or the activity owner/admin).
     // battleInviteCodes/{code}: server-only uniqueness reservation.
+    // reactionNotificationGuards/{hash}: server-only reaction notification cooldown state.
     // contentReports/{id}: authenticated create, admin read/review.
     // All unspecified paths are denied by default.
     // ===============================================================
@@ -74,6 +75,14 @@ service cloud.firestore {
     function validUiLanguageSetting(data) {
       return !('uiLanguage' in data) || data.uiLanguage in ['ja', 'en'];
     }
+    function validTimezoneSetting(data) {
+      return !('timezone' in data) || (
+        data.timezone is string
+        && data.timezone.size() >= 1
+        && data.timezone.size() <= 64
+        && data.timezone.matches('^[A-Za-z0-9_+.-]+(/[A-Za-z0-9_+.-]+)*$')
+      );
+    }
     function validBattleMarket(data) {
       return !('market' in data) || data.market in ['JP', 'US', 'GLOBAL'];
     }
@@ -108,7 +117,7 @@ service cloud.firestore {
     function validUserDocument(data) {
       return data.get('name', '') is string
         && data.get('name', '').size() >= 1
-        && data.get('name', '').size() <= 40
+        && data.get('name', '').size() <= 12
         && safeUserText(data.get('name', ''))
         && data.get('plan', '') in ['free', 'pro']
         && data.get('createdAt', request.time) is timestamp
@@ -118,6 +127,7 @@ service cloud.firestore {
         && validRunDeclarationSetting(data)
         && validMarketSetting(data)
         && validUiLanguageSetting(data)
+        && validTimezoneSetting(data)
         && validExpoPushToken(data);
     }
     function validBattleDocument(data) {
@@ -162,7 +172,7 @@ service cloud.firestore {
         && data.keys().hasAll(['name', 'updatedAt'])
         && data.name is string
         && data.name.size() >= 1
-        && data.name.size() <= 40
+        && data.name.size() <= 12
         && safeUserText(data.name)
         && data.updatedAt is timestamp
         && validAvatarEmoji(data);
@@ -320,7 +330,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly([
           'name', 'plan', 'avatarEmoji', 'weeklyGoal',
           'runningPresenceVisible', 'runDeclarationVisible', 'createdAt', 'expoPushToken',
-          'market', 'uiLanguage'
+          'market', 'uiLanguage', 'timezone'
         ])
         && request.resource.data.keys().hasAll([
           'name', 'plan', 'runningPresenceVisible', 'createdAt'
@@ -333,7 +343,7 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name', 'avatarEmoji', 'avatarUrl', 'weeklyGoal',
           'runningPresenceVisible', 'runDeclarationVisible', 'expoPushToken',
-          'market', 'uiLanguage'
+          'market', 'uiLanguage', 'timezone'
         ]);
       allow delete: if false;
 
@@ -380,7 +390,8 @@ service cloud.firestore {
 
     // ランキング等で使う公開範囲を限定したプロフィール。
     match /publicProfiles/{userId} {
-      allow read: if signedIn();
+      allow get: if signedIn();
+      allow list: if false;
       allow create: if isSelf(userId)
         && request.resource.data.keys().hasOnly(['name', 'avatarEmoji', 'updatedAt'])
         && validPublicProfileDocument(request.resource.data);
@@ -664,6 +675,10 @@ service cloud.firestore {
     }
 
     match /battleInviteCodes/{inviteCode} {
+      allow read, write: if false;
+    }
+
+    match /reactionNotificationGuards/{guardId} {
       allow read, write: if false;
     }
 

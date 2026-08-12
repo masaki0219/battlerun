@@ -9,6 +9,7 @@ import { db } from '../lib/firebase';
 import { initAuthListener, useAuthStore } from '../stores/authStore';
 import { initRevenueCat, checkProEntitlement } from '../lib/revenuecat';
 import { registerPushToken } from '../lib/notifications';
+import { notificationEntityId } from '../lib/notificationRouting';
 import { ONBOARDING_KEY } from './onboarding';
 import { BorderRadius, Colors, Spacing, Typography } from '../design_tokens';
 import { startAppLanguageListener, useTranslation } from '../lib/i18n';
@@ -88,13 +89,14 @@ export default function RootLayout() {
       };
       if (data?.openRecord || data?.type === 'declaration_reminder') {
         router.push('/(tabs)/record' as any);
-      } else if (data?.relatedActivityId) {
-        router.push(`/activity/${data.relatedActivityId}` as any);
-      } else if (data?.relatedBattleId) {
+      } else if (notificationEntityId(data?.relatedActivityId)) {
+        router.push(`/activity/${notificationEntityId(data.relatedActivityId)}` as any);
+      } else if (notificationEntityId(data?.relatedBattleId)) {
+        const battleId = notificationEntityId(data.relatedBattleId)!;
         if (data.type === 'battle_ended' || data.type === 'title_earned') {
-          router.push(`/battle/result/${data.relatedBattleId}` as any);
+          router.push(`/battle/result/${battleId}` as any);
         } else {
-          router.push(`/battle/${data.relatedBattleId}` as any);
+          router.push(`/battle/${battleId}` as any);
         }
       }
     };

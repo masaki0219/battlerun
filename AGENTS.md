@@ -37,12 +37,13 @@
 - `typecheck` / `lint` の npm スクリプトはない。型チェックは `npx tsc --noEmit`。
 - `npm run test:rules` は Firebase エミュレータが必要。実行できない場合は「未実行」と書く。
 - `service-account.json` / `.env` は gitignore 済み。中身を転記しない。
+- `eas.json` にはアプリへ配布してよい `EXPO_PUBLIC_*` の公開識別子だけを書き、service role・admin key・秘密トークンは追加しない。
 - バックグラウンドGPS は Expo Go では動作しない。EAS development build が必要。
 - FunctionsでFirestoreクエリ形状を追加・変更した場合は `firestore.indexes.json` との整合を確認し、必要なインデックスを先にデプロイして「有効」になってからFunctionsをデプロイする。関連変更で `firestore:indexes` を省略しない。
 
 ## デプロイ権限
 
-- 2026-08-12のユーザー許可により、依頼範囲内の実装に必要なFirebaseデプロイとEAS development / previewビルドは、関連するテストとビルドが成功した後であれば、都度の再確認なしに実行してよい。
+- 2026-08-12のユーザー許可により、依頼範囲内の実装に必要なFirebaseデプロイとEAS development / previewビルドは、関連するテストとビルドが成功した後であれば、都度の再確認なしに実行してよい。この許可範囲ではユーザーへデプロイ可否の確認質問を挟まず、必要部分を限定して実行する。
 - 実行前に対象プロジェクト・対象サービス・EASプロファイルを特定し、不要なサービスをまとめて再デプロイしない。完了・失敗と対象をユーザーへ報告する。
 - App Store / Google Playへの提出・公開、productionリリース、破壊的なデータ変更、課金設定、秘密情報の追加・変更はこの許可に含まれないため、別途ユーザー確認を得る。
 - commit / push / reset / rebase の許可はこのデプロイ権限に含めず、下記の禁止事項を維持する。

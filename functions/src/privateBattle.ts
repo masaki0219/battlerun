@@ -88,7 +88,11 @@ export const createPrivateBattle = onCall({ maxInstances: 20 }, async (request) 
   const userRef = db.doc(`users/${uid}`);
   const userSnap = await userRef.get();
   if (!userSnap.exists || userSnap.data()?.['plan'] !== 'pro') {
-    throw new HttpsError('permission-denied', '非公開チャレンジの作成にはProプランが必要です。');
+    throw new HttpsError(
+      'permission-denied',
+      '非公開チャレンジの作成にはProプランが必要です。',
+      { reason: 'pro-plan-not-synced' },
+    );
   }
 
   const title = requiredText(request.data?.title, 'チャレンジ名', MAX_TITLE_LENGTH);
@@ -126,7 +130,11 @@ export const createPrivateBattle = onCall({ maxInstances: 20 }, async (request) 
         ]);
         if (reservationSnap.exists || !duplicateSnap.empty) throw new InviteCodeCollision();
         if (!transactionalUserSnap.exists || transactionalUserSnap.data()?.['plan'] !== 'pro') {
-          throw new HttpsError('permission-denied', '非公開チャレンジの作成にはProプランが必要です。');
+          throw new HttpsError(
+            'permission-denied',
+            '非公開チャレンジの作成にはProプランが必要です。',
+            { reason: 'pro-plan-not-synced' },
+          );
         }
         const createdBattleIds = transactionalUserSnap.data()?.['createdBattleIds'];
         if (Array.isArray(createdBattleIds) && createdBattleIds.length >= MAX_CREATED_PRIVATE_BATTLES) {

@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Pedometer } from 'expo-sensors';
 import { useRecordStore } from '../stores/recordStore';
-
-const STEP_LENGTH_KM = 0.00075; // 1歩 ≈ 0.75m
+import { stepCounterPatch } from '../utils/stepCounter';
 
 export function useStepCounter({ enabled }: { enabled: boolean }) {
   const [isAvailable, setIsAvailable] = useState(false);
@@ -34,10 +33,8 @@ export function useStepCounter({ enabled }: { enabled: boolean }) {
         prevStepsRef.current = result.steps;
         if (delta <= 0) return;
 
-        useRecordStore.setState((state) => ({
-          steps: state.steps + delta,
-          distanceKm: state.distanceKm + delta * STEP_LENGTH_KM,
-        }));
+        // 累積値の基準は停止中も先に進め、再開時に停止中の歩数を持ち越さない。
+        useRecordStore.setState((state) => stepCounterPatch(state, delta));
       });
     };
 

@@ -126,6 +126,8 @@ export function SafetyActionsModal({
                     style={[styles.reasonButton, reason === item.value && styles.reasonButtonActive]}
                     onPress={() => setReason(item.value)}
                     disabled={saving}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: reason === item.value, disabled: saving }}
                   >
                     <Text style={[styles.reasonText, reason === item.value && styles.reasonTextActive]}>{t(item.translationKey)}</Text>
                     {reason === item.value && <Ionicons name="checkmark-circle" size={18} color={Colors.primary} />}
@@ -152,13 +154,13 @@ export function SafetyActionsModal({
                   ? <ActivityIndicator color={Colors.textOnPrimary} />
                   : <Text style={styles.submitText}>{t('safety.submit')}</Text>}
               </TouchableOpacity>
-              <TouchableOpacity style={styles.cancelButton} onPress={() => setShowReasons(false)} disabled={saving}>
+              <TouchableOpacity style={styles.cancelButton} onPress={() => setShowReasons(false)} disabled={saving} accessibilityRole="button">
                 <Text style={styles.cancelText}>{t('common.back')}</Text>
               </TouchableOpacity>
             </>
           ) : (
             <View style={styles.actions}>
-              <TouchableOpacity style={styles.actionButton} onPress={() => setShowReasons(true)} disabled={saving}>
+              <TouchableOpacity style={styles.actionButton} onPress={() => setShowReasons(true)} disabled={saving} accessibilityRole="button">
                 <View style={[styles.actionIcon, styles.reportIcon]}>
                   <Ionicons name="flag-outline" size={20} color={Colors.error} />
                 </View>
@@ -169,7 +171,7 @@ export function SafetyActionsModal({
                 <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
               </TouchableOpacity>
               {canBlock && (
-                <TouchableOpacity style={styles.actionButton} onPress={confirmBlock} disabled={saving}>
+                <TouchableOpacity style={styles.actionButton} onPress={confirmBlock} disabled={saving} accessibilityRole="button">
                   <View style={[styles.actionIcon, styles.blockIcon]}>
                     <Ionicons name="person-remove-outline" size={20} color={Colors.textPrimary} />
                   </View>
@@ -180,7 +182,7 @@ export function SafetyActionsModal({
                   <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
                 </TouchableOpacity>
               )}
-              <TouchableOpacity style={styles.cancelButton} onPress={onClose} disabled={saving}>
+              <TouchableOpacity style={styles.cancelButton} onPress={onClose} disabled={saving} accessibilityRole="button">
                 <Text style={styles.cancelText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
             </View>

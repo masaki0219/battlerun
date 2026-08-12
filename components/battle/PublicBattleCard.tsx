@@ -68,15 +68,21 @@ export function PublicBattleCard({
     joined && myRank > 0 ? t('common.rankOf', { rank: myRank, total: t('common.teams', { count: sorted.length }) }) : null,
     seasonTitle ?? null,
   ].filter(Boolean).join('　・　');
+  const detailsAccessibilityLabel = t('battle.cardA11y', { title: battle.title });
 
   return (
-    <TouchableOpacity activeOpacity={0.85} onPress={onPress}>
       <Card style={styles.card}>
         <View style={styles.cardHeader}>
-          <View style={styles.headerText}>
+          <TouchableOpacity
+            style={styles.headerText}
+            activeOpacity={0.7}
+            onPress={onPress}
+            accessibilityRole="button"
+            accessibilityLabel={detailsAccessibilityLabel}
+          >
             <Text style={styles.battleTitle} numberOfLines={2}>{battle.title}</Text>
             {meta ? <Text style={styles.battleMeta}>{meta}</Text> : null}
-          </View>
+          </TouchableOpacity>
 
           {joined ? (
             <View style={styles.joinedChip}>
@@ -92,6 +98,8 @@ export function PublicBattleCard({
               onPress={onPressJoin}
               activeOpacity={0.7}
               hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              accessibilityRole="button"
+              accessibilityLabel={t('battle.join')}
             >
               <Text style={[styles.joinBtnText, prominentJoin && styles.joinBtnTextProminent]}>{t('battle.join')}</Text>
             </TouchableOpacity>
@@ -114,9 +122,10 @@ export function PublicBattleCard({
           myCatId={myCategoryId}
           expanded={expanded}
           onToggleExpand={onToggleExpand}
+          onPressDetails={onPress}
+          detailsAccessibilityLabel={detailsAccessibilityLabel}
         />
       </Card>
-    </TouchableOpacity>
   );
 }
 

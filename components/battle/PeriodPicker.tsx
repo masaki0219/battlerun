@@ -148,6 +148,8 @@ export function PeriodPicker({ startAt, endAt, onChangeStartAt, onChangeEndAt }:
               key={p.label}
               style={[styles.chip, active && styles.chipActive]}
               onPress={() => { applyStart(p.date); setPicker(null); }}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: active }}
             >
               <Text style={[styles.chipText, active && styles.chipTextActive]}>{p.label}</Text>
             </TouchableOpacity>
@@ -157,6 +159,7 @@ export function PeriodPicker({ startAt, endAt, onChangeStartAt, onChangeEndAt }:
           style={[styles.chip, !startIsPreset && styles.chipActive, picker === 'start' && styles.chipOpen]}
           onPress={() => setPicker(picker === 'start' ? null : 'start')}
           accessibilityLabel={t('period.chooseStartA11y')}
+          accessibilityRole="button"
         >
           <Text style={[styles.chipText, !startIsPreset && styles.chipTextActive]}>
             {!startIsPreset && start ? formatDisplay(start, language) : t('period.chooseDate')} ▾
@@ -173,6 +176,8 @@ export function PeriodPicker({ startAt, endAt, onChangeStartAt, onChangeEndAt }:
               key={p.label}
               style={[styles.chip, active && styles.chipActive]}
               onPress={() => { applyLength(p); setPicker(null); }}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: active }}
             >
               <Text style={[styles.chipText, active && styles.chipTextActive]}>{p.label}</Text>
             </TouchableOpacity>
@@ -182,6 +187,7 @@ export function PeriodPicker({ startAt, endAt, onChangeStartAt, onChangeEndAt }:
           style={[styles.chip, !activeLength && styles.chipActive, picker === 'end' && styles.chipOpen]}
           onPress={() => setPicker(picker === 'end' ? null : 'end')}
           accessibilityLabel={t('period.chooseEndA11y')}
+          accessibilityRole="button"
         >
           <Text style={[styles.chipText, !activeLength && styles.chipTextActive]}>
             {!activeLength && end ? t('period.endDisplay', { date: formatDisplay(end, language) }) : t('period.chooseEnd')} ▾

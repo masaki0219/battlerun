@@ -72,7 +72,7 @@ export default function OnboardingScreen() {
           ))}
         </View>
         {step < 4 && (
-          <TouchableOpacity onPress={() => done('/auth/signup')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <TouchableOpacity onPress={() => done('/auth/signup')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button">
             <Text style={styles.skip}>{isReplay ? tr('onboarding.backToGuide') : tr('onboarding.skip')}</Text>
           </TouchableOpacity>
         )}
@@ -96,21 +96,21 @@ export default function OnboardingScreen() {
       {/* ── CTA ─────────────────────────────────────────── */}
       <View style={styles.cta}>
         {step < 4 ? (
-          <TouchableOpacity style={styles.btnNext} onPress={next} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.btnNext} onPress={next} activeOpacity={0.85} accessibilityRole="button">
             <Text style={styles.btnNextText}>{tr('onboarding.next')}</Text>
           </TouchableOpacity>
         ) : (
           <View style={styles.finalCta}>
             {isReplay ? (
-              <TouchableOpacity style={styles.btnPrimary} onPress={() => done('/auth/signup')} activeOpacity={0.85}>
+              <TouchableOpacity style={styles.btnPrimary} onPress={() => done('/auth/signup')} activeOpacity={0.85} accessibilityRole="button">
                 <Text style={styles.btnPrimaryText}>{tr('onboarding.backToGuide')}</Text>
               </TouchableOpacity>
             ) : (
               <>
-                <TouchableOpacity style={styles.btnPrimary} onPress={() => done('/auth/signup')} activeOpacity={0.85}>
+                <TouchableOpacity style={styles.btnPrimary} onPress={() => done('/auth/signup')} activeOpacity={0.85} accessibilityRole="button">
                   <Text style={styles.btnPrimaryText}>{tr('onboarding.beginSignup')}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.btnOutline} onPress={() => done('/auth/login')} activeOpacity={0.85}>
+                <TouchableOpacity style={styles.btnOutline} onPress={() => done('/auth/login')} activeOpacity={0.85} accessibilityRole="button">
                   <Text style={styles.btnOutlineText}>{tr('onboarding.existingLogin')}</Text>
                 </TouchableOpacity>
                 <Text style={styles.footnote}>{tr('onboarding.readyAfterSignup')}</Text>

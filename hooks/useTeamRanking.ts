@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { cachedPublicProfile } from '../lib/publicProfileCache';
 import { useTranslation } from '../lib/i18n';
@@ -41,10 +41,11 @@ const EMPTY: TeamRankingData = {
 /**
  * 参加中バトルの「自分の陣営の中での」順位を出す read-only フック。
  *
- * participants サブコレクション（categoryId / totalDistanceKm を持つ）を読み、
- * 自陣営で絞って距離降順に並べる。名前の解決は上位 topCount 件だけに限定する
+ * participants サブコレクション（categoryId / totalDistanceKm を持つ）を自陣営だけ購読し、
+ * 距離降順に並べる。名前の解決は上位 topCount 件だけに限定する
  * （参加者全員の users/{uid} を引くと人数分のリードになるため）。
- * 新規インデックス不要。firestore.rules は participants を認証済みユーザーに read 許可済み。
+ * categoryId の単一フィールドindexだけを使うため新規複合indexは不要。
+ * 自分の正確な順位・直上との差を維持する都合で自陣営内は全件読むが、他陣営は購読しない。
  */
 export function useTeamRanking(
   battleId: string | undefined,
@@ -78,7 +79,11 @@ export function useTeamRanking(
     setResolvedKey(null);
     const effectKey = `${battleId}:${categoryId}:${myUserId}`;
     let generation = 0;
-    const unsubscribe = onSnapshot(collection(db, 'battles', battleId, 'participants'), async (snap) => {
+    const participantsQuery = query(
+      collection(db, 'battles', battleId, 'participants'),
+      where('categoryId', '==', categoryId),
+    );
+    const unsubscribe = onSnapshot(participantsQuery, async (snap) => {
       const currentGeneration = ++generation;
       try {
         const team = snap.docs
@@ -87,7 +92,6 @@ export function useTeamRanking(
             categoryId: (d.data()['categoryId'] as string | null) ?? null,
             totalDistanceKm: (d.data()['totalDistanceKm'] as number) ?? 0,
           }))
-          .filter((p) => p.categoryId === categoryId)
           .sort((a, b) => b.totalDistanceKm - a.totalDistanceKm || a.userId.localeCompare(b.userId));
 
         const myIndex = team.findIndex((p) => p.userId === myUserId);

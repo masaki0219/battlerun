@@ -47,7 +47,7 @@ export function canLeaveParticipant(data: Record<string, unknown>): boolean {
 
 function requiredId(value: unknown, field: string): string {
   if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(value)) {
-    throw new HttpsError('invalid-argument', `${field}が正しくありません。`);
+    throw new HttpsError('invalid-argument', `${field}が正しくありません。`, { reason: 'invalid-request' });
   }
   return value;
 }
@@ -61,7 +61,7 @@ function normalizedInviteCode(value: unknown): string | null {
 /** 参加上限と対象チームをサーバートランザクションで検証する唯一の参加経路。 */
 export const joinBattle = onCall({}, async (request) => {
   const uid = request.auth?.uid;
-  if (!uid) throw new HttpsError('unauthenticated', 'ログインが必要です。');
+  if (!uid) throw new HttpsError('unauthenticated', 'ログインが必要です。', { reason: 'auth-required' });
   const battleId = requiredId(request.data?.battleId, 'チャレンジID');
   const categoryId = requiredId(request.data?.categoryId, 'チームID');
   const inviteCode = normalizedInviteCode(request.data?.inviteCode);
@@ -76,17 +76,17 @@ export const joinBattle = onCall({}, async (request) => {
       tx.get(battleRef),
       tx.get(participantRef),
     ]);
-    if (!userSnap.exists) throw new HttpsError('not-found', 'ユーザー情報が見つかりません。');
-    if (!battleSnap.exists) throw new HttpsError('not-found', 'チャレンジが見つかりません。');
+    if (!userSnap.exists) throw new HttpsError('not-found', 'ユーザー情報が見つかりません。', { reason: 'user-not-found' });
+    if (!battleSnap.exists) throw new HttpsError('not-found', 'チャレンジが見つかりません。', { reason: 'battle-not-found' });
 
     const battle = battleSnap.data()!;
     if (!isActiveBattleAt(battle, Date.now())) {
-      throw new HttpsError('failed-precondition', 'このチャレンジは現在参加できません。');
+      throw new HttpsError('failed-precondition', 'このチャレンジは現在参加できません。', { reason: 'battle-not-active' });
     }
     // battleId / categoryId は秘密情報ではない。非公開チャレンジへの参加権限は、
     // 毎回サーバー上の最新 inviteCode と照合して証明させる。
     if (battle['type'] === 'private' && inviteCode !== battle['inviteCode']) {
-      throw new HttpsError('permission-denied', '招待コードが正しくありません。');
+      throw new HttpsError('permission-denied', '招待コードが正しくありません。', { reason: 'invite-code-incorrect' });
     }
     const categoryIds = Array.isArray(battle['categoryIds'])
       ? battle['categoryIds'] as unknown[]
@@ -94,14 +94,14 @@ export const joinBattle = onCall({}, async (request) => {
         ? (battle['categories'] as Array<Record<string, unknown>>).map((item) => item['id'])
         : [];
     if (!categoryIds.includes(categoryId)) {
-      throw new HttpsError('invalid-argument', '選択したチームが見つかりません。');
+      throw new HttpsError('invalid-argument', '選択したチームが見つかりません。', { reason: 'category-not-found' });
     }
 
     if (participantSnap.exists) {
       const participant = participantSnap.data()!;
       if (participant['categoryId'] !== categoryId) {
         if (!canLeaveParticipant(participant)) {
-          throw new HttpsError('failed-precondition', '一度記録した後はチームを変更できません。');
+          throw new HttpsError('failed-precondition', '一度記録した後はチームを変更できません。', { reason: 'team-change-locked' });
         }
         tx.update(participantRef, { categoryId });
       }
@@ -116,7 +116,7 @@ export const joinBattle = onCall({}, async (request) => {
     // 旧実装は終了済みIDも永久に保持し、51件目以降の参加を拒否していた。
     // トランザクション上限に十分余裕を残しつつ、通常の履歴はここで自動的に間引く。
     if (battleIds.length > 450) {
-      throw new HttpsError('failed-precondition', '参加情報が多すぎます。サポートへお問い合わせください。');
+      throw new HttpsError('failed-precondition', '参加情報が多すぎます。サポートへお問い合わせください。', { reason: 'membership-data-too-large' });
     }
     const otherBattleSnaps = await Promise.all(
       battleIds.filter((id) => id !== battleId).map((id) => tx.get(db.doc(`battles/${id}`))),
@@ -128,6 +128,7 @@ export const joinBattle = onCall({}, async (request) => {
       throw new HttpsError(
         'failed-precondition',
         `同時に参加できるチャレンジは${MAX_ACTIVE_BATTLE_COUNT}件までです。`,
+        { reason: 'active-limit' },
       );
     }
 
@@ -151,7 +152,7 @@ export const joinBattle = onCall({}, async (request) => {
 /** 距離・活動回数が0の参加だけを、ユーザードキュメントと同時に解除する。 */
 export const leaveBattle = onCall({}, async (request) => {
   const uid = request.auth?.uid;
-  if (!uid) throw new HttpsError('unauthenticated', 'ログインが必要です。');
+  if (!uid) throw new HttpsError('unauthenticated', 'ログインが必要です。', { reason: 'auth-required' });
   const battleId = requiredId(request.data?.battleId, 'チャレンジID');
   const db = getFirestore();
   const userRef = db.doc(`users/${uid}`);
@@ -162,13 +163,13 @@ export const leaveBattle = onCall({}, async (request) => {
       tx.get(userRef),
       tx.get(participantRef),
     ]);
-    if (!userSnap.exists) throw new HttpsError('not-found', 'ユーザー情報が見つかりません。');
+    if (!userSnap.exists) throw new HttpsError('not-found', 'ユーザー情報が見つかりません。', { reason: 'user-not-found' });
     if (!participantSnap.exists) {
       tx.update(userRef, { battleIds: FieldValue.arrayRemove(battleId) });
       return;
     }
     if (!canLeaveParticipant(participantSnap.data()!)) {
-      throw new HttpsError('failed-precondition', '距離を加算したチャレンジからは退出できません。');
+      throw new HttpsError('failed-precondition', '距離を加算したチャレンジからは退出できません。', { reason: 'credited-battle-cannot-leave' });
     }
     tx.delete(participantRef);
     tx.update(userRef, { battleIds: FieldValue.arrayRemove(battleId) });

@@ -107,6 +107,7 @@ export default function ProfileScreen() {
   } = useAuthStore();
   const fetchPublicBattles = useBattleStore((state) => state.fetchPublicBattles);
   const [purchasing, setPurchasing] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [presenceSaving, setPresenceSaving] = useState(false);
   const [declarationVisibilitySaving, setDeclarationVisibilitySaving] = useState(false);
@@ -388,12 +389,19 @@ export default function ProfileScreen() {
   }
 
   async function handleSignOut() {
+    if (signingOut) return;
     Alert.alert(t('profile.logout'), t('profile.logoutConfirm'), [
       { text: t('common.cancel'), style: 'cancel' },
       {
         text: t('profile.logout'), style: 'destructive', onPress: async () => {
-          await signOut();
-          router.replace('/auth/login');
+          setSigningOut(true);
+          try {
+            await signOut();
+            router.replace('/auth/login');
+          } catch {
+            Alert.alert(t('common.error'), t('connection.tryAgain'));
+            setSigningOut(false);
+          }
         },
       },
     ]);
@@ -633,9 +641,22 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         )}
 
-        <TouchableOpacity style={styles.logoutButton} onPress={handleSignOut} activeOpacity={0.8}>
-          <Ionicons name="log-out-outline" size={17} color={Colors.primaryDark} />
-          <Text style={styles.logoutText}>{t('profile.logout')}</Text>
+        <TouchableOpacity
+          style={[styles.logoutButton, signingOut && styles.logoutButtonDisabled]}
+          onPress={handleSignOut}
+          activeOpacity={0.8}
+          disabled={signingOut}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: signingOut, busy: signingOut }}
+        >
+          {signingOut ? (
+            <ActivityIndicator size="small" color={Colors.primaryDark} />
+          ) : (
+            <>
+              <Ionicons name="log-out-outline" size={17} color={Colors.primaryDark} />
+              <Text style={styles.logoutText}>{t('profile.logout')}</Text>
+            </>
+          )}
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -929,6 +950,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface, paddingVertical: Spacing.md,
   },
   logoutText: { fontSize: Typography.fontSize.md, color: Colors.primaryDark, fontWeight: Typography.fontWeight.extrabold },
+  logoutButtonDisabled: { opacity: 0.6 },
   modalOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'flex-end',
