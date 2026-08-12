@@ -35,6 +35,7 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 - スケジューラを60分間隔から5分間隔へ変更した。`users.battleIds`は新しい参加時に終了済み・期限切れIDをサーバートランザクションで間引き、通算50件の履歴蓄積で参加不能になる問題を解消した。
 - Firestore Rulesはターム値のペア必須・整数範囲とSeasonスキーマを検証し、Season作成とactive→archivedだけをadminに許可する。Rulesエミュレータ全件、`npx tsc --noEmit`、tests型検査、全unit、Functions build、iOS Expo export、`git diff --check`、本番`zelio-run`対象のRules dry-runは成功。必要な既存複合index 3件（`type+status` / `status+startAt` / `status+endAt`）はすべて`READY`で、index変更はない。
 - **本番反映済み（2026-08-12 13:42 JST）**: ユーザーの明示承認後、`firestore:rules` / `battleStatusScheduler` / `joinBattle`だけを`zelio-run`へ限定デプロイした。Firestore rulesetは`projects/zelio-run/rulesets/34ccd762-40dc-4626-93a8-86dc85a455d7`、Functionsは2件成功・エラー0件。Cloud Schedulerの実ジョブも`every 5 minutes`・`ENABLED`へ更新済み。index変更はない。
+- **GitHub反映済み（2026-08-12）**: 日英対応／Market配信とターム制の現行差分をcommit `0d09f45`（`feat: 日英対応とパブリックバトルのターム制を追加`）として`origin/feat/ui-consolidation`へpushした。既存Draft PR #1が同ブランチを追跡中。
 - テーマ累計順位・テーマ単位称号と、前タームと同チームへの継続参加は未実装。スコア方式（距離合算か順位点か）と参加の明示opt-in仕様が未決定のため、勝手に決めず次工程とした。
 
 ### 2026-08-12 UI日本語／英語対応とPublic BattleのMarket別配信
