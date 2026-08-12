@@ -25,6 +25,13 @@ import { useBattleParticipants } from '../../../hooks/useBattleParticipants';
 import { useTranslation } from '../../../lib/i18n';
 import { prioritizeTeams } from '../../../utils/teamDisplay';
 import { teamTitleLabel } from '../../../lib/teamTitle';
+import { completedTermBattles, termWinnerLabels } from '../../../utils/battleTerms';
+import { resolveBattleMarket } from '../../../lib/market';
+
+interface TermResultRow {
+  battle: Battle;
+  winnerLabels: string[];
+}
 
 function mapFirestoreToBattle(id: string, data: Record<string, unknown>): Battle {
   return {
@@ -40,6 +47,7 @@ function mapFirestoreToBattle(id: string, data: Record<string, unknown>): Battle
     status: (data['status'] as Battle['status']) ?? 'finished',
     createdBy: (data['createdBy'] as string | null) ?? null,
     inviteCode: (data['inviteCode'] as string | null) ?? null,
+    ...(data['type'] !== 'private' ? { market: resolveBattleMarket(data['market']) } : {}),
     ...(Number.isInteger(data['termIndex']) && Number.isInteger(data['termCount']) ? {
       termIndex: data['termIndex'] as number,
       termCount: data['termCount'] as number,
@@ -51,7 +59,7 @@ export default function BattleResultScreen() {
   const { language, t } = useTranslation();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user, proEntitlement } = useAuthStore();
-  const { publicBattles, privateBattles, myMemberships } = useBattleStore();
+  const { publicBattles, privateBattles, myMemberships, fetchPublicSeasonBattles } = useBattleStore();
   const userIsPro = isPro(user?.plan, proEntitlement);
 
   const [stats, setStats] = useState<CategoryStats[]>([]);
@@ -61,6 +69,7 @@ export default function BattleResultScreen() {
   const [localBattle, setLocalBattle] = useState<Battle | null>(
     () => [...publicBattles, ...privateBattles].find((b) => b.id === id) ?? null
   );
+  const [termResults, setTermResults] = useState<TermResultRow[] | null>(null);
   const shareCardRef = useRef<View>(null);
 
   // 参加者ランキング（貢献 TOP）。battle/[id] の個人戦表示と共用の read-only フック
@@ -130,6 +139,47 @@ export default function BattleResultScreen() {
     void load();
     return () => { cancelled = true; };
   }, [id, localBattle, user]);
+
+  useEffect(() => {
+    if (
+      !localBattle
+      || !user
+      || localBattle.type !== 'public'
+      || localBattle.status !== 'finished'
+      || !localBattle.seasonId
+      || !localBattle.termIndex
+      || !localBattle.termCount
+    ) {
+      setTermResults(null);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const seasonBattles = await fetchPublicSeasonBattles(localBattle.seasonId!);
+      const completed = completedTermBattles(seasonBattles, localBattle);
+      if (!completed) {
+        if (!cancelled) setTermResults(null);
+        return;
+      }
+      const rows = await Promise.all(completed.map(async (termBattle) => {
+        const statsSnap = await getDocs(collection(db, 'battles', termBattle.id, 'category_stats'));
+        const termStats: CategoryStats[] = statsSnap.docs.map((statDoc) => ({
+          categoryId: statDoc.id,
+          label: termBattle.categories.find((category) => category.id === statDoc.id)?.label ?? statDoc.id,
+          totalDistanceKm: (statDoc.data()['totalDistanceKm'] as number) ?? 0,
+          avgDistanceKm: (statDoc.data()['avgDistanceKm'] as number) ?? 0,
+          participantCount: (statDoc.data()['participantCount'] as number) ?? 0,
+        }));
+        return { battle: termBattle, winnerLabels: termWinnerLabels(termBattle, termStats) };
+      }));
+      if (!cancelled) setTermResults(rows);
+    })().catch((error) => {
+      console.warn('[BattleResult] term retrospective load failed:', error);
+      if (!cancelled) setTermResults(null);
+    });
+    return () => { cancelled = true; };
+  }, [localBattle, user?.id, fetchPublicSeasonBattles]);
 
   if (!localBattle) {
     return (
@@ -289,6 +339,40 @@ export default function BattleResultScreen() {
             </View>
           )}
         </View>
+
+        {/* Theme全体の勝者は作らず、全ターム終了時だけ各Battleの1位を並べる。 */}
+        {termResults && (
+          <View style={s.section}>
+            <MonoLabel color={Colors.textTertiary} size={9}>{t('battleResult.themeEnded')}</MonoLabel>
+            <Text style={s.termResultsTitle}>
+              {t('battleResult.termResults', { count: termResults.length })}
+            </Text>
+            <View style={s.termResultsCard}>
+              {termResults.map((row, index) => {
+                const resultText = row.winnerLabels.length === 0
+                  ? t('battleResult.termNoResult')
+                  : row.winnerLabels.length === 1
+                    ? t('battleResult.termWinner', { team: row.winnerLabels[0] })
+                    : t('battleResult.termTie', { teams: row.winnerLabels.join(' / ') });
+                return (
+                  <View
+                    key={row.battle.id}
+                    style={[s.termResultRow, index > 0 && s.termResultRowBorder]}
+                  >
+                    <Text style={s.termResultIndex}>
+                      {t('battle.termLabel', {
+                        index: row.battle.termIndex ?? index + 1,
+                        count: row.battle.termCount ?? termResults.length,
+                      })}
+                    </Text>
+                    <Text style={s.termResultWinner}>{resultText}</Text>
+                  </View>
+                );
+              })}
+            </View>
+            <Text style={s.termResultsNote}>{t('battleResult.termResultsNote')}</Text>
+          </View>
+        )}
 
         {/* ── 称号発表 ── */}
         {titleName && (
@@ -509,6 +593,42 @@ const s = StyleSheet.create({
 
   // Section
   section: { paddingHorizontal: 16, marginTop: 16 },
+  termResultsTitle: {
+    marginTop: Spacing.xs,
+    fontSize: Typography.fontSize.lg,
+    fontWeight: Typography.fontWeight.extrabold,
+    color: Colors.textPrimary,
+  },
+  termResultsCard: {
+    marginTop: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surface,
+    overflow: 'hidden',
+  },
+  termResultRow: {
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+  },
+  termResultRowBorder: { borderTopWidth: 1, borderTopColor: Colors.border },
+  termResultIndex: {
+    fontSize: Typography.fontSize.xs,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.primary,
+  },
+  termResultWinner: {
+    fontSize: Typography.fontSize.md,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.textPrimary,
+  },
+  termResultsNote: {
+    marginTop: Spacing.sm,
+    fontSize: Typography.fontSize.xs,
+    lineHeight: 18,
+    color: Colors.textSecondary,
+  },
 
   // Title card
   titleCard: {

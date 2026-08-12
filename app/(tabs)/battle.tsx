@@ -39,8 +39,9 @@ import {
   selectedBattleStorageKey,
   sortActiveBattlesForDisplay,
 } from '../../utils/battleSelection';
+import { categoryForTermContinuation, findPreviousTermBattle } from '../../utils/battleTerms';
 import { Colors, Typography, Spacing, BorderRadius, Shadow, teamColorMap } from '../../design_tokens';
-import type { Battle, CategoryStats, RunningPresence } from '../../types';
+import type { Battle, BattleParticipation, Category, CategoryStats, RunningPresence } from '../../types';
 import type { ReportTarget } from '../../lib/moderation';
 import { useTranslation } from '../../lib/i18n';
 import { userFacingError } from '../../lib/userError';
@@ -54,7 +55,7 @@ export default function BattleScreen() {
   const unreadNotifications = useUnreadNotifications();
   const {
     publicBattles, privateBattles, myMemberships, seasons, isLoading,
-    fetchPublicBattles, fetchMyMemberships, fetchMyPrivateBattles, fetchSeason,
+    fetchPublicBattles, fetchPublicSeasonBattles, fetchMyMemberships, fetchMyPrivateBattles, fetchSeason,
     joinBattle, declarationsByBattle,
     subscribeDeclarations, declareRun, updateDeclaration, cancelDeclaration, cheerDeclaration,
   } = useBattleStore();
@@ -65,6 +66,7 @@ export default function BattleScreen() {
   const [reloadKey, setReloadKey] = useState(0);
   const [selectedBattleId, setSelectedBattleId] = useState<string | null>(null);
   const [selectionOwnerId, setSelectionOwnerId] = useState<string | null>(null);
+  const [previousTermCategories, setPreviousTermCategories] = useState<Record<string, Category | null>>({});
 
   // 各バトルの陣営統計をリアルタイム購読（public / private を同一フックで共通化）
   const publicStats = useBattleCategoryStats(publicBattles);
@@ -149,6 +151,57 @@ export default function BattleScreen() {
     )];
     ids.forEach((id) => fetchSeason(id));
   }, [publicBattles]);
+
+  // 同じテーマの直前1タームだけを参照し、現タームへの参加候補を表示する。
+  // participantの作成は行わず、ユーザーがCTAを押したときだけ既存joinBattleを呼ぶ。
+  useEffect(() => {
+    if (!user) {
+      setPreviousTermCategories({});
+      return;
+    }
+    const candidates = publicBattles.filter((battle) => (
+      battle.type === 'public'
+      && !!battle.seasonId
+      && (battle.termIndex ?? 0) > 1
+      && !!battle.termCount
+    ));
+    if (candidates.length === 0) {
+      setPreviousTermCategories({});
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const seasonIds = [...new Set(candidates.map((battle) => battle.seasonId!))];
+      const seasonEntries = await Promise.all(
+        seasonIds.map(async (seasonId) => [seasonId, await fetchPublicSeasonBattles(seasonId)] as const),
+      );
+      const battlesBySeason = new Map(seasonEntries);
+      const entries = await Promise.all(candidates.map(async (currentBattle) => {
+        const previousBattle = findPreviousTermBattle(
+          battlesBySeason.get(currentBattle.seasonId!) ?? [],
+          currentBattle,
+        );
+        if (!previousBattle) return [currentBattle.id, null] as const;
+        const participantSnap = await getDoc(
+          doc(db, 'battles', previousBattle.id, 'participants', user.id),
+        );
+        const participation: BattleParticipation | null = participantSnap.exists()
+          ? {
+              battleId: previousBattle.id,
+              categoryId: (participantSnap.data()['categoryId'] as string | null | undefined) ?? null,
+            }
+          : null;
+        return [currentBattle.id, categoryForTermContinuation(currentBattle, participation)] as const;
+      }));
+      if (!cancelled) setPreviousTermCategories(Object.fromEntries(entries));
+    })().catch((error) => {
+      console.warn('[BattleScreen] previous term participation load failed:', error);
+      if (!cancelled) setPreviousTermCategories({});
+    });
+
+    return () => { cancelled = true; };
+  }, [publicBattles, user?.id, fetchPublicSeasonBattles]);
 
   // ── アクティブバトルの計算 ─────────────────────────────────
   const now = Date.now();
@@ -343,6 +396,8 @@ export default function BattleScreen() {
         seasonTitle={battle.seasonId ? seasons[battle.seasonId]?.title : undefined}
         expanded={expandedBattles.has(battle.id)}
         prominentJoin={prominentJoin}
+        previousTermCategory={previousTermCategories[battle.id]}
+        joining={joiningBattleId === battle.id}
         onToggleExpand={() => toggleExpanded(battle.id)}
         onPress={() => router.push(`/battle/${battle.id}` as any)}
         onPressJoin={() => {
@@ -352,6 +407,9 @@ export default function BattleScreen() {
           }
           setCategoryModalBattle(battle);
         }}
+        onPressContinue={previousTermCategories[battle.id]
+          ? () => handleJoin(battle, previousTermCategories[battle.id]!.id)
+          : undefined}
       />
     );
   };

@@ -24,7 +24,9 @@ import { useBattleProcessContributions } from '../../hooks/useBattleProcessContr
 import { TeamRankingCard } from '../../components/battle/TeamRankingCard';
 import { SafetyActionsModal } from '../../components/moderation/SafetyActionsModal';
 import { CategorySelectModal } from '../../components/battle/CategorySelectModal';
-import type { CategoryStats, Battle, Category } from '../../types';
+import { TermContinuationActions } from '../../components/battle/TermContinuationActions';
+import { Button } from '../../components/ui/Button';
+import type { CategoryStats, Battle, BattleParticipation, Category } from '../../types';
 import { inviteWebUrl } from '../../lib/invite';
 import { useBlockedUsers } from '../../hooks/useBlockedUsers';
 import { prioritizeTeams } from '../../utils/teamDisplay';
@@ -33,6 +35,9 @@ import { cachedPublicProfile } from '../../lib/publicProfileCache';
 import { listBattleActivitySummaries } from '../../lib/activitySummaries';
 import { useTranslation } from '../../lib/i18n';
 import { userFacingError } from '../../lib/userError';
+import { canOfferTermContinuation, categoryForTermContinuation, findPreviousTermBattle } from '../../utils/battleTerms';
+import { resolveBattleMarket } from '../../lib/market';
+import { registerPushToken, scheduleBattleEnd1hNotification, scheduleBattleEndNotification } from '../../lib/notifications';
 
 // ─── countdown helpers ─────────────────────────────────────────
 function timeLeft(endAt: string): { d: number; h: number; m: number } {
@@ -57,12 +62,15 @@ interface RecentActivity {
 }
 
 export default function BattleDetailScreen() {
-  const { t } = useTranslation();
+  const { language, t } = useTranslation();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { fontScale } = useWindowDimensions();
   const largeText = fontScale >= 1.6;
   const { user } = useAuthStore();
-  const { publicBattles, privateBattles, myMemberships, joinBattle, leaveBattle } = useBattleStore();
+  const {
+    publicBattles, privateBattles, myMemberships,
+    fetchPublicSeasonBattles, joinBattle, leaveBattle,
+  } = useBattleStore();
 
   const [stats, setStats] = useState<CategoryStats[]>([]);
   const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
@@ -72,6 +80,7 @@ export default function BattleDetailScreen() {
   const [fetchedBattle, setFetchedBattle] = useState<Battle | null>(null);
   const [showTeamChange, setShowTeamChange] = useState(false);
   const [changingTeam, setChangingTeam] = useState(false);
+  const [previousTermCategory, setPreviousTermCategory] = useState<Category | null>(null);
   const [leavingBattle, setLeavingBattle] = useState(false);
   const [canLeaveBattle, setCanLeaveBattle] = useState<boolean | null>(null);
   const [showSafety, setShowSafety] = useState(false);
@@ -140,6 +149,7 @@ export default function BattleDetailScreen() {
         status: (data['status'] as 'upcoming' | 'active' | 'finished') ?? 'active',
         createdBy: (data['createdBy'] as string | null) ?? null,
         inviteCode: (data['inviteCode'] as string | null) ?? null,
+        ...(data['type'] !== 'private' ? { market: resolveBattleMarket(data['market']) } : {}),
         ...(Number.isInteger(data['termIndex']) && Number.isInteger(data['termCount']) ? {
           termIndex: data['termIndex'] as number,
           termCount: data['termCount'] as number,
@@ -147,6 +157,46 @@ export default function BattleDetailScreen() {
       });
     }).catch(() => {});
   }, [id, battleFromStore]);
+
+  useEffect(() => {
+    if (
+      !battle
+      || !user
+      || battle.type !== 'public'
+      || !battle.seasonId
+      || (battle.termIndex ?? 0) <= 1
+      || !battle.termCount
+    ) {
+      setPreviousTermCategory(null);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const seasonBattles = await fetchPublicSeasonBattles(battle.seasonId!);
+      const previousBattle = findPreviousTermBattle(seasonBattles, battle);
+      if (!previousBattle) {
+        if (!cancelled) setPreviousTermCategory(null);
+        return;
+      }
+      const participantSnap = await getDoc(
+        doc(db, 'battles', previousBattle.id, 'participants', user.id),
+      );
+      const participation: BattleParticipation | null = participantSnap.exists()
+        ? {
+            battleId: previousBattle.id,
+            categoryId: (participantSnap.data()['categoryId'] as string | null | undefined) ?? null,
+          }
+        : null;
+      if (!cancelled) {
+        setPreviousTermCategory(categoryForTermContinuation(battle, participation));
+      }
+    })().catch((error) => {
+      console.warn('[BattleDetail] previous term participation load failed:', error);
+      if (!cancelled) setPreviousTermCategory(null);
+    });
+    return () => { cancelled = true; };
+  }, [battle, user?.id, fetchPublicSeasonBattles]);
 
   // ── real-time category_stats subscription ──────────────────
   useEffect(() => {
@@ -291,6 +341,28 @@ export default function BattleDetailScreen() {
     );
   }
 
+  async function joinPublicBattle(categoryId: string) {
+    if (!user || !battle || battle.type !== 'public' || changingTeam) return;
+    const targetBattle = battle;
+    setChangingTeam(true);
+    try {
+      // 継続参加も通常参加も、上限・期間・teamIdを検証する既存Callableへ集約する。
+      await joinBattle(targetBattle.id, categoryId, user.id, null);
+      void registerPushToken(user.id, true);
+      void scheduleBattleEndNotification(targetBattle);
+      void scheduleBattleEnd1hNotification(targetBattle);
+      setShowTeamChange(false);
+      Alert.alert(
+        t('battle.joinComplete'),
+        t('battle.joinedAs', { team: targetBattle.categories.find((category) => category.id === categoryId)?.label ?? '' }),
+      );
+    } catch (error) {
+      Alert.alert(t('common.error'), userFacingError(error, t('battle.joinFailed')));
+    } finally {
+      setChangingTeam(false);
+    }
+  }
+
   return (
     <SafeAreaView style={s.root} edges={['top']}>
       {/* ── Nav bar ─────────────────────────────────────── */}
@@ -373,6 +445,15 @@ export default function BattleDetailScreen() {
             </Text>
           )}
           <Text style={s.heroTitle}>{battle.title}</Text>
+          {battle.status === 'upcoming' && (
+            <Text style={s.heroStartAt}>
+              {t('battle.startsAt', {
+                value: new Date(battle.startAt).toLocaleString(language === 'ja' ? 'ja-JP' : 'en-US', {
+                  month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                }),
+              })}
+            </Text>
+          )}
 
           {/* countdown 3連 */}
           <View style={s.countRow}>
@@ -413,6 +494,34 @@ export default function BattleDetailScreen() {
             </View>
           )}
         </View>
+
+        {!membership
+          && battle.type === 'public'
+          && battle.status !== 'finished'
+          && Date.now() <= new Date(battle.endAt).getTime()
+          && previousTermCategory
+          && (
+          <TermContinuationActions
+            category={previousTermCategory}
+            upcoming={!canOfferTermContinuation(battle)}
+            loading={changingTeam}
+            onContinue={() => void joinPublicBattle(previousTermCategory.id)}
+            onChooseTeam={() => setShowTeamChange(true)}
+          />
+        )}
+
+        {!membership
+          && battle.type === 'public'
+          && !previousTermCategory
+          && battle.categories.length > 0
+          && battle.status === 'active'
+          && new Date(battle.startAt).getTime() <= Date.now()
+          && Date.now() <= new Date(battle.endAt).getTime()
+          && (
+            <View style={s.sectionCard}>
+              <Button label={t('battle.join')} onPress={() => setShowTeamChange(true)} />
+            </View>
+          )}
 
         {/* ── ランキング ──────────────────────────────────── */}
         {isIndividual ? (
@@ -559,6 +668,10 @@ export default function BattleDetailScreen() {
         loading={changingTeam}
         onClose={() => setShowTeamChange(false)}
         onJoin={async (categoryId) => {
+          if (!membership) {
+            await joinPublicBattle(categoryId);
+            return;
+          }
           if (!user || changingTeam || categoryId === myCatId) {
             setShowTeamChange(false);
             return;
@@ -606,6 +719,12 @@ const s = StyleSheet.create({
     fontSize: Typography.fontSize.xs,
     fontWeight: Typography.fontWeight.bold,
     color: DarkColors.primary,
+  },
+  heroStartAt: {
+    marginTop: -Spacing.sm,
+    fontSize: Typography.fontSize.xs,
+    fontWeight: Typography.fontWeight.semibold,
+    color: DarkColors.textSecondary,
   },
   connectionError: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,

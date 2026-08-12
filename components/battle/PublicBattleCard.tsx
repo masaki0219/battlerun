@@ -2,9 +2,10 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Card } from '../ui/Card';
 import { BattleRankRows } from './BattleRankRows';
+import { TermContinuationActions } from './TermContinuationActions';
 import { Colors, Typography, Spacing, BorderRadius } from '../../design_tokens';
 import { sortedStats, remainingLabel, statValue } from '../../utils/displayStats';
-import type { Battle, CategoryStats } from '../../types';
+import type { Battle, Category, CategoryStats } from '../../types';
 import { useTranslation } from '../../lib/i18n';
 
 interface Props {
@@ -16,15 +17,19 @@ interface Props {
   seasonTitle?: string;
   expanded: boolean;
   prominentJoin?: boolean;
+  previousTermCategory?: Category | null;
+  joining?: boolean;
   onToggleExpand: () => void;
   onPress: () => void;
   onPressJoin: () => void;
+  onPressContinue?: () => void;
 }
 
 /** パブリックランの一覧カード。参加導線はヘッダー右のボタンに集約。表示専用。 */
 export function PublicBattleCard({
   battle, stats, myCategoryId, joined, seasonTitle, expanded, prominentJoin = false,
-  onToggleExpand, onPress, onPressJoin,
+  previousTermCategory, joining = false,
+  onToggleExpand, onPress, onPressJoin, onPressContinue,
 }: Props) {
   const { language, t } = useTranslation();
   const now = new Date();
@@ -41,6 +46,12 @@ export function PublicBattleCard({
     ? 1 + sorted.filter((item) => statValue(item, battle.rankingType) > statValue(mine, battle.rankingType)).length
     : 0;
   const participantCount = stats.reduce((sum, item) => sum + Math.max(0, item.participantCount), 0);
+  const startDateTime = new Date(battle.startAt).toLocaleString(language === 'ja' ? 'ja-JP' : 'en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 
   const meta = [
     waitingForScheduler
@@ -51,6 +62,7 @@ export function PublicBattleCard({
     battle.termIndex != null && battle.termCount != null
       ? t('battle.termLabel', { index: battle.termIndex, count: battle.termCount })
       : null,
+    upcoming ? t('battle.startsAt', { value: startDateTime }) : null,
     t('battle.participants', { count: participantCount }),
     t(battle.rankingType === 'average' ? 'battle.averageCompetition' : 'battle.totalCompetition'),
     joined && myRank > 0 ? t('common.rankOf', { rank: myRank, total: t('common.teams', { count: sorted.length }) }) : null,
@@ -74,7 +86,7 @@ export function PublicBattleCard({
             <View style={styles.upcomingChip}>
               <Text style={styles.upcomingChipText}>{t('battle.upcoming')}</Text>
             </View>
-          ) : battle.categories.length > 0 ? (
+          ) : battle.categories.length > 0 && !previousTermCategory ? (
             <TouchableOpacity
               style={[styles.joinBtn, prominentJoin && styles.joinBtnProminent]}
               onPress={onPressJoin}
@@ -85,6 +97,16 @@ export function PublicBattleCard({
             </TouchableOpacity>
           ) : null}
         </View>
+
+        {!joined && previousTermCategory && (
+          <TermContinuationActions
+            category={previousTermCategory}
+            upcoming={upcoming}
+            loading={joining}
+            onContinue={onPressContinue}
+            onChooseTeam={onPressJoin}
+          />
+        )}
 
         <BattleRankRows
           battle={battle}

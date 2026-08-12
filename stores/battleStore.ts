@@ -71,6 +71,7 @@ interface BattleStore {
   declarationsByBattle: Record<string, RunDeclaration[]>;
 
   fetchPublicBattles: (market?: Market) => Promise<void>;
+  fetchPublicSeasonBattles: (seasonId: string, market?: Market) => Promise<Battle[]>;
   fetchMyMemberships: (userId: string) => Promise<void>;
   fetchMyPrivateBattles: (userId: string) => Promise<void>;
   fetchSeason: (seasonId: string) => Promise<void>;
@@ -200,6 +201,21 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
     } finally {
       set({ isLoading: false });
     }
+  },
+
+  fetchPublicSeasonBattles: async (seasonId, market) => {
+    const q = query(
+      collection(db, 'battles'),
+      where('type', '==', 'public'),
+      where('seasonId', '==', seasonId),
+    );
+    const snap = await getDocs(q);
+    const userMarket = market ?? useAuthStore.getState().user?.market ?? inferMarket();
+    return snap.docs
+      .map((d) => mapDocToBattle(d.id, d.data()))
+      .filter((battle): battle is Battle => battle !== null)
+      .filter((battle) => isBattleVisibleInMarket(battle.market, userMarket))
+      .sort((left, right) => (left.termIndex ?? 0) - (right.termIndex ?? 0));
   },
 
   fetchSeason: async (seasonId: string) => {

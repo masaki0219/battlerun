@@ -78,6 +78,25 @@ async function seed() {
       categoryIds: ['teamA', 'teamB'], rankingType: 'total', startAt: Timestamp.now(),
       endAt: Timestamp.fromMillis(Date.now() + 86400000), inviteCode: null, seasonId: null,
     });
+    await setDoc(doc(db, 'battles/seriesTerm1'), {
+      type: 'public', status: 'finished', createdBy: 'adminUser', title: 'series term 1', description: '',
+      categories: [{ id: 'teamA', label: 'A' }, { id: 'teamB', label: 'B' }],
+      categoryIds: ['teamA', 'teamB'], rankingType: 'total',
+      startAt: Timestamp.fromMillis(Date.now() - 28 * 86400000),
+      endAt: Timestamp.fromMillis(Date.now() - 14 * 86400000), inviteCode: null,
+      seasonId: 'seriesTheme', market: 'JP', termIndex: 1, termCount: 3,
+    });
+    await setDoc(doc(db, 'battles/seriesTerm2'), {
+      type: 'public', status: 'active', createdBy: 'adminUser', title: 'series term 2', description: '',
+      categories: [{ id: 'teamA', label: 'A' }, { id: 'teamB', label: 'B' }],
+      categoryIds: ['teamA', 'teamB'], rankingType: 'total',
+      startAt: Timestamp.fromMillis(Date.now() - 14 * 86400000),
+      endAt: Timestamp.fromMillis(Date.now() + 86400000), inviteCode: null,
+      seasonId: 'seriesTheme', market: 'JP', termIndex: 2, termCount: 3,
+    });
+    await setDoc(doc(db, 'battles/seriesTerm1/participants/alice'), {
+      userId: 'alice', categoryId: 'teamA', totalDistanceKm: 5, activityCount: 2,
+    });
     await setDoc(doc(db, 'battles/legacyBattle'), {
       type: 'public', status: 'active', createdBy: 'adminUser', title: 'legacy public', description: '',
       categories: [{ id: 'legacyA', label: 'A' }, { id: 'legacyB', label: 'B' }],
@@ -612,6 +631,28 @@ async function run() {
       where('type', '==', 'public'),
       where('status', 'in', ['active', 'upcoming']),
     )),
+    'succeed',
+  );
+  await check(
+    'battles list: type==publicとseasonIdで終了済みを含む同一テーマのタームを取得できる',
+    getDocs(query(
+      collection(bobDb, 'battles'),
+      where('type', '==', 'public'),
+      where('seasonId', '==', 'seriesTheme'),
+    )),
+    'succeed',
+  );
+  await check(
+    'battles list: seasonIdだけではprivate混入を否定できないため一覧を拒否',
+    getDocs(query(
+      collection(bobDb, 'battles'),
+      where('seasonId', '==', 'seriesTheme'),
+    )),
+    'fail',
+  );
+  await check(
+    'participants: 本人は終了済み直前タームの参加チームを参照できる',
+    getDoc(doc(aliceDb, 'battles/seriesTerm1/participants/alice')),
     'succeed',
   );
   await check(

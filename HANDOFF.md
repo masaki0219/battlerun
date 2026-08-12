@@ -18,13 +18,21 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 
 距離表示は、週間・月間・累計・チーム合計などの**合計値を0.1km（100m）単位**、1回のランとそのチャレンジ加算値を**0.01km（10m）単位**に統一している。
 
-**デプロイ方針（2026-07-20 ユーザー許可済み）**: 実装に伴う Firebase Functions / Firestore ルールは、必須テストとビルドが成功した後、Codexが `zelio-run` へデプロイしてよい。都度の再確認は不要。対象プロジェクトを明示し、完了・失敗を報告すること。commit / push / reset / rebase は従来どおり別途ユーザー許可が必要。2026-08-12のターム制対応は同日13:40 JSTにユーザーの明示承認を得て限定デプロイ済み。
+**デプロイ方針（2026-08-12 ユーザー許可更新）**: 実装に伴う Firebase Functions / Firestore Rules・Indexes・Hosting の必要部分は、必須テストとビルドが成功した後、Codexが `zelio-run` へ都度の再確認なしでデプロイしてよい。クライアント確認用のEAS development / previewビルドも同様に実行してよい。実行前に対象サービス／プロファイルを特定し、不要な一括デプロイは避け、完了・失敗を報告する。App Store / Google Playへの提出・公開、productionリリース、破壊的なデータ変更、課金設定、秘密情報の追加・変更は別途ユーザー確認が必要。commit / push / reset / rebase も従来どおり別途ユーザー許可が必要。2026-08-12のターム制バックエンド対応は同日13:40 JSTにユーザーの明示承認を得て限定デプロイ済み。
 
 `inst_v3/BattleRunホーム画面作成.zip`（Figma Make のホーム画面デザイン・最終版）を反映し、パレットをディープパイン系に刷新した。レイアウトの作り直しはホームタブとランタブの2画面に限定し、他画面は `design_tokens.ts` 経由で色だけ追従している。
 
 ※ 同フォルダの `BattleRunホーム画面作成 (コピー).zip` は旧版。パレット（`theme.css`）は同一だが、ヒーローが2陣営のVSゲージで、チーム内ランキングが無い。**最終版はこちら（コピーでない方）**。
 
 ## 最後に完了したこと
+
+### 2026-08-12 3ターム制の明示参加UXとテーマ振り返りを追加
+
+- Theme相当の既存モデルは`Season`、子要素は`seasonId` + `termIndex` / `termCount`を持つ独立したPublic Battleであることを確認し、この構造を変更せず利用した。新collection・予約・自動参加・Cron・migration・Theme Winner/Point/称号は追加していない。
+- 同じSeasonの直前1タームに本人のparticipantがある場合、次タームの開催前は「前回：Aチーム」を読み取り専用で表示し、active後は「Aチームで続ける」をPrimary CTA、「チームを選び直す」をSecondary CTAとして表示する。押下前はparticipantを作らず、継続／選び直しのどちらも既存`joinBattle` Callableを通すため、active期間・有効categoryId・既存参加・同時参加2件のサーバー検証を維持する。前々タームへの遡及、private Battleへの適用はしない。
+- 開催前カードへ「第Nターム / M」、絶対開始日時、開始までの時間を表示する。`market`の欠落は既存どおりJPとして解決し、Season内取得後も既存Marketフィルターを通す。`uiLanguage`は表示文言と日時localeだけに使い、配信Marketとは独立している。
+- 3タームがすべて`finished`になった場合だけ、既存結果画面に各Battleの1位（同率対応・0kmは結果なし）を並べた「3タームの結果」を表示する。表示時に子Battleの`category_stats`から導出し、総合優勝や集計値は保存しない。同一Season・同一termIndexの重複や欠番がある場合は誤推測せず表示を見送る。
+- 変更確認は`npx tsc --noEmit`、全unit（ターム直前判定、upcoming非参加、private/Seasonなし除外、Legacy JP、全ターム終了、同率を含む）、localization/Market回帰、Firestore Rules全件（新しい`type == public && seasonId == ...`クエリ、seasonIdだけの危険なlist拒否、終了済みparticipant本人readを含む）、Functions build＋リリースシナリオE2E（`joinBattle`の2件上限拒否を含む）、iOS Expo export、`git diff --check`が成功。Rulesは変更していない。デプロイ・commit・pushは未実施。
 
 ### 2026-08-12 オンボーディング・逆転目安・Public Battleターム制を修正
 
@@ -36,7 +44,7 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 - Firestore Rulesはターム値のペア必須・整数範囲とSeasonスキーマを検証し、Season作成とactive→archivedだけをadminに許可する。Rulesエミュレータ全件、`npx tsc --noEmit`、tests型検査、全unit、Functions build、iOS Expo export、`git diff --check`、本番`zelio-run`対象のRules dry-runは成功。必要な既存複合index 3件（`type+status` / `status+startAt` / `status+endAt`）はすべて`READY`で、index変更はない。
 - **本番反映済み（2026-08-12 13:42 JST）**: ユーザーの明示承認後、`firestore:rules` / `battleStatusScheduler` / `joinBattle`だけを`zelio-run`へ限定デプロイした。Firestore rulesetは`projects/zelio-run/rulesets/34ccd762-40dc-4626-93a8-86dc85a455d7`、Functionsは2件成功・エラー0件。Cloud Schedulerの実ジョブも`every 5 minutes`・`ENABLED`へ更新済み。index変更はない。
 - **GitHub反映済み（2026-08-12）**: 日英対応／Market配信とターム制の現行差分をcommit `0d09f45`（`feat: 日英対応とパブリックバトルのターム制を追加`）として`origin/feat/ui-consolidation`へpushした。既存Draft PR #1が同ブランチを追跡中。
-- テーマ累計順位・テーマ単位称号と、前タームと同チームへの継続参加は未実装。スコア方式（距離合算か順位点か）と参加の明示opt-in仕様が未決定のため、勝手に決めず次工程とした。
+- テーマ累計順位・テーマ単位称号は設けず、各14日Battleを独立した勝負として扱う方針に確定した。次タームは自動参加させず、active後の明示操作で直前チームを再利用できる（上記の追加対応を参照）。
 
 ### 2026-08-12 UI日本語／英語対応とPublic BattleのMarket別配信
 
@@ -583,7 +591,7 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 
 ## 次にやること
 
-1. **現行差分からEAS development/preview buildを作成し、管理画面で3ターム一括作成→開催前表示→開催中への境界切替を2アカウントで確認する。**
+1. **EAS development/preview buildを2アカウントで確認し、Term 1参加→Term 2開催前は未参加→active後に同チーム継続／別チーム選択／2件上限拒否→Term 3終了後の3結果表示を通す。**
 
 ## その次の候補
 - `lib/socialAuth.ts` の純粋ロジック（エラーコード分岐、idToken欠落時throw、pending linkの10分失効）を`tests/`へ載せられる形へ切り出し、ユニットテストを追加する
@@ -606,7 +614,7 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 ## 未解決・要確認
 
 - **ターム制のクライアント配布が未実施（2026-08-12）**: Rules / `battleStatusScheduler` / `joinBattle`の本番反映は完了した。管理画面、開催前表示、直上順位の逆転目安を利用者へ届けるには新しいEAS/App Store buildが必要。
-- **テーマは現時点でタームのグルーピングのみ（2026-08-12）**: 2週間ごとの結果と開催前表示は実装したが、3タームの累計結果・テーマ称号はない。各新タームへは別Battleとして再参加が必要。距離合算／順位点のいずれを正とするか、同チーム継続を自動にするか明示opt-inにするかのプロダクト決定後に実装する。
+- **3ターム継続UXの実機確認が未実施（2026-08-12）**: コード上は直前チーム表示、active後の明示参加、チーム選び直し、3Battleの振り返りまで実装済みで、型・unit・Market/i18n回帰・Firestore Rules全件は成功した。2アカウント実機で2件上限エラー文言、開催境界、長いチーム名／最大文字サイズ、全ターム終了表示を確認する。テーマ累計順位・総合優勝・テーマ称号は未解決ではなく、実装しない決定事項。
 
 - **GLOBAL Public Battleが本番に0件（2026-08-12）**: GLOBALは仕様どおり排他で、JP/US以外の地域は初期MarketがGLOBALになる。現在の本番公開Battle 5件はすべてmarket未設定のLegacy JPで、GLOBALユーザーの一覧は空になる。ロジックは変更せず、配信前に管理画面からGLOBAL Battleを最低1件用意する。
 - **集計境界はJST／月曜始まりのまま（2026-08-12）**: UI翻訳とMarket配信のスコープには含めず変更していない。US本格公開前にユーザーのtimezoneをlanguage/marketとは別概念として保持し、月次・週次の境界と週開始曜日の要件を決めてから変更する。
