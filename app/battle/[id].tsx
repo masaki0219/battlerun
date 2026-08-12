@@ -28,9 +28,11 @@ import type { CategoryStats, Battle, Category } from '../../types';
 import { inviteWebUrl } from '../../lib/invite';
 import { useBlockedUsers } from '../../hooks/useBlockedUsers';
 import { prioritizeTeams } from '../../utils/teamDisplay';
-import { comebackTarget, formatRunDistanceKm } from '../../utils/displayStats';
+import { adjacentRankRival, comebackTarget, formatRunDistanceKm } from '../../utils/displayStats';
 import { cachedPublicProfile } from '../../lib/publicProfileCache';
 import { listBattleActivitySummaries } from '../../lib/activitySummaries';
+import { useTranslation } from '../../lib/i18n';
+import { userFacingError } from '../../lib/userError';
 
 // ─── countdown helpers ─────────────────────────────────────────
 function timeLeft(endAt: string): { d: number; h: number; m: number } {
@@ -55,6 +57,7 @@ interface RecentActivity {
 }
 
 export default function BattleDetailScreen() {
+  const { t } = useTranslation();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { fontScale } = useWindowDimensions();
   const largeText = fontScale >= 1.6;
@@ -137,6 +140,10 @@ export default function BattleDetailScreen() {
         status: (data['status'] as 'upcoming' | 'active' | 'finished') ?? 'active',
         createdBy: (data['createdBy'] as string | null) ?? null,
         inviteCode: (data['inviteCode'] as string | null) ?? null,
+        ...(Number.isInteger(data['termIndex']) && Number.isInteger(data['termCount']) ? {
+          termIndex: data['termIndex'] as number,
+          termCount: data['termCount'] as number,
+        } : {}),
       });
     }).catch(() => {});
   }, [id, battleFromStore]);
@@ -179,7 +186,7 @@ export default function BattleDetailScreen() {
           return {
             id: activity.id,
             userId,
-            displayName: profile?.name ?? activity.displayName ?? 'メンバー',
+            displayName: profile?.name ?? activity.displayName ?? t('battleDetail.member'),
             avatarEmoji: profile?.avatarEmoji,
             distanceKm: activity.distanceKm,
             isMe: userId === user.id,
@@ -192,27 +199,27 @@ export default function BattleDetailScreen() {
         if (!cancelled) setRecentActivities([]);
       });
     return () => { cancelled = true; };
-  }, [id, user?.id]);
+  }, [id, user?.id, t]);
 
   if (!battle) {
     return (
       <SafeAreaView style={s.root}>
         <View style={s.navBar}>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel="戻る">
+          <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel={t('battleDetail.backA11y')}>
             <Ionicons name="chevron-back" size={22} color={Colors.textPrimary} />
           </TouchableOpacity>
         </View>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           {loading
             ? <ActivityIndicator color={Colors.primary} />
-            : <Text style={{ color: Colors.textSecondary }}>チャレンジが見つかりませんでした</Text>
+            : <Text style={{ color: Colors.textSecondary }}>{t('battleDetail.notFound')}</Text>
           }
         </View>
       </SafeAreaView>
     );
   }
 
-  const { d, h, m } = timeLeft(battle.endAt);
+  const { d, h, m } = timeLeft(battle.status === 'upcoming' ? battle.startAt : battle.endAt);
   const rankType = battle.rankingType ?? 'total';
   const val = (st: CategoryStats) => (rankType === 'total' ? st.totalDistanceKm : st.avgDistanceKm);
 
@@ -224,14 +231,12 @@ export default function BattleDetailScreen() {
     ? 1 + sorted.filter((item) => val(item) > val(myTeam)).length
     : null;
 
-  // 対向ゲージ: 自陣営 vs 直上（自分が1位なら2位）。未参加なら上位2陣営
-  const leading = myRank === 1;
-  const rival = myTeam
-    ? (leading ? sorted.find((item) => val(item) < val(myTeam)) : sorted[0])
-    : sorted[1];
+  // 対向ゲージ: 自陣営 vs 直上（首位なら次の別スコア）。未参加なら上位2陣営。
+  const rivalTarget = adjacentRankRival(sorted, myCatId, rankType);
+  const rival = myTeam ? rivalTarget?.stat : sorted[1];
   const gaugeLeft = myTeam ?? sorted[0];
   const gaugeRight = myTeam ? rival : sorted[1];
-  const gapToOvertakeKm = myTeam && rival && !leading
+  const gapToOvertakeKm = myTeam && rival && rivalTarget?.direction === 'ahead'
     ? (rankType === 'average'
       ? Math.max(0, rival.avgDistanceKm * Math.max(myTeam.participantCount, 1) - myTeam.totalDistanceKm)
       : Math.max(0, rival.totalDistanceKm - myTeam.totalDistanceKm))
@@ -252,8 +257,8 @@ export default function BattleDetailScreen() {
   async function shareInvite(targetBattle: Battle) {
     if (!targetBattle.inviteCode) return;
     await Share.share({
-      title: `${targetBattle.title}に招待`,
-      message: `ZELIOの「${targetBattle.title}」に参加しよう！\n${inviteWebUrl(targetBattle.inviteCode)}\n招待コード: ${targetBattle.inviteCode}`,
+      title: t('battleDetail.inviteTitle', { title: targetBattle.title }),
+      message: t('battleDetail.inviteMessage', { title: targetBattle.title, url: inviteWebUrl(targetBattle.inviteCode), code: targetBattle.inviteCode }),
     }).catch((error) => console.warn('[BattleDetail] invite share failed:', error));
   }
 
@@ -262,12 +267,12 @@ export default function BattleDetailScreen() {
     const targetBattleId = battle.id;
     const userId = user.id;
     Alert.alert(
-      'チャレンジから退出しますか？',
-      '参加情報を削除し、参加中の一覧から外します。退出後はもう一度参加できます。',
+      t('battleDetail.leaveTitle'),
+      t('battleDetail.leaveBody'),
       [
-        { text: 'キャンセル', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: '退出する',
+          text: t('battleDetail.leave'),
           style: 'destructive',
           onPress: () => {
             setLeavingBattle(true);
@@ -275,8 +280,8 @@ export default function BattleDetailScreen() {
               .then(() => router.back())
               .catch((error) => {
                 Alert.alert(
-                  '退出できませんでした',
-                  error instanceof Error ? error.message : '通信状態を確認して、もう一度お試しください。',
+                  t('battleDetail.leaveFailed'),
+                  userFacingError(error, t('battleDetail.connectionRetry')),
                 );
               })
               .finally(() => setLeavingBattle(false));
@@ -294,7 +299,7 @@ export default function BattleDetailScreen() {
           onPress={() => router.back()}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityRole="button"
-          accessibilityLabel="戻る"
+          accessibilityLabel={t('battleDetail.backA11y')}
         >
           <Ionicons name="chevron-back" size={22} color={Colors.textPrimary} />
         </TouchableOpacity>
@@ -305,7 +310,7 @@ export default function BattleDetailScreen() {
               onPress={() => router.push(`/battle/result/${id}` as any)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               accessibilityRole="button"
-              accessibilityLabel="チャレンジ結果を見る"
+              accessibilityLabel={t('battleDetail.resultA11y')}
             >
               <Ionicons name="podium-outline" size={20} color={Colors.textSecondary} />
             </TouchableOpacity>
@@ -315,7 +320,7 @@ export default function BattleDetailScreen() {
             onPress={() => setShowSafety(true)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityRole="button"
-            accessibilityLabel="チャレンジの安全メニュー"
+            accessibilityLabel={t('battleDetail.safetyA11y')}
           >
             <Ionicons name="ellipsis-horizontal" size={20} color={Colors.textSecondary} />
           </TouchableOpacity>
@@ -330,13 +335,13 @@ export default function BattleDetailScreen() {
         {statsError && (
           <View style={s.connectionError} accessibilityRole="alert">
             <Ionicons name="cloud-offline-outline" size={17} color={Colors.error} />
-            <Text style={s.connectionErrorText}>チーム成績を取得できませんでした</Text>
+            <Text style={s.connectionErrorText}>{t('battleDetail.statsFailed')}</Text>
             <TouchableOpacity
               onPress={() => setStatsRetryKey((key) => key + 1)}
               accessibilityRole="button"
-              accessibilityLabel="チーム成績を再読み込み"
+              accessibilityLabel={t('battleDetail.retryStatsA11y')}
             >
-              <Text style={s.connectionErrorRetry}>再試行</Text>
+              <Text style={s.connectionErrorRetry}>{t('battleDetail.retry')}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -345,36 +350,43 @@ export default function BattleDetailScreen() {
           {battle.inviteCode ? (
             <View style={[s.heroInviteRow, largeText && s.heroInviteRowLargeText]}>
               <View style={s.heroInviteCode}>
-                <MonoLabel color={DarkColors.primary} size={9}>{`招待コード ${battle.inviteCode}`}</MonoLabel>
+                <MonoLabel color={DarkColors.primary} size={9}>{t('battleDetail.inviteCode', { code: battle.inviteCode })}</MonoLabel>
               </View>
               <TouchableOpacity
                 style={[s.heroInviteButton, largeText && s.heroInviteButtonLargeText]}
                 onPress={() => void shareInvite(battle)}
                 accessibilityRole="button"
-                accessibilityLabel="チャレンジの招待リンクを共有"
+                accessibilityLabel={t('battleDetail.inviteShareA11y')}
               >
                 <Ionicons name="share-outline" size={14} color={DarkColors.primary} />
-                <Text style={s.heroInviteText}>招待する</Text>
+                <Text style={s.heroInviteText}>{t('battleDetail.invite')}</Text>
               </TouchableOpacity>
             </View>
           ) : (
-            <MonoLabel color={DarkColors.textTertiary} size={9}>チャレンジ / 開催中</MonoLabel>
+            <MonoLabel color={DarkColors.textTertiary} size={9}>
+              {t(battle.status === 'upcoming' ? 'battleDetail.upcomingLabel' : 'battleDetail.activeLabel')}
+            </MonoLabel>
+          )}
+          {battle.termIndex != null && battle.termCount != null && (
+            <Text style={s.heroTermLabel}>
+              {t('battle.termLabel', { index: battle.termIndex, count: battle.termCount })}
+            </Text>
           )}
           <Text style={s.heroTitle}>{battle.title}</Text>
 
           {/* countdown 3連 */}
           <View style={s.countRow}>
-            <StatBlock dark align="center" label="日" value={d} />
+            <StatBlock dark align="center" label={t('battleDetail.days')} value={d} />
             <View style={s.countDivider} />
-            <StatBlock dark align="center" label="時" value={pad(h)} />
+            <StatBlock dark align="center" label={t('battleDetail.hours')} value={pad(h)} />
             <View style={s.countDivider} />
-            <StatBlock dark align="center" label="分" value={pad(m)} />
+            <StatBlock dark align="center" label={t('battleDetail.minutes')} value={pad(m)} />
           </View>
 
           {sorted.length >= 3 ? (
             <View style={s.heroGauge}>
-              <Text style={s.multiTeamHint}>自チームと順位が近いチームから表示</Text>
-              <FactionColumns factions={multiTeamColumns} valueSuffix={rankType === 'average' ? 'km/人' : 'km'} />
+              <Text style={s.multiTeamHint}>{t('battleDetail.nearestTeams')}</Text>
+              <FactionColumns factions={multiTeamColumns} valueSuffix={rankType === 'average' ? t('common.perPersonKm') : 'km'} />
             </View>
           ) : gaugeLeft && gaugeRight ? (
             <View style={s.heroGauge}>
@@ -383,7 +395,7 @@ export default function BattleDetailScreen() {
                 right={{ label: gaugeRight.label, km: val(gaugeRight), isMine: gaugeRight.categoryId === myCatId, color: colorsByCategory[gaugeRight.categoryId] ?? teamColor(gaugeRight.categoryId) }}
                 size="lg"
                 dark
-                unit={rankType === 'average' ? 'km/人' : 'km'}
+                unit={rankType === 'average' ? t('common.perPersonKm') : 'km'}
               />
             </View>
           ) : null}
@@ -392,7 +404,11 @@ export default function BattleDetailScreen() {
             <View style={s.heroPace}>
               <Ionicons name="flash" size={14} color={DarkColors.accent} />
               <Text style={s.heroPaceText}>
-                相手が伸びなければ、チーム全体であと {comeback.totalKm.toFixed(1)}km。1日 {comeback.kmPerDay.toFixed(1)}km が逆転の目安
+                {t('battle.comebackGuide', {
+                  rank: rivalTarget?.rank ?? Math.max(1, (myRank ?? 2) - 1),
+                  total: comeback.totalKm.toFixed(1),
+                  daily: comeback.kmPerDay.toFixed(1),
+                })}
               </Text>
             </View>
           )}
@@ -402,11 +418,11 @@ export default function BattleDetailScreen() {
         {isIndividual ? (
           /* 個人戦: 参加者を距離降順で表示 */
           <View style={s.sectionCard}>
-            <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.md }]}>ランキング</Text>
+            <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.md }]}>{t('battleDetail.ranking')}</Text>
             {participantsLoading && participants.length === 0 ? (
               <ActivityIndicator color={Colors.primary} style={{ marginVertical: 20 }} />
             ) : visibleParticipants.length === 0 ? (
-              <EmptyState icon="flag-outline" title="まだ誰も走っていない" hint="一番乗りしよう" />
+              <EmptyState icon="flag-outline" title={t('battleDetail.nobodyYet')} hint={t('battleDetail.beFirst')} />
             ) : (
               visibleParticipants.map((p, i) => {
                 const isMine = p.userId === user?.id;
@@ -417,7 +433,7 @@ export default function BattleDetailScreen() {
                   <View key={p.userId} style={[s.partRow, i > 0 && s.partRowBorder, isMine && s.partRowMine]}>
                     {participantRank ? <RankBadge rank={participantRank} /> : <Text style={s.rankNum}>—</Text>}
                     <Text style={[s.partName, isMine && s.partNameMine]} numberOfLines={1}>
-                      {p.displayName}{isMine ? ' （あなた）' : ''}
+                      {p.displayName}{isMine ? t('battleDetail.youSuffix') : ''}
                     </Text>
                     <Text style={[s.partKm, isMine && s.partKmMine]}>
                       {p.totalDistanceKm.toFixed(1)}<Text style={s.partKmUnit}> km</Text>
@@ -430,13 +446,13 @@ export default function BattleDetailScreen() {
         ) : (
           /* 陣営戦: category_stats を陣営バーで表示 */
           <View style={s.sectionCard}>
-            <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.md }]}>チームランキング</Text>
+            <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.md }]}>{t('battleDetail.teamRanking')}</Text>
             {loading && sorted.length === 0 ? (
               <ActivityIndicator color={Colors.primary} style={{ marginVertical: 20 }} />
             ) : statsError ? (
-              <Text style={s.rankingUnavailable}>接続を確認して再試行してください</Text>
+              <Text style={s.rankingUnavailable}>{t('battleDetail.retryConnection')}</Text>
             ) : sorted.length === 0 ? (
-              <EmptyState icon="flag-outline" title="まだ記録がありません" hint="最初のランでチームに貢献しよう" />
+              <EmptyState icon="flag-outline" title={t('battleDetail.noRecords')} hint={t('battleDetail.firstContribution')} />
             ) : (
               sorted.map((cat, i) => {
                 const isMine = cat.categoryId === myCatId;
@@ -448,9 +464,9 @@ export default function BattleDetailScreen() {
                     <View style={s.rankMain}>
                       <View style={s.rankNameRow}>
                         <Text style={[s.rankName, isMine && s.rankNameMine]} numberOfLines={1}>
-                          {cat.label}{isMine ? ' （あなた）' : ''}
+                          {cat.label}{isMine ? t('battleDetail.youSuffix') : ''}
                         </Text>
-                        <Text style={[s.rankValue, isMine && s.rankValueMine]}>{val(cat).toFixed(1)}{rankType === 'average' ? 'km/人' : 'km'}</Text>
+                        <Text style={[s.rankValue, isMine && s.rankValueMine]}>{val(cat).toFixed(1)}{rankType === 'average' ? t('common.perPersonKm') : 'km'}</Text>
                       </View>
                       <ProgressBar value={val(cat) / maxVal} color={barColor} height={8} />
                     </View>
@@ -466,10 +482,10 @@ export default function BattleDetailScreen() {
                 style={s.teamChangeLink}
                 onPress={() => setShowTeamChange(true)}
                 accessibilityRole="button"
-                accessibilityLabel="チームを変更"
+                accessibilityLabel={t('battleDetail.changeTeamA11y')}
               >
                 <Ionicons name="swap-horizontal-outline" size={14} color={Colors.primaryDark} />
-                <Text style={s.teamChangeText}>チームを変更</Text>
+                <Text style={s.teamChangeText}>{t('battleDetail.changeTeam')}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -477,7 +493,7 @@ export default function BattleDetailScreen() {
 
         {!isIndividual && (teamRanking.top.length > 0 || teamRanking.error) && (
           <View>
-            <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.md }]}>チーム内ランキング</Text>
+            <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.md }]}>{t('battleDetail.withinTeam')}</Text>
             <TeamRankingCard
               ranking={teamRanking}
               contributions={processContributions}
@@ -490,23 +506,23 @@ export default function BattleDetailScreen() {
 
         {!!membership && canLeaveBattle !== null && (
           <View style={s.sectionCard}>
-            <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.sm }]}>参加設定</Text>
+            <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.sm }]}>{t('battleDetail.participationSettings')}</Text>
             {canLeaveBattle ? (
               <TouchableOpacity
                 style={s.leaveButton}
                 onPress={confirmLeaveBattle}
                 disabled={leavingBattle}
                 accessibilityRole="button"
-                accessibilityLabel="このチャレンジから退出"
+                accessibilityLabel={t('battleDetail.leaveA11y')}
                 accessibilityState={{ disabled: leavingBattle, busy: leavingBattle }}
               >
                 {leavingBattle
                   ? <ActivityIndicator size="small" color={Colors.error} />
                   : <Ionicons name="exit-outline" size={16} color={Colors.error} />}
-                <Text style={s.leaveButtonText}>{leavingBattle ? '退出中…' : 'このチャレンジから退出'}</Text>
+                <Text style={s.leaveButtonText}>{leavingBattle ? t('battleDetail.leaving') : t('battleDetail.leaveChallenge')}</Text>
               </TouchableOpacity>
             ) : (
-              <Text style={s.leaveUnavailableText}>距離を加算済みのため、このチャレンジからは退出できません。</Text>
+              <Text style={s.leaveUnavailableText}>{t('battleDetail.cannotLeave')}</Text>
             )}
           </View>
         )}
@@ -514,7 +530,7 @@ export default function BattleDetailScreen() {
         {/* ── 最近の活動 ──────────────────────────────────── */}
         {visibleRecentActivities.length > 0 && (
           <View style={s.sectionCard}>
-            <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.sm }]}>最近の活動</Text>
+            <Text style={[TextStyles.sectionTitle, { marginBottom: Spacing.sm }]}>{t('battleDetail.recent')}</Text>
             {visibleRecentActivities.map((a) => (
               <ListRow
                 key={a.id}
@@ -523,7 +539,7 @@ export default function BattleDetailScreen() {
                 iconColor={a.isMe ? Colors.primary : Colors.textTertiary}
                 iconBg={a.isMe ? Colors.primaryLight : Colors.surfaceGray}
                 title={a.displayName}
-                subtitle={`${formatRunDistanceKm(a.distanceKm)}km走った`}
+                subtitle={t('battleDetail.ranDistance', { distance: formatRunDistanceKm(a.distanceKm) })}
                 titleColor={a.isMe ? Colors.primary : undefined}
                 onPress={() => router.push({
                   pathname: '/activity/[id]' as any,
@@ -558,8 +574,8 @@ export default function BattleDetailScreen() {
             setShowTeamChange(false);
           } catch (e) {
             Alert.alert(
-              'チームを変更できませんでした',
-              e instanceof Error ? e.message : '通信状態を確認して、もう一度お試しください。',
+              t('battleDetail.teamChangeFailed'),
+              userFacingError(e, t('battleDetail.connectionRetry')),
             );
           } finally {
             setChangingTeam(false);
@@ -576,7 +592,7 @@ export default function BattleDetailScreen() {
             battleId: battle.id,
             contentSnapshot: [battle.title, battle.description, ...battle.categories.map((item) => item.label)].filter(Boolean).join(' / '),
           }}
-          targetDisplayName="チャレンジ作成者"
+          targetDisplayName={t('battleDetail.creator')}
           onClose={() => setShowSafety(false)}
         />
       )}
@@ -585,6 +601,12 @@ export default function BattleDetailScreen() {
 }
 
 const s = StyleSheet.create({
+  heroTermLabel: {
+    marginTop: Spacing.xs,
+    fontSize: Typography.fontSize.xs,
+    fontWeight: Typography.fontWeight.bold,
+    color: DarkColors.primary,
+  },
   connectionError: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
     padding: Spacing.md, borderRadius: BorderRadius.md,

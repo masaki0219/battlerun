@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Colors, Spacing, BorderRadius } from '../../design_tokens';
+import { useTranslation } from '../../lib/i18n';
 
 interface Props {
   days: number;
@@ -13,12 +14,13 @@ interface Props {
  * 絵文字使用が許可されている数少ない箇所。
  */
 export function StreakChip({ days }: Props) {
+  const { t } = useTranslation();
   const active = days > 0;
   return (
     <View style={[styles.chip, { backgroundColor: active ? Colors.accentLight : Colors.surfaceGray }]}>
       <Text style={styles.fire}>🔥</Text>
       <Text style={[styles.label, { color: active ? Colors.accentText : Colors.textSecondary }]}>
-        {active ? `${days}日連続` : '今日から始めよう'}
+        {t(active ? 'streak.active' : 'streak.start', { count: days })}
       </Text>
     </View>
   );

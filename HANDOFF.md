@@ -1,6 +1,6 @@
 # HANDOFF
 
-最終更新: 2026-08-11
+最終更新: 2026-08-12
 
 ## プロジェクトの目的
 
@@ -18,13 +18,34 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 
 距離表示は、週間・月間・累計・チーム合計などの**合計値を0.1km（100m）単位**、1回のランとそのチャレンジ加算値を**0.01km（10m）単位**に統一している。
 
-**デプロイ方針（2026-07-20 ユーザー許可済み）**: 実装に伴う Firebase Functions / Firestore ルールは、必須テストとビルドが成功した後、Codexが `zelio-run` へデプロイしてよい。都度の再確認は不要。対象プロジェクトを明示し、完了・失敗を報告すること。commit / push / reset / rebase は従来どおり別途ユーザー許可が必要。
+**デプロイ方針（2026-07-20 ユーザー許可済み）**: 実装に伴う Firebase Functions / Firestore ルールは、必須テストとビルドが成功した後、Codexが `zelio-run` へデプロイしてよい。都度の再確認は不要。対象プロジェクトを明示し、完了・失敗を報告すること。commit / push / reset / rebase は従来どおり別途ユーザー許可が必要。2026-08-12のターム制対応は同日13:40 JSTにユーザーの明示承認を得て限定デプロイ済み。
 
 `inst_v3/BattleRunホーム画面作成.zip`（Figma Make のホーム画面デザイン・最終版）を反映し、パレットをディープパイン系に刷新した。レイアウトの作り直しはホームタブとランタブの2画面に限定し、他画面は `design_tokens.ts` 経由で色だけ追従している。
 
 ※ 同フォルダの `BattleRunホーム画面作成 (コピー).zip` は旧版。パレット（`theme.css`）は同一だが、ヒーローが2陣営のVSゲージで、チーム内ランキングが無い。**最終版はこちら（コピーでない方）**。
 
 ## 最後に完了したこと
+
+### 2026-08-12 オンボーディング・逆転目安・Public Battleターム制を修正
+
+- オンボーディングのSTART表示に1行固定、自動縮小、中央寄せ、フォント倍率上限を入れ、日本語「スタート」の最後の1文字が折り返される問題を修正した。
+- 逆転目安の比較対象を「常に首位」から「自チームの直上（首位なら次の別スコア）」へ変更した。平均戦の差は`km/人`、逆転に必要な行動量はチーム合計kmとして分離し、「相手が伸びなければ」を「1日○kmが最低ライン」へ改めた。同率と直上比較のunitテストも追加した。
+- 管理画面は「テーマ（Season）=約1.5か月」と「ターム（Battle）=2週間」を明示し、既存テーマ選択時にBattle日付を自動上書きしないようにした。日付反映は別ボタンとし、テーマ外へのはみ出しはエラー表示する。新規テーマの既定値は3ターム×14日（42日）、テーマのアーカイブ導線も追加した。
+- `termIndex` / `termCount`をBattleの任意メタデータとし、新規Season 1件＋連続Battle最大12件＋各`category_stats`を1つのFirestore batchで原子的に作成する。カード、詳細、結果、管理一覧に「第Nターム / 全Mターム」を表示し、開催前Public Battleを「次のターム」として先行表示する。
+- スケジューラを60分間隔から5分間隔へ変更した。`users.battleIds`は新しい参加時に終了済み・期限切れIDをサーバートランザクションで間引き、通算50件の履歴蓄積で参加不能になる問題を解消した。
+- Firestore Rulesはターム値のペア必須・整数範囲とSeasonスキーマを検証し、Season作成とactive→archivedだけをadminに許可する。Rulesエミュレータ全件、`npx tsc --noEmit`、tests型検査、全unit、Functions build、iOS Expo export、`git diff --check`、本番`zelio-run`対象のRules dry-runは成功。必要な既存複合index 3件（`type+status` / `status+startAt` / `status+endAt`）はすべて`READY`で、index変更はない。
+- **本番反映済み（2026-08-12 13:42 JST）**: ユーザーの明示承認後、`firestore:rules` / `battleStatusScheduler` / `joinBattle`だけを`zelio-run`へ限定デプロイした。Firestore rulesetは`projects/zelio-run/rulesets/34ccd762-40dc-4626-93a8-86dc85a455d7`、Functionsは2件成功・エラー0件。Cloud Schedulerの実ジョブも`every 5 minutes`・`ENABLED`へ更新済み。index変更はない。
+- テーマ累計順位・テーマ単位称号と、前タームと同チームへの継続参加は未実装。スコア方式（距離合算か順位点か）と参加の明示opt-in仕様が未決定のため、勝手に決めず次工程とした。
+
+### 2026-08-12 UI日本語／英語対応とPublic BattleのMarket別配信
+
+- `expo-localization` + `i18n-js` の小さな共通i18nを追加し、日本語端末は`ja`、それ以外は`en`とした。全タブ、認証・オンボーディング、チャレンジ／フレンド、記録／統計／活動詳細／共有、プロフィール・設定、通知、ガイド／法務、管理画面、アクセシビリティ文言を日英対応した。`decorLabel` / `lib/locale.ts` は削除し、`MonoLabel`の日本語字間調整は現在のUI言語から判定する。Expo設定に`ja` / `en`の`supportedLocales`とOS権限文言を追加した。
+- `Market = JP | US | GLOBAL` をUserとPublic Battleに追加。新規ユーザーは端末`regionCode`から初回だけ推定し、保存後は端末地域変更で上書きしない。旧Userは推定値をフォールバック／次回ログイン時保存、旧Public Battleの`market`未設定は`JP`とした。表示はJP/USなら自Market+GLOBAL、GLOBALならGLOBALのみ。プロフィーの地域変更と管理画面のPublic Battle Market選択を追加し、Battle/Team/Season/Category/ユーザー入力は翻訳せず単一文字列を維持した。UI言語とMarketは別フィールド／別解決ロジックで、`uiLanguage=ja, market=US`も成立する。
+- Firestore RulesはUser/Public BattleのMarket、通知用`uiLanguage`を列挙値に制限し、create/update共通validatorでUser/Public Profile/Battle全体の型・長さ・必須値も維持する。既存のPublic Battleクエリ後にクライアントでMarketを絞るため、旧`market`欠落文書を消さず、新規複合indexも不要。Functionsの反応／応援／称号／終了／順位／無効化通知は受信者の`uiLanguage`で日英を切り替える。
+- 第三者レビューをコードと本番データで再検証し、ランキング／参加者の匿名名を`common.member`へ統一、プロフィールの4ボタン地域AlertをAndroid対応のアクセシブルなラジオModalへ置換、音声コーチeffectの言語依存を補完した。表示／共有／音声／称号／フィードバック系ヘルパーの`language='ja'`既定値は削除し、呼び出し時の必須引数にした。Functionsの旧ユーザー向け日本語fallbackには意図をコメント化し、`npm test`のlocalization二重実行も解消した。
+- 投稿前フィルタへ英語の明白な嫌がらせ、差別、性的搾取表現を追加し、NFKC・小文字化・句読点区切りをクライアントとFunctionsで同一仕様にした。`grape`→`rape`、`therapist`→`rapist`の部分一致は拒否しない。直接書き込み経路はFirestore Rulesでも日英の高リスク表現を拒否する。Rules監査は5/5、176ケース全通過。
+- 本番`zelio-run`を読み取り専用監査した結果、Battleは6件、現行validator適合2件、`categoryIds`欠落4件だった。欠落4件の`categories[].id`はすべて有効かつ一意。Rulesにadmin限定・`status/startAt/endAt`限定の旧Battle lifecycle互換経路を追加し、現行管理画面は開始／終了時に`categoryIds`も補完する。本番Battleデータ自体は変更していない。Public Battleは5件すべて`market`未設定のLegacy JP、公開中／開催前は3件、GLOBALは0件。
+- 最終確認成功: `npx tsc --noEmit`、tests型チェック、全unit（moderation/i18n/Market回帰を含む）、Functions build、Firestore Rules **176チェック**、Firebase CLI 15.26.0の本番dry-run、iOS/Android Expo export、`git diff --check`。2026-08-12 02:29 JSTにi18n通知関連Functions 8件とRulesを本番反映し、レビュー修正後の03:19 JSTにFirestore Rulesと`createPrivateBattle` / `validateBattleTitleOnCreate`を`zelio-run`へ限定再デプロイした（2/2成功、Functions一覧でもNode.js 22 v2として確認）。クエリ形状を増やしていないためindex変更・deployはない。commit/pushは未実施。
 
 ### 2026-08-11 Googleログインボタンの実幅修正とUI配色統一
 
@@ -306,7 +327,7 @@ v2 レポートで「判断待ち」だった6件をユーザーが決裁し、�
 
 - **語彙「チーム」統一（決裁: チームに統一）**: ユーザー向け表示の「陣営」30箇所を「チーム」へ（オンボーディング見出し・チャレンジ詳細/結果/サマリー・称号名「優勝チームメンバー/優勝チームの一員」・Functions通知文言）。「援軍募集中」→「仲間募集中」、Functions「バトルが無効化されました」→「チャレンジが無効化されました」。**軍事フレーバーはPro「陣取り合戦風」テーマとバッジ名（朝活兵等）へ退避**し、「出撃宣言」は既定方針どおり存続。コメント内の「陣営」は据え置き。
 - **絵文字ロゴ削除（決裁: 削除）**: ログイン/新規登録の「🏃 ZELIO」→「ZELIO」。結果画面の🏃（rankMedal 4位以下/フォールバック）は据え置き。
-- **日英併記ラベル（決裁: 端末言語に追従）**: `lib/locale.ts` を新設（`Intl` で端末ロケール判定、判定不能時は日本語既定）。結果画面7ラベル+サマリー「記録完了/RUN COMPLETE」+記録HUDの状態表示（記録中/一時停止中/自動停止中）を、日本語端末では日本語のみ・他言語端末では英語のみ表示に。オンボーディングのSTEPラベルとテーマ由来ラベル（BATTLE等）は対象外。**英語端末での表示確認は未実施**（Intl のロケール値は実機で要確認）。
+- **日英併記ラベル（決裁: 端末言語に追従）**: 当時は`lib/locale.ts`の装飾ラベルだけを切り替えていた。**2026-08-12の全UI i18nでこの方式は廃止し、`expo-localization` + `i18n-js`へ置換済み。**
 - **カレンダー週化（決裁: 月曜始まり）**: `weeklyBuckets`/`weekOverWeek`/`weekStartLabel` を月曜始まりの暦週へ変更（新ヘルパー `calendarWeekStart`）。週間目標が月曜にリセットされ、「今週/先週比」の表示と実態が一致。stats の記録回数も暦週へ。**過負荷ガードレール（`hasHighTrainingLoad`）は生理的負荷判定のため移動7日窓を維持**し、カード文言を「この1週間はよく走っています」へ変更。境界テスト（日曜→月曜リセット・月曜始まりラベル）を追加。
 - **N-17 チーム変更導線（決裁: チャレンジ詳細に設置）**: チームランキングカード下部に「チームを変更」リンク（参加中・開催中・**距離0の間のみ**表示 = Firestoreルールの許可条件と一致）。既存 CategorySelectModal を再利用し、失敗時は store のエラー文言（「一度記録した後はチームを変更できません。」）を表示。
 - **Courier New 置換（判断不要分）**: オンボーディングの4箇所を `Typography.fontFamily.mono`（Menlo/monospace）へ。
@@ -561,7 +582,7 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 
 ## 次にやること
 
-1. **現行差分からEAS iOS development buildを作成し、物理端末のApple／Google実アカウントでログイン・新規登録・既存メールへの連携を確認する。**
+1. **現行差分からEAS development/preview buildを作成し、管理画面で3ターム一括作成→開催前表示→開催中への境界切替を2アカウントで確認する。**
 
 ## その次の候補
 - `lib/socialAuth.ts` の純粋ロジック（エラーコード分岐、idToken欠落時throw、pending linkの10分失効）を`tests/`へ載せられる形へ切り出し、ユニットテストを追加する
@@ -583,6 +604,12 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 
 ## 未解決・要確認
 
+- **ターム制のクライアント配布が未実施（2026-08-12）**: Rules / `battleStatusScheduler` / `joinBattle`の本番反映は完了した。管理画面、開催前表示、直上順位の逆転目安を利用者へ届けるには新しいEAS/App Store buildが必要。
+- **テーマは現時点でタームのグルーピングのみ（2026-08-12）**: 2週間ごとの結果と開催前表示は実装したが、3タームの累計結果・テーマ称号はない。各新タームへは別Battleとして再参加が必要。距離合算／順位点のいずれを正とするか、同チーム継続を自動にするか明示opt-inにするかのプロダクト決定後に実装する。
+
+- **GLOBAL Public Battleが本番に0件（2026-08-12）**: GLOBALは仕様どおり排他で、JP/US以外の地域は初期MarketがGLOBALになる。現在の本番公開Battle 5件はすべてmarket未設定のLegacy JPで、GLOBALユーザーの一覧は空になる。ロジックは変更せず、配信前に管理画面からGLOBAL Battleを最低1件用意する。
+- **集計境界はJST／月曜始まりのまま（2026-08-12）**: UI翻訳とMarket配信のスコープには含めず変更していない。US本格公開前にユーザーのtimezoneをlanguage/marketとは別概念として保持し、月次・週次の境界と週開始曜日の要件を決めてから変更する。
+- **i18n/Marketの実機目視とクライアント配布が未実施（2026-08-12）**: ローカルの型・unit・Rules 176件・Functions build・Expo iOS/Android exportは成功し、本番`zelio-run`のRulesと関連Functionsも反映済み。EAS Updateは構成していないため、UI側の修正を利用者へ届けるには新しいEAS/App Store buildが必要。日本語／英語の長文、Android地域Modal、最大文字サイズ、OSのアプリ別言語変更後の復帰、Market変更／再起動保持、Push実配送はEAS development buildの2言語／2アカウントで確認する。
 - **旧形式ラン宣言の物理削除／TTL対象化は未実施（2026-08-11）**: 新規宣言の48時間TTLと同一チーム限定ルールは本番反映済み。デプロイ前に作成された`expireAt`なしの旧形式宣言は、新ルールにより本人／admin以外から読めないが、Firestore上ではTTL対象外のまま残る。物理削除または`expireAt`バックフィルは既存データを不可逆に変えるため、件数・対象を確認して別途明示承認後に行う。
 - ~~非公開チャレンジ侵入・活動正本公開・招待コード重複~~ **解決済み（2026-08-11）**: Functions 8件、Firestore ruleset `600bd584-fffe-4800-bd59-8cf09cf3b305`、新規3 Callableの`maxInstances: 20`を本番`zelio-run`へ反映済み。本番の認証済み拒否テストと招待なし／誤コード参加PoCも成功し、検証データは削除済み。
 - **Supabaseフィードバックの実RLSは最終確認が必要（2026-08-11）**: anonキーでSELECTを実行した結果はHTTP 200・`[]`で、フィードバック本文の露出は観測しなかった。ただしテーブルが空ならSELECT許可時も同じ結果になる。Supabaseダッシュボードで`feedbacks`のRLS有効、anonはINSERTのみ、SELECT/UPDATE/DELETEなしを確認する。

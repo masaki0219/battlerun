@@ -19,7 +19,7 @@ import { estimatedCalories, formatRunDistanceKm, type KmSplit } from '../../util
 import { buildRouteVisualization } from '../../utils/routeSplits';
 import { buildRunShareMessage, formatShareDuration } from '../../utils/runShare';
 import type { PersonalRecordKey, RoutePoint } from '../../types';
-import { decorLabel } from '../../lib/locale';
+import { useTranslation } from '../../lib/i18n';
 import { shareRunResult } from '../../lib/runSharing';
 import { useRunSharePreference } from '../../hooks/useRunSharePreference';
 
@@ -43,18 +43,14 @@ interface BattleImpact {
 type BattleCreditStatus = 'eligible' | 'not-participating' | 'not-eligible' | 'unknown';
 type BattleCreditReason = 'battle-finalized' | 'outside-period' | 'inactive-battle' | null;
 
-const PERSONAL_RECORD_LABELS: Partial<Record<PersonalRecordKey, string>> = {
-  fastest1kSec: '最速1km',
-  fastest5kSec: '最速5km',
-  fastest10kSec: '最速10km',
-  longestRunKm: '最長距離',
-  bestMonthKm: '最高月間距離',
-};
+const PERSONAL_RECORD_KEYS = new Set<PersonalRecordKey>([
+  'fastest1kSec', 'fastest5kSec', 'fastest10kSec', 'longestRunKm', 'bestMonthKm',
+]);
 
 function personalRecordKeys(value: unknown): PersonalRecordKey[] {
   if (!Array.isArray(value)) return [];
   return value.filter((key): key is PersonalRecordKey => (
-    typeof key === 'string' && key in PERSONAL_RECORD_LABELS
+    typeof key === 'string' && PERSONAL_RECORD_KEYS.has(key as PersonalRecordKey)
   ));
 }
 
@@ -104,6 +100,7 @@ function CelebrationConfetti({ active, reduceMotion }: { active: boolean; reduce
 }
 
 export default function RecordingSummaryScreen() {
+  const { language, t } = useTranslation();
   const params = useLocalSearchParams<{
     activityId: string;
     distanceKm: string;
@@ -292,19 +289,19 @@ export default function RecordingSummaryScreen() {
   const rankImproved = !!primaryImpact && primaryImpact.rankBefore > primaryImpact.rankAfter;
   const hasMultipleImpacts = impacts.length > 1;
   const emptyImpactTitle = battleCreditStatus === 'not-eligible'
-    ? 'チャレンジに加算されませんでした'
+    ? t('summary.notAdded')
     : battleCreditStatus === 'eligible'
-      ? 'チャレンジに反映できませんでした'
-      : 'チャレンジ未参加';
+      ? t('summary.notReflected')
+      : t('summary.notParticipating');
   const emptyImpactDetail = battleCreditReason === 'battle-finalized'
-    ? '結果確定後に再送されたため、個人記録だけに保存されました'
+    ? t('summary.finalizedOnly')
     : battleCreditReason === 'outside-period'
-      ? 'チャレンジ開催期間外の記録として、個人記録だけに保存されました'
+      ? t('summary.outsidePeriodOnly')
       : battleCreditStatus === 'not-eligible'
-        ? '対象チャレンジの状態を確認してください'
+        ? t('summary.checkChallenge')
         : battleCreditStatus === 'eligible'
-          ? '活動詳細で反映状況を確認してください'
-          : 'チャレンジに参加して記録を競おう';
+          ? t('summary.checkActivity')
+          : t('summary.joinPrompt');
 
   useEffect(() => {
     if (!rankChanged || reduceMotion === null) return;
@@ -337,21 +334,22 @@ export default function RecordingSummaryScreen() {
     if (sharing || !sharePreferenceLoaded) return;
     const impactLabel = primaryImpact
       ? rankChanged
-        ? `「${primaryImpact.battleTitle}」チーム ${primaryImpact.rankBefore}位→${primaryImpact.rankAfter}位`
-        : `「${primaryImpact.battleTitle}」チーム ${primaryImpact.rankAfter}位をキープ`
+        ? t('summary.teamRankChanged', { title: primaryImpact.battleTitle, before: primaryImpact.rankBefore, after: primaryImpact.rankAfter })
+        : t('summary.teamRankKept', { title: primaryImpact.battleTitle, rank: t('common.rank', { rank: primaryImpact.rankAfter }) })
       : null;
     const message = buildRunShareMessage({
       distanceKm,
       durationSeconds,
       pace,
       impactLabel,
+      language,
     });
     setSharing(true);
     try {
-      await shareRunResult(shareCardRef.current, message, '今日のランをシェア');
+      await shareRunResult(shareCardRef.current, message, t('summary.shareTitle'));
     } catch (error) {
       console.warn('[RecordingSummary] share failed:', error);
-      Alert.alert('共有できませんでした', '時間をおいてもう一度お試しください。');
+      Alert.alert(t('summary.shareFailed'), t('summary.tryAgainLater'));
     } finally {
       setSharing(false);
     }
@@ -365,8 +363,8 @@ export default function RecordingSummaryScreen() {
         {/* ── Hero dark card ─────────────────────────────── */}
         <View style={s.heroCard}>
           <View style={s.heroTop}>
-            <MonoLabel color={DarkColors.primary} size={9}>{decorLabel('記録完了', 'RUN COMPLETE')}</MonoLabel>
-            <TouchableOpacity onPress={() => router.replace('/(tabs)' as any)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel="閉じる">
+            <MonoLabel color={DarkColors.primary} size={9}>{t('locale.runComplete')}</MonoLabel>
+            <TouchableOpacity onPress={() => router.replace('/(tabs)' as any)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel={t('summary.closeA11y')}>
               <Ionicons name="close" size={18} color={DarkColors.textTertiary} />
             </TouchableOpacity>
           </View>
@@ -378,12 +376,12 @@ export default function RecordingSummaryScreen() {
 
           <View style={s.heroStats}>
             <View style={s.heroStat}>
-              <MonoLabel color={DarkColors.textTertiary} size={8.5}>時間</MonoLabel>
+              <MonoLabel color={DarkColors.textTertiary} size={8.5}>{t('summary.time')}</MonoLabel>
               <Text style={s.heroStatVal}>{formatTime(durationSeconds)}</Text>
             </View>
             <View style={s.heroStatDivider} />
             <View style={s.heroStat}>
-              <MonoLabel color={DarkColors.textTertiary} size={8.5}>ペース</MonoLabel>
+              <MonoLabel color={DarkColors.textTertiary} size={8.5}>{t('summary.pace')}</MonoLabel>
               <Text style={s.heroStatVal}>{pace}<Text style={s.heroStatUnit}>/km</Text></Text>
             </View>
             {/* GPSラン（歩数なし）では空欄「---」を出さず、セルごと非表示にする */}
@@ -391,8 +389,8 @@ export default function RecordingSummaryScreen() {
               <>
                 <View style={s.heroStatDivider} />
                 <View style={s.heroStat}>
-                  <MonoLabel color={DarkColors.textTertiary} size={8.5}>歩数</MonoLabel>
-                  <Text style={s.heroStatVal}>{steps.toLocaleString()}</Text>
+                  <MonoLabel color={DarkColors.textTertiary} size={8.5}>{t('summary.steps')}</MonoLabel>
+                  <Text style={s.heroStatVal}>{steps.toLocaleString(language === 'ja' ? 'ja-JP' : 'en-US')}</Text>
                 </View>
               </>
             )}
@@ -400,7 +398,7 @@ export default function RecordingSummaryScreen() {
 
           {calories != null && (
             <View style={s.heroSubStats}>
-              <Text style={s.heroSubStatText}>推定 {calories} kcal（体重60kg換算）</Text>
+              <Text style={s.heroSubStatText}>{t('summary.calories', { calories })}</Text>
             </View>
           )}
         </View>
@@ -411,8 +409,8 @@ export default function RecordingSummaryScreen() {
               <Ionicons name="checkmark" size={22} color={Colors.textOnPrimary} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={s.declarationTitle}>宣言達成！</Text>
-              <Text style={s.declarationText}>自分で決めたランを完了しました</Text>
+              <Text style={s.declarationTitle}>{t('summary.declarationAchieved')}</Text>
+              <Text style={s.declarationText}>{t('summary.declarationAchievedBody')}</Text>
             </View>
           </View>
         )}
@@ -424,11 +422,11 @@ export default function RecordingSummaryScreen() {
                 <Ionicons name="trophy" size={24} color={Colors.textPrimary} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={s.badgeKicker}>自己ベスト更新！ 🎉</Text>
-                <Text style={s.badgeTitle}>{newRecords.map((key) => PERSONAL_RECORD_LABELS[key]).join('・')}</Text>
-                <Text style={s.badgeSub}>今日のランで新しい記録が生まれました</Text>
+                <Text style={s.badgeKicker}>{t('summary.personalBest')}</Text>
+                <Text style={s.badgeTitle}>{newRecords.map((key) => t(`summary.personalRecord.${key}`)).join(t('summary.separator'))}</Text>
+                <Text style={s.badgeSub}>{t('summary.personalBestBody')}</Text>
               </View>
-              <Text style={s.badgeNew}>{decorLabel('新記録', 'NEW')}</Text>
+              <Text style={s.badgeNew}>{t('locale.newRecord')}</Text>
             </Animated.View>
           </View>
         )}
@@ -436,14 +434,14 @@ export default function RecordingSummaryScreen() {
         {/* ── 1km splits ────────────────────────────────── */}
         {splits.length > 0 && (
           <View style={s.section}>
-            <Text style={TextStyles.sectionTitle}>1kmラップ</Text>
+            <Text style={TextStyles.sectionTitle}>{t('summary.kmLaps')}</Text>
             <KmSplitsCard splits={splits} />
           </View>
         )}
 
         {/* ── Battle impact ─────────────────────────────── */}
         <View style={s.section}>
-          <Text style={TextStyles.sectionTitle}>チャレンジへの反映</Text>
+          <Text style={TextStyles.sectionTitle}>{t('summary.battleImpact')}</Text>
           {loadingImpact ? (
             <View style={[s.impactCard, { alignItems: 'center', paddingVertical: 24 }]}>
               <ActivityIndicator color={Colors.primary} />
@@ -451,15 +449,15 @@ export default function RecordingSummaryScreen() {
           ) : impactTimedOut ? (
             <View style={[s.impactCard, { alignItems: 'center', paddingVertical: 20 }]}>
               <Ionicons name="time-outline" size={30} color={Colors.textTertiary} />
-              <Text style={{ color: Colors.textSecondary, marginTop: 8, fontSize: 13, fontWeight: '700' }}>集計中です</Text>
-              <Text style={{ color: Colors.textSecondary, fontSize: 11, marginTop: 3 }}>あとで活動詳細から確認できます</Text>
+              <Text style={{ color: Colors.textSecondary, marginTop: 8, fontSize: 13, fontWeight: '700' }}>{t('summary.calculating')}</Text>
+              <Text style={{ color: Colors.textSecondary, fontSize: 11, marginTop: 3 }}>{t('summary.checkLater')}</Text>
             </View>
           ) : primaryImpact ? (
             <View style={s.impactCard}>
               {rankChanged ? (
                 <View style={s.rankRise}>
                   <View style={s.rankBefore}>
-                    <Text style={s.rankBeforeLabel}>変更前</Text>
+                    <Text style={s.rankBeforeLabel}>{t('summary.before')}</Text>
                     <View style={s.rankBox}>
                       <Text style={s.rankBoxNum}>{primaryImpact.rankBefore}</Text>
                     </View>
@@ -469,8 +467,8 @@ export default function RecordingSummaryScreen() {
                     <View style={s.rankArrowBadge}>
                       <Text style={s.rankArrowText}>
                         {primaryImpact.rankBefore > primaryImpact.rankAfter
-                          ? `+${primaryImpact.rankBefore - primaryImpact.rankAfter} 位`
-                          : `${primaryImpact.rankAfter - primaryImpact.rankBefore} 位↓`}
+                          ? t('summary.rankUp', { count: primaryImpact.rankBefore - primaryImpact.rankAfter })
+                          : t('summary.rankDown', { count: primaryImpact.rankAfter - primaryImpact.rankBefore })}
                       </Text>
                     </View>
                     <Ionicons name="chevron-forward" size={14} color={Colors.primaryDark} />
@@ -479,7 +477,7 @@ export default function RecordingSummaryScreen() {
                     { translateX: rankAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) },
                     { scale: rankAnim.interpolate({ inputRange: [0, 1], outputRange: [0.82, 1] }) },
                   ] }] }>
-                    <Text style={s.rankAfterLabel}>変更後</Text>
+                    <Text style={s.rankAfterLabel}>{t('summary.after')}</Text>
                     <View style={s.rankBoxAfter}>
                       <Text style={s.rankBoxAfterNum}>{primaryImpact.rankAfter}</Text>
                     </View>
@@ -488,7 +486,7 @@ export default function RecordingSummaryScreen() {
               ) : (
                 <View style={s.rankKept}>
                   <Ionicons name="shield-checkmark-outline" size={24} color={Colors.primaryDark} />
-                  <Text style={s.rankKeptText}>{primaryImpact.rankAfter}位をキープ</Text>
+                  <Text style={s.rankKeptText}>{t('summary.rankKept', { rank: t('common.rank', { rank: primaryImpact.rankAfter }) })}</Text>
                 </View>
               )}
 
@@ -496,25 +494,25 @@ export default function RecordingSummaryScreen() {
                 <View>
                   <Text style={s.impactBattleLabel}>{primaryImpact.battleTitle}</Text>
                   <Text style={s.impactTeamText}>
-                    あなたのランでチームは{' '}
+                    {t('summary.yourRunMovedTeam')}
                     <Text style={{ color: rankChanged ? Colors.primaryDark : Colors.textPrimary, fontWeight: '900' }}>
                       {rankChanged
-                        ? `${primaryImpact.rankBefore}位→${primaryImpact.rankAfter}位`
-                        : `${primaryImpact.rankAfter}位をキープ`}
+                        ? `${t('common.rank', { rank: primaryImpact.rankBefore })}→${t('common.rank', { rank: primaryImpact.rankAfter })}`
+                        : t('summary.rankKept', { rank: t('common.rank', { rank: primaryImpact.rankAfter }) })}
                     </Text>
                   </Text>
                   {hasMultipleImpacts && (
-                    <Text style={s.impactMoreText}>ほか{impacts.length - 1}件のチャレンジにも反映されました</Text>
+                    <Text style={s.impactMoreText}>{t('summary.otherImpacts', { count: impacts.length - 1 })}</Text>
                   )}
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={s.impactAddLabel}>チーム加算</Text>
+                  <Text style={s.impactAddLabel}>{t('summary.teamAddition')}</Text>
                   <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 2 }}>
                     <Text style={s.impactAddVal}>+{formatRunDistanceKm(primaryCreditedDistanceKm)}</Text>
                     <Text style={s.impactAddUnit}>KM</Text>
                   </View>
                   {primaryCreditedDistanceKm + 0.0001 < distanceKm && (
-                    <Text style={s.impactLimitText}>歩数モード日次上限</Text>
+                    <Text style={s.impactLimitText}>{t('summary.stepDailyCap')}</Text>
                   )}
                 </View>
               </View>
@@ -536,17 +534,17 @@ export default function RecordingSummaryScreen() {
 
         {/* ── Share ─────────────────────────────────────── */}
         <View style={s.section}>
-          <Text style={TextStyles.sectionTitle}>今日のランをシェア</Text>
+          <Text style={TextStyles.sectionTitle}>{t('summary.shareTitle')}</Text>
           <RunShareCard
             ref={shareCardRef}
             distanceKm={distanceKm}
             durationLabel={formatShareDuration(durationSeconds)}
             paceLabel={pace.includes('--') ? null : pace}
-            dateLabel={decorLabel('今日', 'TODAY')}
+            dateLabel={t('locale.today')}
             impactLabel={primaryImpact
               ? rankChanged
-                ? `「${primaryImpact.battleTitle}」チーム ${primaryImpact.rankBefore}位→${primaryImpact.rankAfter}位`
-                : `「${primaryImpact.battleTitle}」チーム ${primaryImpact.rankAfter}位をキープ`
+                ? t('summary.teamRankChanged', { title: primaryImpact.battleTitle, before: primaryImpact.rankBefore, after: primaryImpact.rankAfter })
+                : t('summary.teamRankKept', { title: primaryImpact.battleTitle, rank: t('common.rank', { rank: primaryImpact.rankAfter }) })
               : null}
             mapRegion={includeRouteInShare ? mapRegion : null}
             routeVisualization={routeVisualization}
@@ -560,7 +558,7 @@ export default function RecordingSummaryScreen() {
               activeOpacity={0.75}
               accessibilityRole="switch"
               accessibilityState={{ checked: includeRouteInShare, disabled: !sharePreferenceLoaded }}
-              accessibilityLabel="共有画像にGPSルートを表示"
+              accessibilityLabel={t('summary.routeShareA11y')}
             >
               <Ionicons
                 name={includeRouteInShare ? 'map' : 'map-outline'}
@@ -569,9 +567,9 @@ export default function RecordingSummaryScreen() {
               />
               <View style={{ flex: 1 }}>
                 <Text style={s.routeShareToggleTitle}>
-                  {includeRouteInShare ? '共有画像にルートを表示中' : '共有画像のルートは非表示'}
+                  {includeRouteInShare ? t('summary.routeShown') : t('summary.routeHidden')}
                 </Text>
-                <Text style={s.routeShareToggleHint}>自宅付近などが映っていないか、プレビューを確認してください</Text>
+                <Text style={s.routeShareToggleHint}>{t('summary.routePrivacy')}</Text>
               </View>
               <Ionicons name="swap-horizontal" size={16} color={Colors.textTertiary} />
             </TouchableOpacity>
@@ -582,13 +580,13 @@ export default function RecordingSummaryScreen() {
             activeOpacity={0.85}
             disabled={sharing || !sharePreferenceLoaded}
             accessibilityRole="button"
-            accessibilityLabel="今日のラン結果をSNSに共有"
+            accessibilityLabel={t('summary.shareA11y')}
             accessibilityState={{ busy: sharing, disabled: sharing || !sharePreferenceLoaded }}
           >
             {sharing
               ? <ActivityIndicator size="small" color={Colors.textOnPrimary} />
               : <Ionicons name="share-social-outline" size={18} color={Colors.textOnPrimary} />}
-            <Text style={s.shareBtnText}>{sharing ? '共有画像を準備中…' : 'SNSにシェア'}</Text>
+            <Text style={s.shareBtnText}>{sharing ? t('summary.preparingShare') : t('summary.shareSocial')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -605,10 +603,10 @@ export default function RecordingSummaryScreen() {
             }}
             activeOpacity={0.85}
           >
-            <Text style={s.ctaBtnText}>チャレンジ詳細を見る</Text>
+            <Text style={s.ctaBtnText}>{t('summary.viewChallenge')}</Text>
             <Ionicons name="chevron-forward" size={16} color={Colors.textOnPrimary} />
           </TouchableOpacity>
-          <Text style={s.ctaHint}>最近の記録に表示されました</Text>
+          <Text style={s.ctaHint}>{t('summary.savedToRecent')}</Text>
         </View>
 
       </ScrollView>

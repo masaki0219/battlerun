@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { cachedPublicProfile } from '../lib/publicProfileCache';
+import { useTranslation } from '../lib/i18n';
 
 export interface TeamRankingMember {
   userId: string;
@@ -51,6 +52,7 @@ export function useTeamRanking(
   myUserId: string | undefined,
   { topCount = 3 }: { topCount?: number } = {},
 ): TeamRanking {
+  const { t } = useTranslation();
   const [state, setState] = useState<TeamRankingData>(EMPTY);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -100,7 +102,7 @@ export function useTeamRanking(
             const profile = await cachedPublicProfile(p.userId).catch(() => null);
             return {
               userId: p.userId,
-              displayName: profile?.name ?? 'メンバー',
+              displayName: profile?.name ?? t('common.member'),
               avatarEmoji: profile?.avatarEmoji,
               totalDistanceKm: p.totalDistanceKm,
               rank: allZero ? null : 1 + team.filter((member) => member.totalDistanceKm > p.totalDistanceKm).length,
@@ -143,7 +145,7 @@ export function useTeamRanking(
     });
 
     return () => { generation += 1; unsubscribe(); };
-  }, [battleId, categoryId, myUserId, topCount, retryKey]);
+  }, [battleId, categoryId, myUserId, topCount, retryKey, t]);
 
   if (!requestKey) return { ...EMPTY, loading: false, error: false, retry };
   if (resolvedKey !== requestKey) return { ...EMPTY, loading: true, error: false, retry };

@@ -18,8 +18,11 @@ import { DISPLAY_NAME_MAX_LENGTH, validateDisplayName } from '../../lib/validati
 import { BorderRadius, Colors, Spacing, Typography } from '../../design_tokens';
 import { Avatar } from '../../components/ui/Avatar';
 import { AVATAR_EMOJI_CATEGORIES } from '../../lib/avatarEmojis';
+import { useTranslation } from '../../lib/i18n';
+import { userFacingError } from '../../lib/userError';
 
 export default function ProfileSetupScreen() {
+  const { t } = useTranslation();
   const {
     suggestedProfileName,
     completeProfileSetup,
@@ -39,17 +42,15 @@ export default function ProfileSetupScreen() {
   async function handleComplete() {
     const validation = validateDisplayName(name);
     if (!validation.ok) {
-      Alert.alert('ニックネームを確認してください', validation.reason);
+      Alert.alert(t('auth.nicknameCheck'), validation.reason);
       return;
     }
     try {
       await completeProfileSetup(name, avatarEmoji);
     } catch (error) {
       Alert.alert(
-        'プロフィールを作成できませんでした',
-        error instanceof Error && error.message
-          ? error.message
-          : '通信状態を確認して、もう一度お試しください。',
+        t('auth.profileCreateFailed'),
+        userFacingError(error, t('connection.tryAgain')),
       );
     }
   }
@@ -69,13 +70,13 @@ export default function ProfileSetupScreen() {
         >
           <View style={styles.card}>
             <Text style={styles.eyebrow}>ZELIO PROFILE</Text>
-            <Text style={styles.title}>ニックネームを決める</Text>
+            <Text style={styles.title}>{t('auth.chooseNickname')}</Text>
             <Text style={styles.body}>
-              ランキングやチャレンジで他の利用者に表示されます。認証サービスから取得した名前は、ここで確認して確定するまで公開されません。
+              {t('auth.nicknameExplanation')}
             </Text>
             <TextInput
               style={styles.input}
-              placeholder={`ニックネーム（${DISPLAY_NAME_MAX_LENGTH}文字以内）`}
+              placeholder={t('auth.nicknamePlaceholder', { count: DISPLAY_NAME_MAX_LENGTH })}
               placeholderTextColor={Colors.textTertiary}
               value={name}
               onChangeText={setName}
@@ -86,10 +87,10 @@ export default function ProfileSetupScreen() {
               onSubmitEditing={() => { void handleComplete(); }}
             />
             <View style={styles.avatarPreview}>
-              <Avatar name={name || 'あなた'} emoji={avatarEmoji} size="lg" />
+              <Avatar name={name || t('common.you')} emoji={avatarEmoji} size="lg" />
               <View style={styles.avatarPreviewCopy}>
-                <Text style={styles.avatarTitle}>アイコンを選ぶ</Text>
-                <Text style={styles.avatarHint}>ランキングや活動で共通して表示されます</Text>
+                <Text style={styles.avatarTitle}>{t('auth.chooseIcon')}</Text>
+                <Text style={styles.avatarHint}>{t('auth.iconExplanation')}</Text>
               </View>
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRow}>
@@ -103,7 +104,7 @@ export default function ProfileSetupScreen() {
                     accessibilityRole="tab"
                     accessibilityState={{ selected }}
                   >
-                    <Text style={[styles.categoryText, selected && styles.categoryTextSelected]}>{item.label}</Text>
+                    <Text style={[styles.categoryText, selected && styles.categoryTextSelected]}>{t(`avatarCategories.${item.id}`)}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -118,7 +119,7 @@ export default function ProfileSetupScreen() {
                     onPress={() => setAvatarEmoji(emoji)}
                     accessibilityRole="radio"
                     accessibilityState={{ selected }}
-                    accessibilityLabel={`アイコン ${emoji}`}
+                    accessibilityLabel={t('auth.iconA11y', { emoji })}
                   >
                     <Text style={styles.emoji}>{emoji}</Text>
                   </TouchableOpacity>
@@ -126,23 +127,23 @@ export default function ProfileSetupScreen() {
               })}
             </View>
             <Button
-              label="このニックネームではじめる"
+              label={t('auth.startWithNickname')}
               onPress={() => { void handleComplete(); }}
               loading={isLoading}
             />
             <Button
-              label="ログアウトして戻る"
+              label={t('auth.logoutAndBack')}
               onPress={() => { void handleCancel(); }}
               variant="ghost"
               disabled={isLoading}
             />
             <View style={styles.legalRow}>
               <TouchableOpacity onPress={() => router.push('/legal/terms')} accessibilityRole="link">
-                <Text style={styles.legalText}>利用規約</Text>
+                <Text style={styles.legalText}>{t('common.terms')}</Text>
               </TouchableOpacity>
               <Text style={styles.legalDivider}>・</Text>
               <TouchableOpacity onPress={() => router.push('/legal/privacy')} accessibilityRole="link">
-                <Text style={styles.legalText}>プライバシーポリシー</Text>
+                <Text style={styles.legalText}>{t('common.privacy')}</Text>
               </TouchableOpacity>
             </View>
           </View>

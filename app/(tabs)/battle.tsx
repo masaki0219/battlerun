@@ -42,11 +42,14 @@ import {
 import { Colors, Typography, Spacing, BorderRadius, Shadow, teamColorMap } from '../../design_tokens';
 import type { Battle, CategoryStats, RunningPresence } from '../../types';
 import type { ReportTarget } from '../../lib/moderation';
+import { useTranslation } from '../../lib/i18n';
+import { userFacingError } from '../../lib/userError';
 
 // ────────────────────────────────────────────────────────────────
 // メイン画面（state・購読・handler を集約。表示は components/battle/* に委譲）
 // ────────────────────────────────────────────────────────────────
 export default function BattleScreen() {
+  const { language, t } = useTranslation();
   const { user } = useAuthStore();
   const unreadNotifications = useUnreadNotifications();
   const {
@@ -76,7 +79,7 @@ export default function BattleScreen() {
   // チーム選択モーダル
   const [categoryModalBattle, setCategoryModalBattle] = useState<Battle | null>(null);
   const [safetyTarget, setSafetyTarget] = useState<ReportTarget | null>(null);
-  const [safetyDisplayName, setSafetyDisplayName] = useState('このユーザー');
+  const [safetyDisplayName, setSafetyDisplayName] = useState('');
   const { blockedUserIds } = useBlockedUsers(user?.id);
 
   // 閲覧中チャレンジはユーザーごとに保存する。別ユーザーへの選択状態の引き継ぎを防ぐ。
@@ -109,8 +112,8 @@ export default function BattleScreen() {
 
   // 直近アクティビティ（週間バー・ストリーク用）※read-only、useRecentActivities のみ
   const { activities: recentActivities } = useRecentActivities(50);
-  const rollingBuckets = rollingWeekBuckets(recentActivities);
-  const calendarWeekBuckets = weeklyBuckets(recentActivities);
+  const rollingBuckets = rollingWeekBuckets(recentActivities, new Date(), language);
+  const calendarWeekBuckets = weeklyBuckets(recentActivities, new Date(), language);
   const streak = streakDays(recentActivities);
 
   function toggleExpanded(id: string) {
@@ -202,7 +205,15 @@ export default function BattleScreen() {
 
   // 「他のチャレンジ」セクションには、上の切替UIにある参加中チャレンジを再掲しない
   const activeBattleIdSet = new Set(activeBattles.map((b) => b.id));
-  const otherPublicBattles = publicBattles.filter((b) => !activeBattleIdSet.has(b.id));
+  const activePublicBattles = publicBattles.filter((battle) => (
+    battle.status === 'active'
+    && new Date(battle.startAt).getTime() <= now
+    && now <= new Date(battle.endAt).getTime()
+  ));
+  const upcomingPublicBattles = publicBattles.filter((battle) => (
+    battle.status === 'upcoming' || new Date(battle.startAt).getTime() > now
+  ));
+  const otherPublicBattles = activePublicBattles.filter((b) => !activeBattleIdSet.has(b.id));
   const displayedMembership = displayedBattle
     ? myMemberships.find((m) => m.battleId === displayedBattle.id)
     : null;
@@ -232,7 +243,7 @@ export default function BattleScreen() {
     try {
       await declareRun(displayedBattle.id, user.id, displayedCategoryId, plannedAt, note);
     } catch (error) {
-      Alert.alert('宣言できませんでした', error instanceof Error ? error.message : '通信状態を確認して、もう一度お試しください。');
+      Alert.alert(t('battle.declareFailed'), userFacingError(error, t('connection.tryAgain')));
       throw error;
     }
   }
@@ -242,7 +253,7 @@ export default function BattleScreen() {
     try {
       await updateDeclaration(displayedBattle.id, ownDeclaration, plannedAt, note);
     } catch (error) {
-      Alert.alert('宣言を変更できませんでした', error instanceof Error ? error.message : '通信状態を確認して、もう一度お試しください。');
+      Alert.alert(t('battle.declarationUpdateFailed'), userFacingError(error, t('connection.tryAgain')));
       throw error;
     }
   }
@@ -252,7 +263,7 @@ export default function BattleScreen() {
     try {
       await cancelDeclaration(displayedBattle.id, ownDeclaration.id);
     } catch (error) {
-      Alert.alert('宣言を取り消せませんでした', error instanceof Error ? error.message : '通信状態を確認して、もう一度お試しください。');
+      Alert.alert(t('battle.declarationCancelFailed'), userFacingError(error, t('connection.tryAgain')));
       throw error;
     }
   }
@@ -262,16 +273,16 @@ export default function BattleScreen() {
     try {
       await cheerDeclaration(displayedBattle.id, declarationId, user.id);
     } catch {
-      Alert.alert('応援を送れませんでした', '通信状態を確認して、もう一度お試しください。');
+      Alert.alert(t('battle.cheerSendFailed'), t('connection.tryAgain'));
     }
   }
 
   async function handleCheerPresence(presence: RunningPresence) {
     try {
       const created = await cheerPresence(presence);
-      if (!created) Alert.alert('応援できませんでした', 'このランへの応援は送信済みか、ランが終了しています。');
+      if (!created) Alert.alert(t('battle.cheerFailed'), t('battle.cheerAlreadySent'));
     } catch {
-      Alert.alert('応援を送れませんでした', '通信状態を確認して、もう一度お試しください。');
+      Alert.alert(t('battle.cheerSendFailed'), t('connection.tryAgain'));
     }
   }
 
@@ -305,15 +316,15 @@ export default function BattleScreen() {
       void scheduleBattleEnd1hNotification(battle);
       setCategoryModalBattle(null);
       Alert.alert(
-        '参加完了',
-        `「${battle.categories.find((c) => c.id === categoryId)?.label}」として参加しました。最初のランでチームに貢献しよう`,
+        t('battle.joinComplete'),
+        t('battle.joinedAs', { team: battle.categories.find((c) => c.id === categoryId)?.label ?? '' }),
         [
-          { text: 'あとで', style: 'cancel' },
-          { text: 'ランを始める', onPress: () => router.push('/(tabs)/record' as any) },
+          { text: t('battle.later'), style: 'cancel' },
+          { text: t('battle.startRun'), onPress: () => router.push('/(tabs)/record' as any) },
         ],
       );
     } catch (e: any) {
-      Alert.alert('エラー', e.message ?? '参加に失敗しました');
+      Alert.alert(t('common.error'), userFacingError(e, t('battle.joinFailed')));
     } finally {
       setJoiningBattleId(null);
     }
@@ -336,7 +347,7 @@ export default function BattleScreen() {
         onPress={() => router.push(`/battle/${battle.id}` as any)}
         onPressJoin={() => {
           if (activeBattles.length >= 2) {
-            Alert.alert('参加上限です', '同時に参加できるチャレンジは2件までです。');
+            Alert.alert(t('battle.participationLimitTitle'), t('battle.participationLimitBody'));
             return;
           }
           setCategoryModalBattle(battle);
@@ -346,17 +357,30 @@ export default function BattleScreen() {
   };
   const publicCard = (battle: Battle) => renderPublicCard(battle);
 
+  function renderUpcomingChallenges() {
+    if (upcomingPublicBattles.length === 0) return null;
+    return (
+      <View style={styles.upcomingSection}>
+        <View>
+          <Text style={styles.sectionTitle}>{t('battle.upcomingChallenges')}</Text>
+          <Text style={styles.choiceHint}>{t('battle.upcomingHint')}</Text>
+        </View>
+        {upcomingPublicBattles.map(publicCard)}
+      </View>
+    );
+  }
+
   function renderWeeklyCard() {
     const rollingTotalKm = rollingBuckets.reduce((sum, day) => sum + day.km, 0);
     return (
       <View>
         <View style={styles.sectionHead}>
-          <Text style={styles.sectionTitle}>直近7日</Text>
+          <Text style={styles.sectionTitle}>{t('battle.lastSevenDays')}</Text>
         </View>
         <Card style={styles.card}>
           <View style={styles.weekHead}>
             <View>
-              <Text style={styles.weekLabel}>合計距離</Text>
+              <Text style={styles.weekLabel}>{t('battle.totalDistance')}</Text>
               <View style={styles.weekValueRow}>
                 <Text style={styles.weekValue}>{rollingTotalKm.toFixed(1)}</Text>
                 <Text style={styles.weekUnit}>km</Text>
@@ -365,7 +389,7 @@ export default function BattleScreen() {
           </View>
 
           <View style={styles.weekChart}>
-            <WeeklyBarChart days={rollingBuckets} height={70} showTotal={false} periodLabel="直近7日" />
+            <WeeklyBarChart days={rollingBuckets} height={70} showTotal={false} periodLabel={t('battle.lastSevenDays')} />
           </View>
 
           {user?.weeklyGoal && (
@@ -382,10 +406,10 @@ export default function BattleScreen() {
 
   function renderRunNowButton() {
     const label = activeBattles.length === 1
-      ? `今回の走行距離は「${displayedBattle?.title}」に加算されます`
+      ? t('battle.runAddedToOne', { title: displayedBattle?.title ?? '' })
       : activeBattles.length > 1
-        ? `今回の走行距離は参加中の${activeBattles.length}件のチャレンジに加算されます`
-        : 'チャレンジに参加すると今回の距離が加算されます';
+        ? t('battle.runAddedToMany', { count: activeBattles.length })
+        : t('battle.runAddedAfterJoin');
     return (
       <View style={styles.runNowSection}>
         <TouchableOpacity
@@ -394,7 +418,7 @@ export default function BattleScreen() {
           activeOpacity={0.85}
         >
           <Ionicons name="walk" size={21} color={Colors.textOnAccent} />
-          <Text style={styles.runNowLabel}>今すぐ走る</Text>
+          <Text style={styles.runNowLabel}>{t('battle.runNow')}</Text>
         </TouchableOpacity>
         <Text style={styles.runNowHint}>{label}</Text>
       </View>
@@ -451,16 +475,16 @@ export default function BattleScreen() {
               <Ionicons name="shield-checkmark-outline" size={20} color={Colors.primaryDark} />
             </View>
             <View style={styles.declarationPrivacyCopy}>
-              <Text style={styles.declarationPrivacyTitle}>ラン宣言は公開OFFです</Text>
-              <Text style={styles.declarationPrivacyText}>同じチームだけに予定時刻を共有する場合は、プロフィールで明示的にONにしてください。</Text>
+              <Text style={styles.declarationPrivacyTitle}>{t('battle.declarationPrivateTitle')}</Text>
+              <Text style={styles.declarationPrivacyText}>{t('battle.declarationPrivateBody')}</Text>
             </View>
             <TouchableOpacity
               style={styles.declarationPrivacyButton}
               onPress={() => router.push('/(tabs)/profile' as any)}
               accessibilityRole="button"
-              accessibilityLabel="プロフィールでラン宣言の公開設定を開く"
+              accessibilityLabel={t('battle.declarationSettingsA11y')}
             >
-              <Text style={styles.declarationPrivacyButtonText}>設定</Text>
+              <Text style={styles.declarationPrivacyButtonText}>{t('profile.settings')}</Text>
             </TouchableOpacity>
           </Card>
         )}
@@ -478,7 +502,7 @@ export default function BattleScreen() {
         {/* チーム内ランキング（自分の陣営の中での順位） */}
         {displayedBattle && (teamRanking.top.length > 0 || teamRanking.error) && (
           <View>
-            <Text style={styles.sectionTitle}>チーム内ランキング</Text>
+            <Text style={styles.sectionTitle}>{t('battle.teamRanking')}</Text>
             <TeamRankingCard
               ranking={teamRanking}
               contributions={processContributions}
@@ -505,38 +529,40 @@ export default function BattleScreen() {
 
         {/* 友達チャレンジの作成・招待・一覧はフレンドタブへ集約する。 */}
         <View style={styles.otherSection}>
-          <Text style={styles.sectionTitle}>他のチャレンジ</Text>
-          <Text style={styles.choiceHint}>公開チャレンジから最大2件まで参加できます</Text>
+          <Text style={styles.sectionTitle}>{t('battle.otherChallenges')}</Text>
+          <Text style={styles.choiceHint}>{t('battle.publicLimitHint')}</Text>
         </View>
 
         {otherPublicBattles.length === 0
           ? <EmptyState
               icon="trophy-outline"
-              title="ほかに参加できる公開チャレンジはありません"
-              hint="招待コードでの参加はフレンドタブから行えます"
+              title={t('battle.noOtherPublic')}
+              hint={t('battle.inviteFromFriendsHint')}
             />
           : otherPublicBattles.map(publicCard)}
+
+        {renderUpcomingChallenges()}
       </ScrollView>
     );
   }
 
   // ── State B: 未参加レイアウト ──────────────────────────────
   function renderNotParticipatingView() {
-    const choices = publicBattles.slice(0, 3);
-    const remainingChoices = publicBattles.slice(3);
+    const choices = activePublicBattles.slice(0, 3);
+    const remainingChoices = activePublicBattles.slice(3);
     return (
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         {choices.length === 0 ? (
           <View style={styles.emptyStateCard}>
             <Ionicons name="trophy-outline" size={40} color={Colors.textTertiary} />
-            <Text style={styles.emptyStateTitle}>参加中のチャレンジはありません</Text>
-            <Text style={styles.emptyStateHint}>開催中の公開チャレンジが追加されるまでお待ちください</Text>
+            <Text style={styles.emptyStateTitle}>{t('battle.noActive')}</Text>
+            <Text style={styles.emptyStateHint}>{t('battle.waitForPublic')}</Text>
           </View>
         ) : (
           <>
             <View>
-              <Text style={styles.sectionTitle}>参加するチャレンジを選ぶ</Text>
-              <Text style={styles.choiceHint}>開催中のチャレンジから最大2件まで参加できます</Text>
+              <Text style={styles.sectionTitle}>{t('battle.chooseChallenge')}</Text>
+              <Text style={styles.choiceHint}>{t('battle.activeLimitHint')}</Text>
             </View>
             {choices.map((battle) => renderPublicCard(battle, true))}
           </>
@@ -544,19 +570,21 @@ export default function BattleScreen() {
 
         {remainingChoices.length > 0 && (
           <>
-            <Text style={styles.sectionTitle}>その他の公開チャレンジ</Text>
+            <Text style={styles.sectionTitle}>{t('battle.otherPublic')}</Text>
             {remainingChoices.map((battle) => renderPublicCard(battle, true))}
           </>
         )}
 
+        {renderUpcomingChallenges()}
+
         <Button
-          label="チャレンジに参加せず、まず走る"
+          label={t('battle.runWithoutJoining')}
           onPress={() => router.push('/(tabs)/record' as any)}
           variant="secondary"
         />
 
         <Button
-          label="招待コードで参加する"
+          label={t('battle.joinWithCode')}
           onPress={() => router.push('/(tabs)/friends' as any)}
           variant="secondary"
         />
@@ -570,7 +598,7 @@ export default function BattleScreen() {
       <View style={styles.header}>
         <View style={styles.headerCopy}>
           <Text style={styles.headerEyebrow}>ZELIO</Text>
-          <Text style={styles.headerTitle} maxFontSizeMultiplier={1.5}>チャレンジ</Text>
+          <Text style={styles.headerTitle} maxFontSizeMultiplier={1.5}>{t('battle.title')}</Text>
         </View>
         <TouchableOpacity
           onPress={() => router.push('/notifications' as any)}
@@ -578,7 +606,9 @@ export default function BattleScreen() {
           style={styles.notifBtn}
           activeOpacity={0.8}
           accessibilityRole="button"
-          accessibilityLabel={unreadNotifications > 0 ? `通知、未読${unreadNotifications}件` : '通知'}
+          accessibilityLabel={unreadNotifications > 0
+            ? t('common.unreadNotifications', { count: unreadNotifications })
+            : t('common.notifications')}
         >
           <Ionicons name="notifications-outline" size={20} color={Colors.textPrimary} />
           {unreadNotifications > 0 && (
@@ -594,9 +624,9 @@ export default function BattleScreen() {
       {loadFailed && (
         <View style={styles.loadErrorBanner}>
           <Ionicons name="cloud-offline-outline" size={16} color={Colors.error} />
-          <Text style={styles.loadErrorText}>チャレンジを読み込めませんでした</Text>
+          <Text style={styles.loadErrorText}>{t('battle.loadFailed')}</Text>
           <TouchableOpacity onPress={() => setReloadKey((key) => key + 1)} accessibilityRole="button">
-            <Text style={styles.loadErrorRetry}>再試行</Text>
+            <Text style={styles.loadErrorRetry}>{t('common.retry')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -604,13 +634,13 @@ export default function BattleScreen() {
       {!loadFailed && categoryStatsFailed && (
         <View style={styles.loadErrorBanner} accessibilityRole="alert">
           <Ionicons name="cloud-offline-outline" size={16} color={Colors.error} />
-          <Text style={styles.loadErrorText}>チーム成績を読み込めませんでした</Text>
+          <Text style={styles.loadErrorText}>{t('battle.statsLoadFailed')}</Text>
           <TouchableOpacity
             onPress={() => { publicStats.retry(); privateStats.retry(); }}
             accessibilityRole="button"
-            accessibilityLabel="チーム成績を再読み込み"
+            accessibilityLabel={t('battle.retryStatsA11y')}
           >
-            <Text style={styles.loadErrorRetry}>再試行</Text>
+            <Text style={styles.loadErrorRetry}>{t('common.retry')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -637,7 +667,7 @@ export default function BattleScreen() {
           visible={safetyTarget !== null}
           currentUserId={user.id}
           target={safetyTarget}
-          targetDisplayName={safetyDisplayName}
+          targetDisplayName={safetyDisplayName || t('battle.fallbackUser')}
           onClose={() => setSafetyTarget(null)}
         />
       )}
@@ -785,6 +815,7 @@ const styles = StyleSheet.create({
 
   // 他のバトル
   otherSection: { gap: 0 },
+  upcomingSection: { gap: Spacing.md },
 
   // Empty state (State B)
   emptyStateCard: {

@@ -11,10 +11,12 @@ import { initRevenueCat, checkProEntitlement } from '../lib/revenuecat';
 import { registerPushToken } from '../lib/notifications';
 import { ONBOARDING_KEY } from './onboarding';
 import { BorderRadius, Colors, Spacing, Typography } from '../design_tokens';
+import { startAppLanguageListener, useTranslation } from '../lib/i18n';
 
 const SEEN_RESULTS_KEY = 'battlerun_seen_results';
 
 export default function RootLayout() {
+  const { language, t } = useTranslation();
   const {
     user,
     isLoading,
@@ -30,6 +32,13 @@ export default function RootLayout() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [resultCheckedUserId, setResultCheckedUserId] = useState<string | null>(null);
   const [authRetryKey, setAuthRetryKey] = useState(0);
+
+  useEffect(() => startAppLanguageListener(), []);
+
+  useEffect(() => {
+    if (!user || user.uiLanguage === language) return;
+    void useAuthStore.getState().syncUiLanguage(language).catch(() => {});
+  }, [user?.id, user?.uiLanguage, language]);
 
   const retryProfileLoad = () => {
     useAuthStore.setState({ isLoading: true, profileError: null });
@@ -145,15 +154,15 @@ export default function RootLayout() {
     return (
       <SafeAreaView style={styles.recoveryScreen}>
         <StatusBar style="dark" />
-        <Text style={styles.recoveryTitle}>接続できませんでした</Text>
+        <Text style={styles.recoveryTitle}>{t('connection.title')}</Text>
         <Text style={styles.recoveryBody}>{profileError}</Text>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="プロフィール情報の読み込みを再試行"
+          accessibilityLabel={t('connection.retryProfileA11y')}
           style={({ pressed }) => [styles.retryButton, pressed && styles.retryButtonPressed]}
           onPress={retryProfileLoad}
         >
-          <Text style={styles.retryButtonText}>再試行</Text>
+          <Text style={styles.retryButtonText}>{t('common.retry')}</Text>
         </Pressable>
       </SafeAreaView>
     );
@@ -188,11 +197,11 @@ export default function RootLayout() {
           <Text style={styles.connectionBannerText}>{profileError}</Text>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="プロフィール情報の読み込みを再試行"
+            accessibilityLabel={t('connection.retryProfileA11y')}
             style={({ pressed }) => [styles.bannerRetry, pressed && styles.bannerRetryPressed]}
             onPress={retryProfileLoad}
           >
-            <Text style={styles.bannerRetryText}>再試行</Text>
+            <Text style={styles.bannerRetryText}>{t('common.retry')}</Text>
           </Pressable>
         </View>
       )}

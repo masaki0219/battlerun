@@ -23,6 +23,9 @@ import { signOutGoogleSession } from '../lib/socialAuth';
 import { DISPLAY_NAME_MAX_LENGTH, validateDisplayName } from '../lib/validation/displayName';
 import type { AuthStore, PersonalRecords, User, UserTitle } from '../types';
 import { isAvatarEmoji } from '../lib/avatarEmojis';
+import { getAppLanguage, translate } from '../lib/i18n';
+import { isMarket, resolveUserMarket } from '../lib/market';
+import { inferMarket } from '../lib/deviceLocale';
 
 let emailSignUpInProgress = false;
 
@@ -51,12 +54,12 @@ function profileLoadErrorMessage(error: unknown): string {
     : null;
   const code = typeof rawCode === 'string' ? rawCode.replace(/^firestore\//, '') : '';
   if (code === 'permission-denied') {
-    return 'プロフィール情報へのアクセス権限を確認できませんでした。再試行しても解決しない場合はヘルプをご確認ください。';
+    return translate('connection.permissionDenied');
   }
   if (code === 'unavailable' || code === 'deadline-exceeded' || code === 'network-request-failed') {
-    return 'オフラインまたは通信がタイムアウトしました。接続を確認して再試行してください。';
+    return translate('connection.offline');
   }
-  return 'プロフィール情報を読み込めませんでした。通信状態を確認して再試行してください。';
+  return translate('connection.profileLoadFailed');
 }
 
 export const useAuthStore = create<AuthStore>((set) => ({
@@ -92,6 +95,8 @@ export const useAuthStore = create<AuthStore>((set) => ({
       batch.set(doc(db, 'users', result.user.uid), {
         name: normalizedName,
         plan: 'free',
+        market: inferMarket(),
+        uiLanguage: getAppLanguage(),
         runningPresenceVisible: false,
         runDeclarationVisible: false,
         createdAt: new Date(),
@@ -134,9 +139,9 @@ export const useAuthStore = create<AuthStore>((set) => ({
   completeProfileSetup: async (name, avatarEmoji) => {
     const nameCheck = validateDisplayName(name);
     if (!nameCheck.ok) throw new Error(nameCheck.reason);
-    if (!isAvatarEmoji(avatarEmoji)) throw new Error('アイコンを選んでください');
+    if (!isAvatarEmoji(avatarEmoji)) throw new Error(translate('auth.selectIcon'));
     const currentUser = auth.currentUser;
-    if (!currentUser) throw new Error('ログインが必要です');
+    if (!currentUser) throw new Error(translate('auth.loginRequired'));
 
     set({ isLoading: true, profileError: null });
     try {
@@ -146,6 +151,8 @@ export const useAuthStore = create<AuthStore>((set) => ({
         name: normalizedName,
         avatarEmoji,
         plan: 'free',
+        market: inferMarket(),
+        uiLanguage: getAppLanguage(),
         runningPresenceVisible: false,
         runDeclarationVisible: false,
         createdAt: serverTimestamp(),
@@ -172,19 +179,19 @@ export const useAuthStore = create<AuthStore>((set) => ({
 
   setWeeklyGoal: async (goal) => {
     const user = useAuthStore.getState().user;
-    if (!user) throw new Error('ログインが必要です');
+    if (!user) throw new Error(translate('auth.loginRequired'));
     await updateDoc(doc(db, 'users', user.id), { weeklyGoal: goal });
   },
 
   setRunningPresenceVisible: async (visible) => {
     const user = useAuthStore.getState().user;
-    if (!user) throw new Error('ログインが必要です');
+    if (!user) throw new Error(translate('auth.loginRequired'));
     await updateDoc(doc(db, 'users', user.id), { runningPresenceVisible: visible });
   },
 
   setRunDeclarationVisible: async (visible) => {
     const user = useAuthStore.getState().user;
-    if (!user) throw new Error('ログインが必要です');
+    if (!user) throw new Error(translate('auth.loginRequired'));
     const userRef = doc(db, 'users', user.id);
     if (visible) {
       await updateDoc(userRef, { runDeclarationVisible: true });
@@ -198,12 +205,30 @@ export const useAuthStore = create<AuthStore>((set) => ({
       where('visible', '==', true),
     ));
     if (visibleDeclarations.size > 450) {
-      throw new Error('公開中の宣言が多いため設定を更新できませんでした。');
+      throw new Error(translate('battle.tooManyVisiblePlans'));
     }
     const batch = writeBatch(db);
     visibleDeclarations.docs.forEach((snapshot) => batch.update(snapshot.ref, { visible: false }));
     batch.update(userRef, { runDeclarationVisible: false });
     await batch.commit();
+  },
+
+  setMarket: async (market) => {
+    const user = useAuthStore.getState().user;
+    if (!user) throw new Error(translate('auth.loginRequired'));
+    await updateDoc(doc(db, 'users', user.id), { market });
+    useAuthStore.setState((state) => ({
+      user: state.user?.id === user.id ? { ...state.user, market } : state.user,
+    }));
+  },
+
+  syncUiLanguage: async (language) => {
+    const user = useAuthStore.getState().user;
+    if (!user || user.uiLanguage === language) return;
+    await updateDoc(doc(db, 'users', user.id), { uiLanguage: language });
+    useAuthStore.setState((state) => ({
+      user: state.user?.id === user.id ? { ...state.user, uiLanguage: language } : state.user,
+    }));
   },
 }));
 
@@ -268,9 +293,13 @@ export function initAuthListener(): () => void {
         // ルール検証に引っかかる既存ドキュメントでユーザーを締め出さないよう、失敗しても続行する。
         try {
           const profileBatch = writeBatch(db);
-          profileBatch.update(userRef, { avatarUrl: deleteField() });
+          profileBatch.update(userRef, {
+            avatarUrl: deleteField(),
+            ...(!isMarket(current['market']) ? { market: inferMarket() } : {}),
+            ...(current['uiLanguage'] !== getAppLanguage() ? { uiLanguage: getAppLanguage() } : {}),
+          });
           profileBatch.set(doc(db, 'publicProfiles', firebaseUser.uid), {
-            name: (current['name'] as string | undefined) ?? 'ユーザー',
+            name: (current['name'] as string | undefined) ?? translate('common.user'),
             avatarEmoji: (current['avatarEmoji'] as string | null | undefined) ?? null,
             avatarUrl: deleteField(),
             updatedAt: serverTimestamp(),
@@ -346,6 +375,10 @@ function applyUserSnapshot(firebaseUid: string, data: Record<string, any>): void
     avatarEmoji: typeof data['avatarEmoji'] === 'string' ? data['avatarEmoji'] : undefined,
     plan: data['plan'] as 'free' | 'pro',
     role: data['role'] as 'admin' | undefined,
+    market: resolveUserMarket(data['market'], inferMarket()),
+    uiLanguage: data['uiLanguage'] === 'ja' || data['uiLanguage'] === 'en'
+      ? data['uiLanguage']
+      : getAppLanguage(),
     createdAt: data['createdAt']?.toDate?.()?.toISOString() ?? '',
     titles: (data['titles'] as UserTitle[] | undefined) ?? [],
     battleIds: (data['battleIds'] as string[] | undefined) ?? [],

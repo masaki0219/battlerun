@@ -1,0 +1,6 @@
+{
+  "CFBundleDisplayName": "ZELIO",
+  "NSLocationWhenInUseUsageDescription": "ZELIO uses your location to measure running and walking distance and add it to your active challenges.",
+  "NSLocationAlwaysAndWhenInUseUsageDescription": "ZELIO uses your location to keep measuring distance while a recording continues in the background.",
+  "NSMotionUsageDescription": "ZELIO uses motion data to count steps and estimate distance in step mode."
+}

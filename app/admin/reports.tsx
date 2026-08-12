@@ -8,6 +8,7 @@ import { db } from '../../lib/firebase';
 import { REPORT_REASONS, type ReportReason, type ReportStatus, type ReportTargetType } from '../../lib/moderation';
 import { useAuthStore } from '../../stores/authStore';
 import { ActionColors, BorderRadius, Colors, Shadow, Spacing, Typography } from '../../design_tokens';
+import { useTranslation } from '../../lib/i18n';
 
 interface ModerationReport {
   id: string;
@@ -24,10 +25,10 @@ interface ModerationReport {
 }
 
 const STATUS_LABEL: Record<ReportStatus, string> = {
-  pending: '未確認', reviewing: '確認中', resolved: '対応済み', dismissed: '違反なし',
+  pending: 'admin.status.pending', reviewing: 'admin.status.reviewing', resolved: 'admin.status.resolved', dismissed: 'admin.status.dismissed',
 };
 const TARGET_LABEL: Record<ReportTargetType, string> = {
-  user: 'ユーザー', battle: 'チャレンジ', declaration: '宣言', presence: '走行中表示', activity: '公開記録',
+  user: 'admin.target.user', battle: 'admin.target.battle', declaration: 'admin.target.declaration', presence: 'admin.target.presence', activity: 'admin.target.activity',
 };
 
 function timestampIso(value: unknown): string {
@@ -36,6 +37,7 @@ function timestampIso(value: unknown): string {
 }
 
 export default function AdminReportsScreen() {
+  const { language, t } = useTranslation();
   const { user } = useAuthStore();
   const [reports, setReports] = useState<ModerationReport[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,7 +45,7 @@ export default function AdminReportsScreen() {
 
   useEffect(() => {
     if (user && user.role !== 'admin') {
-      Alert.alert('アクセス権限がありません');
+      Alert.alert(t('admin.noAccess'));
       router.replace('/(tabs)');
       return;
     }
@@ -71,7 +73,7 @@ export default function AdminReportsScreen() {
         };
       }));
     } catch {
-      Alert.alert('取得できませんでした', '通信状態または管理者権限を確認してください。');
+      Alert.alert(t('admin.fetchReportsFailed'), t('admin.fetchReportsBody'));
     } finally {
       setLoading(false);
     }
@@ -89,7 +91,7 @@ export default function AdminReportsScreen() {
       });
       setReports((current) => current.map((item) => item.id === reportId ? { ...item, status } : item));
     } catch {
-      Alert.alert('更新できませんでした', '通信状態を確認して、もう一度お試しください。');
+      Alert.alert(t('admin.updateFailed'), t('safety.retry'));
     } finally {
       setUpdatingId(null);
     }
@@ -100,8 +102,8 @@ export default function AdminReportsScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} accessibilityRole="button"><Ionicons name="chevron-back" size={22} color={Colors.textSecondary} /></TouchableOpacity>
-        <Text style={styles.headerTitle}>通報キュー</Text>
-        <TouchableOpacity onPress={() => void loadReports()} accessibilityRole="button" accessibilityLabel="再読み込み"><Ionicons name="refresh" size={20} color={Colors.primary} /></TouchableOpacity>
+        <Text style={styles.headerTitle}>{t('admin.reportsTitle')}</Text>
+        <TouchableOpacity onPress={() => void loadReports()} accessibilityRole="button" accessibilityLabel={t('admin.reload')}><Ionicons name="refresh" size={20} color={Colors.primary} /></TouchableOpacity>
       </View>
       {loading ? (
         <ActivityIndicator color={Colors.primary} style={styles.loader} />
@@ -109,33 +111,34 @@ export default function AdminReportsScreen() {
         <ScrollView contentContainerStyle={styles.scroll}>
           <View style={styles.summary}>
             <Text style={styles.summaryValue}>{openCount}</Text>
-            <View><Text style={styles.summaryTitle}>要対応</Text><Text style={styles.summaryDetail}>未確認・確認中の通報</Text></View>
+            <View><Text style={styles.summaryTitle}>{t('admin.needsAction')}</Text><Text style={styles.summaryDetail}>{t('admin.openReports')}</Text></View>
           </View>
           {reports.length === 0 ? (
-            <Text style={styles.empty}>通報はありません</Text>
+            <Text style={styles.empty}>{t('admin.noReports')}</Text>
           ) : reports.map((report) => {
-            const reasonLabel = REPORT_REASONS.find((item) => item.value === report.reason)?.label ?? report.reason;
+            const reasonKey = REPORT_REASONS.find((item) => item.value === report.reason)?.translationKey;
+            const reasonLabel = reasonKey ? t(reasonKey) : report.reason;
             const isUpdating = updatingId === report.id;
             return (
               <View key={report.id} style={styles.card}>
                 <View style={styles.cardHead}>
                   <View style={styles.badges}>
-                    <Text style={styles.typeBadge}>{TARGET_LABEL[report.targetType]}</Text>
-                    <Text style={[styles.statusBadge, report.status === 'pending' && styles.pendingBadge]}>{STATUS_LABEL[report.status]}</Text>
+                    <Text style={styles.typeBadge}>{t(TARGET_LABEL[report.targetType])}</Text>
+                    <Text style={[styles.statusBadge, report.status === 'pending' && styles.pendingBadge]}>{t(STATUS_LABEL[report.status])}</Text>
                   </View>
-                  <Text style={styles.date}>{report.createdAt ? new Date(report.createdAt).toLocaleString('ja-JP') : '送信直後'}</Text>
+                  <Text style={styles.date}>{report.createdAt ? new Date(report.createdAt).toLocaleString(language === 'ja' ? 'ja-JP' : 'en-US') : t('admin.sentNow')}</Text>
                 </View>
                 <Text style={styles.reason}>{reasonLabel}</Text>
                 {!!report.contentSnapshot && <Text style={styles.snapshot}>「{report.contentSnapshot}」</Text>}
                 {!!report.details && <Text style={styles.details}>{report.details}</Text>}
-                <Text style={styles.meta}>対象ID: {report.targetId}</Text>
-                {!!report.targetUid && <Text style={styles.meta}>対象UID: {report.targetUid}</Text>}
-                <Text style={styles.meta}>通報者UID: {report.reporterUid}</Text>
+                <Text style={styles.meta}>{t('admin.targetId', { id: report.targetId })}</Text>
+                {!!report.targetUid && <Text style={styles.meta}>{t('admin.targetUid', { id: report.targetUid })}</Text>}
+                <Text style={styles.meta}>{t('admin.reporterUid', { id: report.reporterUid })}</Text>
                 {isUpdating ? <ActivityIndicator color={Colors.primary} style={styles.updating} /> : (
                   <View style={styles.actions}>
-                    <TouchableOpacity style={styles.reviewButton} onPress={() => void setStatus(report.id, 'reviewing')}><Text style={styles.reviewText}>確認中</Text></TouchableOpacity>
-                    <TouchableOpacity style={styles.dismissButton} onPress={() => void setStatus(report.id, 'dismissed')}><Text style={styles.dismissText}>違反なし</Text></TouchableOpacity>
-                    <TouchableOpacity style={styles.resolveButton} onPress={() => void setStatus(report.id, 'resolved')}><Text style={styles.resolveText}>対応済み</Text></TouchableOpacity>
+                    <TouchableOpacity style={styles.reviewButton} onPress={() => void setStatus(report.id, 'reviewing')}><Text style={styles.reviewText}>{t('admin.status.reviewing')}</Text></TouchableOpacity>
+                    <TouchableOpacity style={styles.dismissButton} onPress={() => void setStatus(report.id, 'dismissed')}><Text style={styles.dismissText}>{t('admin.status.dismissed')}</Text></TouchableOpacity>
+                    <TouchableOpacity style={styles.resolveButton} onPress={() => void setStatus(report.id, 'resolved')}><Text style={styles.resolveText}>{t('admin.status.resolved')}</Text></TouchableOpacity>
                   </View>
                 )}
               </View>

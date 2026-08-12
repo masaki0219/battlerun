@@ -4,6 +4,7 @@ import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Colors, Typography, Spacing, BorderRadius, teamColorMap } from '../../design_tokens';
 import type { Battle } from '../../types';
+import { useTranslation } from '../../lib/i18n';
 
 interface Props {
   /** join_code=コード入力 / join_select=チーム選択 */
@@ -26,24 +27,25 @@ export function InviteCodeJoinView({
   view, inviteCode, onChangeInviteCode, searching, onSearch, onCancelCode,
   foundBattle, joining, onJoinCategory, onBackToCode,
 }: Props) {
+  const { t } = useTranslation();
   if (view === 'join_code') {
     return (
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <Card style={styles.card}>
-          <Text style={styles.formTitle}>招待コードで参加</Text>
-          <Text style={styles.inputLabel}>6桁の招待コード</Text>
+          <Text style={styles.formTitle}>{t('friends.joinWithInvite')}</Text>
+          <Text style={styles.inputLabel}>{t('friends.sixDigitCode')}</Text>
           <TextInput
             style={[styles.input, styles.codeInput]}
             value={inviteCode}
             onChangeText={(v) => onChangeInviteCode(v.toUpperCase())}
-            placeholder="例: A3F9KZ"
+            placeholder={t('friends.codePlaceholder')}
             placeholderTextColor={Colors.textTertiary}
             maxLength={6}
             autoCapitalize="characters"
           />
           <View style={styles.formActions}>
-            <Button label="キャンセル" onPress={onCancelCode} variant="ghost" style={styles.formBtn} />
-            <Button label="検索" onPress={onSearch} loading={searching} style={styles.formBtn} />
+            <Button label={t('common.cancel')} onPress={onCancelCode} variant="ghost" style={styles.formBtn} />
+            <Button label={t('friends.search')} onPress={onSearch} loading={searching} style={styles.formBtn} />
           </View>
         </Card>
       </KeyboardAvoidingView>
@@ -59,7 +61,7 @@ export function InviteCodeJoinView({
         <Text style={styles.battleMeta}>{foundBattle.description}</Text>
       ) : null}
 
-      <Text style={[styles.inputLabel, { marginBottom: Spacing.sm }]}>チームを選んで参加</Text>
+      <Text style={[styles.inputLabel, { marginBottom: Spacing.sm }]}>{t('friends.chooseTeamAndJoin')}</Text>
       <View style={styles.catSelectList}>
         {foundBattle.categories.map((cat) => (
           <Button
@@ -72,7 +74,7 @@ export function InviteCodeJoinView({
           />
         ))}
       </View>
-      <Button label="戻る" onPress={onBackToCode} variant="ghost" style={{ marginTop: Spacing.md }} />
+      <Button label={t('common.back')} onPress={onBackToCode} variant="ghost" style={{ marginTop: Spacing.md }} />
     </Card>
   );
 }

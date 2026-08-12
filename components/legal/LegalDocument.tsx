@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, Typography } from '../../design_tokens';
+import { useTranslation } from '../../lib/i18n';
 
 export interface LegalSection {
   heading: string;
@@ -17,10 +18,11 @@ export function LegalDocument({ title, updatedAt, sections, topContent }: {
   sections: LegalSection[];
   topContent?: React.ReactNode;
 }) {
+  const { t } = useTranslation();
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="戻る">
+        <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel={t('common.back')}>
           <Ionicons name="chevron-back" size={22} color={Colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{title}</Text>
@@ -29,7 +31,7 @@ export function LegalDocument({ title, updatedAt, sections, topContent }: {
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {topContent}
-        <Text style={styles.updated}>最終更新: {updatedAt}</Text>
+        <Text style={styles.updated}>{t('legalDocument.updated', { date: updatedAt })}</Text>
         {sections.map((section) => (
           <View key={section.heading} style={styles.section}>
             <Text style={styles.heading}>{section.heading}</Text>

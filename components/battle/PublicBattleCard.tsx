@@ -5,6 +5,7 @@ import { BattleRankRows } from './BattleRankRows';
 import { Colors, Typography, Spacing, BorderRadius } from '../../design_tokens';
 import { sortedStats, remainingLabel, statValue } from '../../utils/displayStats';
 import type { Battle, CategoryStats } from '../../types';
+import { useTranslation } from '../../lib/i18n';
 
 interface Props {
   battle: Battle;
@@ -25,7 +26,14 @@ export function PublicBattleCard({
   battle, stats, myCategoryId, joined, seasonTitle, expanded, prominentJoin = false,
   onToggleExpand, onPress, onPressJoin,
 }: Props) {
-  const remaining = remainingLabel(battle.endAt);
+  const { language, t } = useTranslation();
+  const now = new Date();
+  const startAtMs = new Date(battle.startAt).getTime();
+  const upcoming = battle.status === 'upcoming' || startAtMs > now.getTime();
+  const waitingForScheduler = upcoming && startAtMs <= now.getTime();
+  const remaining = waitingForScheduler
+    ? null
+    : remainingLabel(upcoming ? battle.startAt : battle.endAt, now, language);
   const sorted = sortedStats(stats, battle.rankingType);
   const mine = sorted.find((s) => s.categoryId === myCategoryId);
   const allZero = sorted.every((item) => statValue(item, battle.rankingType) <= 0);
@@ -35,10 +43,17 @@ export function PublicBattleCard({
   const participantCount = stats.reduce((sum, item) => sum + Math.max(0, item.participantCount), 0);
 
   const meta = [
-    remaining !== null ? `残り ${remaining}` : null,
-    `${participantCount}人参加`,
-    battle.rankingType === 'average' ? '1人あたりの平均で競う' : 'チーム合計で競う',
-    joined && myRank > 0 ? `${myRank}位 / ${sorted.length}チーム` : null,
+    waitingForScheduler
+      ? t('battle.startingSoon')
+      : remaining !== null
+        ? t(upcoming ? 'battle.startsIn' : 'battle.remaining', { value: remaining })
+        : null,
+    battle.termIndex != null && battle.termCount != null
+      ? t('battle.termLabel', { index: battle.termIndex, count: battle.termCount })
+      : null,
+    t('battle.participants', { count: participantCount }),
+    t(battle.rankingType === 'average' ? 'battle.averageCompetition' : 'battle.totalCompetition'),
+    joined && myRank > 0 ? t('common.rankOf', { rank: myRank, total: t('common.teams', { count: sorted.length }) }) : null,
     seasonTitle ?? null,
   ].filter(Boolean).join('　・　');
 
@@ -53,7 +68,11 @@ export function PublicBattleCard({
 
           {joined ? (
             <View style={styles.joinedChip}>
-              <Text style={styles.joinedChipText}>参加中</Text>
+              <Text style={styles.joinedChipText}>{t('battle.joined')}</Text>
+            </View>
+          ) : upcoming ? (
+            <View style={styles.upcomingChip}>
+              <Text style={styles.upcomingChipText}>{t('battle.upcoming')}</Text>
             </View>
           ) : battle.categories.length > 0 ? (
             <TouchableOpacity
@@ -62,7 +81,7 @@ export function PublicBattleCard({
               activeOpacity={0.7}
               hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
-              <Text style={[styles.joinBtnText, prominentJoin && styles.joinBtnTextProminent]}>参加する</Text>
+              <Text style={[styles.joinBtnText, prominentJoin && styles.joinBtnTextProminent]}>{t('battle.join')}</Text>
             </TouchableOpacity>
           ) : null}
         </View>
@@ -131,5 +150,16 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSize.xs,
     fontWeight: Typography.fontWeight.bold,
     color: Colors.primary,
+  },
+  upcomingChip: {
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceGray,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 7,
+  },
+  upcomingChipText: {
+    fontSize: Typography.fontSize.xs,
+    fontWeight: Typography.fontWeight.bold,
+    color: Colors.warningText,
   },
 });

@@ -1,5 +1,7 @@
 import { LEGAL_URLS } from '../lib/legal';
 import { formatRunDistanceKm } from './displayStats';
+import type { AppLanguage } from '../lib/language';
+import { translateIn } from '../lib/translate';
 
 export const ZELIO_DISCOVERY_URL = LEGAL_URLS.support;
 
@@ -9,6 +11,7 @@ export interface RunShareMessageInput {
   pace?: string | null;
   dateLabel?: string | null;
   impactLabel?: string | null;
+  language: AppLanguage;
 }
 
 export function formatShareDuration(seconds: number): string {
@@ -29,17 +32,18 @@ function usablePace(value: string | null | undefined): string | null {
 
 /** SNS共有とテキスト共有のどちらでも同じ訴求・発見URLを使う。 */
 export function buildRunShareMessage(input: RunShareMessageInput): string {
+  const { language } = input;
   const safeDistance = Number.isFinite(input.distanceKm) ? Math.max(0, input.distanceKm) : 0;
-  const title = input.dateLabel?.trim() || '今日';
+  const title = input.dateLabel?.trim() || translateIn(language, 'summary.shareToday');
   const pace = usablePace(input.pace);
-  const statParts = [`タイム ${formatShareDuration(input.durationSeconds)}`];
-  if (pace) statParts.push(`平均ペース ${pace}/km`);
+  const statParts = [translateIn(language, 'summary.shareTime', { duration: formatShareDuration(input.durationSeconds) })];
+  if (pace) statParts.push(translateIn(language, 'summary.sharePace', { pace }));
 
   const lines = [
-    `${title}のラン: ${formatRunDistanceKm(safeDistance)}km`,
-    statParts.join(' ・ '),
+    translateIn(language, 'summary.shareRunLine', { date: title, distance: formatRunDistanceKm(safeDistance) }),
+    statParts.join(translateIn(language, 'summary.separator')),
   ];
   if (input.impactLabel?.trim()) lines.push(input.impactLabel.trim());
-  lines.push('#ZELIO', '仲間と走ると、もっと続く。', ZELIO_DISCOVERY_URL);
+  lines.push('#ZELIO', translateIn(language, 'summary.shareMessageTagline'), ZELIO_DISCOVERY_URL);
   return lines.join('\n');
 }

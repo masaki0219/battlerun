@@ -1,7 +1,7 @@
 import React from 'react';
 import { Text, TextStyle } from 'react-native';
 import { Colors, TextStyles } from '../../design_tokens';
-import { isJapaneseLocale } from '../../lib/locale';
+import { useTranslation } from '../../lib/i18n';
 
 interface Props {
   children: string;
@@ -18,13 +18,14 @@ interface Props {
 export function MonoLabel({
   children, color = Colors.textTertiary, size = 10, style, maxFontSizeMultiplier = 1.6,
 }: Props) {
+  const { language } = useTranslation();
   return (
     <Text
       maxFontSizeMultiplier={maxFontSizeMultiplier}
       style={[
         TextStyles.tacLabel,
         { fontSize: size, letterSpacing: size * 0.15, color },
-        isJapaneseLocale && TextStyles.japaneseDecorLabel,
+        language === 'ja' && TextStyles.japaneseDecorLabel,
         style,
       ]}
     >

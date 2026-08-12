@@ -4,11 +4,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, Typography, BorderRadius } from '../../design_tokens';
 import { Button } from '../ui/Button';
 import { FEEDBACK_MESSAGE_MAX, submitFeedback } from '../../lib/feedback';
-
-const RATING_LABELS = ['不満', 'やや不満', 'ふつう', '満足', 'とても満足'];
+import { useTranslation } from '../../lib/i18n';
+import { userFacingError } from '../../lib/userError';
 
 // ヘルプページ最上部に埋め込む評価・ご要望フォーム。送信後は同じカード内でお礼表示に切り替わる
 export function FeedbackForm() {
+  const { language, t } = useTranslation();
+  const ratingLabels = [t('feedback.ratings.one'), t('feedback.ratings.two'), t('feedback.ratings.three'), t('feedback.ratings.four'), t('feedback.ratings.five')];
   const [rating, setRating] = useState(0);
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
@@ -18,10 +20,10 @@ export function FeedbackForm() {
     if (sending || rating < 1) return;
     setSending(true);
     try {
-      await submitFeedback({ rating, message });
+      await submitFeedback({ rating, message }, language);
       setSubmitted(true);
     } catch (e) {
-      Alert.alert('送信できませんでした', e instanceof Error ? e.message : '時間をおいて、もう一度お試しください。');
+      Alert.alert(t('feedback.failed'), userFacingError(e, t('feedback.retry')));
     } finally {
       setSending(false);
     }
@@ -32,17 +34,17 @@ export function FeedbackForm() {
       <View style={styles.card}>
         <View style={styles.thanksRow}>
           <Ionicons name="checkmark-circle" size={22} color={Colors.primary} />
-          <Text style={styles.thanksTitle}>ありがとうございました</Text>
+          <Text style={styles.thanksTitle}>{t('feedback.thanks')}</Text>
         </View>
-        <Text style={styles.thanksBody}>いただいた評価・ご要望は今後の改善に役立てます。</Text>
+        <Text style={styles.thanksBody}>{t('feedback.thanksBody')}</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.card}>
-      <Text style={styles.heading}>ZELIOの使い心地はいかがですか？</Text>
-      <Text style={styles.lead}>いただいた内容は開発者が直接確認します。</Text>
+      <Text style={styles.heading}>{t('feedback.heading')}</Text>
+      <Text style={styles.lead}>{t('feedback.lead')}</Text>
 
       <View style={styles.starSection}>
         <View style={styles.starRow}>
@@ -53,7 +55,7 @@ export function FeedbackForm() {
               disabled={sending}
               hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               accessibilityRole="button"
-              accessibilityLabel={`星${value}（${RATING_LABELS[value - 1]}）`}
+              accessibilityLabel={t('feedback.starA11y', { value, label: ratingLabels[value - 1] })}
               accessibilityState={{ selected: rating === value }}
             >
               <Ionicons
@@ -64,7 +66,7 @@ export function FeedbackForm() {
             </TouchableOpacity>
           ))}
         </View>
-        <Text style={styles.starLabel}>{rating >= 1 ? RATING_LABELS[rating - 1] : 'タップして評価'}</Text>
+        <Text style={styles.starLabel}>{rating >= 1 ? ratingLabels[rating - 1] : t('feedback.tapToRate')}</Text>
       </View>
 
       <TextInput
@@ -74,18 +76,18 @@ export function FeedbackForm() {
         editable={!sending}
         multiline
         maxLength={FEEDBACK_MESSAGE_MAX}
-        placeholder="ご意見・ご要望があればお書きください（任意）"
+        placeholder={t('feedback.placeholder')}
         placeholderTextColor={Colors.textTertiary}
         textAlignVertical="top"
-        accessibilityLabel="ご意見・ご要望の入力欄"
+        accessibilityLabel={t('feedback.inputA11y')}
       />
 
       <Text style={styles.note}>
-        送信内容に返信はできません。返信が必要な不具合報告は、下のお問い合わせ窓口をご利用ください。パスワードやメールアドレスなどの個人情報は書かないでください。
+        {t('feedback.note')}
       </Text>
 
       <Button
-        label={sending ? '送信中…' : '送信する'}
+        label={sending ? t('feedback.sending') : t('feedback.submit')}
         onPress={() => void handleSubmit()}
         disabled={rating < 1 || sending}
         loading={sending}

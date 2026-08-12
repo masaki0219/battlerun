@@ -8,7 +8,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, DarkColors, Typography, Spacing, BorderRadius, Shadow, TeamColorOptions } from '../design_tokens';
-import { decorLabel } from '../lib/locale';
+import { useTranslation } from '../lib/i18n';
 
 export const ONBOARDING_KEY = '@battlerun_onboarding_seen';
 
@@ -30,31 +30,12 @@ const STEP_COLORS: Record<number, string> = {
   4: Colors.primary,
 };
 
-const STEP_LABELS: Record<number, string> = {
-  1: decorLabel('01 / ZELIO とは', 'STEP 01 / ABOUT ZELIO'),
-  2: decorLabel('02 / 記録のしかた', 'STEP 02 / RECORDING'),
-  3: decorLabel('03 / チャレンジ参加', 'STEP 03 / CHALLENGES'),
-  4: decorLabel('04 / さっそく始める', 'STEP 04 / GET STARTED'),
-};
-
-const STEP_HEADINGS: Record<number, string> = {
-  1: '歩いても走っても、\nチームが強くなる。',
-  2: '走るだけで、\nあとは自動。',
-  3: 'あと少しで\n逆転できる。',
-  4: 'ZELIOを\n始めよう。',
-};
-
-const STEP_BODIES: Record<number, string> = {
-  1: '歩いても走っても、その距離がチームの得点になる。友達と競い合いながら、もっと続けられる。',
-  2: 'アプリを開いてボタンを押すだけ。GPSでルート記録か、歩数モードか選べる。',
-  3: '順位はリアルタイムで動く。あなたの一走りが、チームの順位を変える。',
-  4: 'アカウントを作成して、最初のランや仲間とのチャレンジを始めよう。',
-};
-
 export default function OnboardingScreen() {
+  const { t: tr } = useTranslation();
   const { replay } = useLocalSearchParams<{ replay?: string }>();
   const isReplay = replay === '1';
   const [step, setStep] = useState(1);
+  const stepLabelKeys = ['locale.stepAbout', 'locale.stepRecord', 'locale.stepChallenges', 'locale.stepStart'];
 
   async function done(path: '/auth/login' | '/auth/signup') {
     if (isReplay) {
@@ -92,7 +73,7 @@ export default function OnboardingScreen() {
         </View>
         {step < 4 && (
           <TouchableOpacity onPress={() => done('/auth/signup')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={styles.skip}>{isReplay ? 'ガイドへ戻る' : 'スキップ'}</Text>
+            <Text style={styles.skip}>{isReplay ? tr('onboarding.backToGuide') : tr('onboarding.skip')}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -107,32 +88,32 @@ export default function OnboardingScreen() {
 
       {/* ── Text block ──────────────────────────────────── */}
       <View style={styles.textBlock}>
-        <Text style={[styles.stepLabel, { color: labelColor }]}>{STEP_LABELS[step]}</Text>
-        <Text style={styles.heading}>{STEP_HEADINGS[step]}</Text>
-        <Text style={styles.body}>{STEP_BODIES[step]}</Text>
+        <Text style={[styles.stepLabel, { color: labelColor }]}>{tr(stepLabelKeys[step - 1])}</Text>
+        <Text style={styles.heading}>{tr(`onboarding.heading${step}`)}</Text>
+        <Text style={styles.body}>{tr(`onboarding.body${step}`)}</Text>
       </View>
 
       {/* ── CTA ─────────────────────────────────────────── */}
       <View style={styles.cta}>
         {step < 4 ? (
           <TouchableOpacity style={styles.btnNext} onPress={next} activeOpacity={0.85}>
-            <Text style={styles.btnNextText}>次へ</Text>
+            <Text style={styles.btnNextText}>{tr('onboarding.next')}</Text>
           </TouchableOpacity>
         ) : (
           <View style={styles.finalCta}>
             {isReplay ? (
               <TouchableOpacity style={styles.btnPrimary} onPress={() => done('/auth/signup')} activeOpacity={0.85}>
-                <Text style={styles.btnPrimaryText}>ガイドへ戻る</Text>
+                <Text style={styles.btnPrimaryText}>{tr('onboarding.backToGuide')}</Text>
               </TouchableOpacity>
             ) : (
               <>
                 <TouchableOpacity style={styles.btnPrimary} onPress={() => done('/auth/signup')} activeOpacity={0.85}>
-                  <Text style={styles.btnPrimaryText}>はじめる（新規登録）</Text>
+                  <Text style={styles.btnPrimaryText}>{tr('onboarding.beginSignup')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.btnOutline} onPress={() => done('/auth/login')} activeOpacity={0.85}>
-                  <Text style={styles.btnOutlineText}>アカウントをお持ちの方はログイン</Text>
+                  <Text style={styles.btnOutlineText}>{tr('onboarding.existingLogin')}</Text>
                 </TouchableOpacity>
-                <Text style={styles.footnote}>登録後すぐにランを記録できます</Text>
+                <Text style={styles.footnote}>{tr('onboarding.readyAfterSignup')}</Text>
               </>
             )}
           </View>
@@ -148,19 +129,20 @@ export default function OnboardingScreen() {
 
 // ── Step 1: Scoreboard ─────────────────────────────────────────
 function OB1() {
+  const { t: tr } = useTranslation();
   return (
     <View style={ob1.card}>
       <View style={ob1.header}>
-        <Text style={ob1.headerLabel}>{decorLabel('チーム順位', 'SCOREBOARD')}</Text>
+          <Text style={ob1.headerLabel}>{tr('locale.scoreboard')}</Text>
         <View style={ob1.live}>
           <View style={ob1.liveDot} />
-          <Text style={ob1.liveText}>{decorLabel('開催中', 'LIVE')}</Text>
+          <Text style={ob1.liveText}>{tr('locale.live')}</Text>
         </View>
       </View>
       {[
-        { r: 1, n: '朝ラン部',   km: '46.8', c: TEAM_BLUE },
-        { r: 2, n: '駅前ラン会', km: '44.4', c: TEAM_YELLOW },
-        { r: 3, n: '晴れ晴れ部', km: '42.6', c: TEAM_RED, us: true },
+        { r: 1, n: tr('onboarding.team1'), km: '46.8', c: TEAM_BLUE },
+        { r: 2, n: tr('onboarding.team2'), km: '44.4', c: TEAM_YELLOW },
+        { r: 3, n: tr('onboarding.team3'), km: '42.6', c: TEAM_RED, us: true },
       ].map((t) => (
         <View key={t.r} style={ob1.row}>
           <Text style={[ob1.rank, { color: t.r === 1 ? GOLD : t.r === 2 ? SILVER : BRONZE }]}>
@@ -169,7 +151,7 @@ function OB1() {
           <View style={[ob1.stripe, { backgroundColor: t.c }]} />
           <Text style={[ob1.name, t.us && ob1.nameUs]} numberOfLines={1}>
             {t.n}
-            {t.us && <Text style={[ob1.ours, { color: t.c }]}> {decorLabel('あなた', 'OURS')}</Text>}
+            {t.us && <Text style={[ob1.ours, { color: t.c }]}> {tr('locale.ours')}</Text>}
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 2 }}>
             <Text style={ob1.km}>{t.km}</Text>
@@ -179,7 +161,7 @@ function OB1() {
       ))}
       <View style={ob1.hint}>
         <Ionicons name="arrow-up" size={11} color={DarkColors.primary} />
-        <Text style={ob1.hintText}> あと 1.8km で 2位逆転</Text>
+        <Text style={ob1.hintText}> {tr('onboarding.overtakeHint')}</Text>
       </View>
     </View>
   );
@@ -251,28 +233,37 @@ const ob1 = StyleSheet.create({
 
 // ── Step 2: START button ───────────────────────────────────────
 function OB2() {
+  const { t: tr } = useTranslation();
   return (
     <View style={ob2.wrap}>
       <View style={ob2.startOuter}>
         <View style={ob2.startBtn}>
-          <Text style={ob2.startText}>{decorLabel('スタート', 'START')}</Text>
+          <Text
+            style={ob2.startText}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.7}
+            maxFontSizeMultiplier={1.2}
+          >
+            {tr('locale.start')}
+          </Text>
         </View>
       </View>
       <View style={ob2.toggle}>
         <View style={ob2.toggleActive}>
           <Ionicons name="navigate-outline" size={14} color={INK_DARK} />
-          <Text style={ob2.toggleActiveText}>GPSモード</Text>
+          <Text style={ob2.toggleActiveText}>{tr('onboarding.gpsMode')}</Text>
         </View>
         <View style={ob2.toggleInactive}>
           <Ionicons name="footsteps-outline" size={14} color={Colors.textTertiary} />
-          <Text style={ob2.toggleInactiveText}>歩数</Text>
+          <Text style={ob2.toggleInactiveText}>{tr('onboarding.steps')}</Text>
         </View>
       </View>
       <View style={ob2.contrib}>
         <Text style={ob2.contribKm}>3.2 KM</Text>
         <Ionicons name="chevron-forward" size={13} color={Colors.textTertiary} />
         <View style={ob2.badge}>
-          <Text style={ob2.badgeText}>チームへ加算</Text>
+          <Text style={ob2.badgeText}>{tr('onboarding.addedToTeam')}</Text>
         </View>
       </View>
     </View>
@@ -301,10 +292,12 @@ const ob2 = StyleSheet.create({
     ...Shadow.lg,
   },
   startText: {
-    fontSize: 36,
+    width: '90%',
+    fontSize: 32,
     fontWeight: '800',
     color: Colors.textOnAccent,
     letterSpacing: 2,
+    textAlign: 'center',
   },
   toggle: {
     flexDirection: 'row',
@@ -345,20 +338,19 @@ const ob2 = StyleSheet.create({
 
 // ── Step 3: Next Move card ─────────────────────────────────────
 function OB3() {
+  const { t: tr } = useTranslation();
   return (
     <View style={ob3.card}>
-      <Text style={ob3.label}>{decorLabel('次の一歩', 'NEXT MOVE')}</Text>
+      <Text style={ob3.label}>{tr('locale.nextMove')}</Text>
       <View style={ob3.numRow}>
-        <Text style={ob3.pre}>あと</Text>
+        <Text style={ob3.pre}>{tr('onboarding.remaining')}</Text>
         <Text style={ob3.bigNum}>1.8</Text>
         <Text style={ob3.unit}>KM</Text>
       </View>
-      <Text style={ob3.sub}>
-        走れば <Text style={{ color: Colors.primary }}>2位</Text> に逆転
-      </Text>
+      <Text style={ob3.sub}>{tr('onboarding.overtakeSecond')}</Text>
       <View style={ob3.livePill}>
         <View style={ob3.liveIndicator} />
-        <Text style={ob3.liveText}>{decorLabel('開催中・順位が動く', 'LIVE RANKING')}</Text>
+        <Text style={ob3.liveText}>{tr('locale.liveRanking')}</Text>
       </View>
     </View>
   );
@@ -404,17 +396,18 @@ const ob3 = StyleSheet.create({
 
 // ── Step 4: Battle search list ─────────────────────────────────
 function OB4() {
+  const { t: tr } = useTranslation();
   const battles = [
-    { t: '5月ウォーキング杯', s: '4チーム / 残 1日 6時間', c: TEAM_RED },
-    { t: '部活ラン 2026 春',  s: '3チーム / 残 5日',      c: TEAM_BLUE },
-    { t: '家族チャレンジ',    s: '2チーム / 残 3日',      c: TEAM_YELLOW },
+    { t: tr('onboarding.sampleBattle1'), s: tr('onboarding.sampleMeta1'), c: TEAM_RED },
+    { t: tr('onboarding.sampleBattle2'), s: tr('onboarding.sampleMeta2'), c: TEAM_BLUE },
+    { t: tr('onboarding.sampleBattle3'), s: tr('onboarding.sampleMeta3'), c: TEAM_YELLOW },
   ];
   return (
     <View style={ob4.card}>
       <View style={ob4.titleRow}>
-        <Text style={ob4.title}>チャレンジを探す</Text>
+        <Text style={ob4.title}>{tr('onboarding.findChallenges')}</Text>
         <View style={ob4.countBadge}>
-          <Text style={ob4.countText}>3 件</Text>
+          <Text style={ob4.countText}>{tr('onboarding.challengeCount')}</Text>
         </View>
       </View>
       {battles.map((b, i) => (

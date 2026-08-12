@@ -8,6 +8,7 @@ import {
 } from '../../lib/socialAuth';
 import { BorderRadius, Colors, ComponentSize, Spacing, Typography } from '../../design_tokens';
 import { GoogleGLogo } from './GoogleGLogo';
+import { useTranslation } from '../../lib/i18n';
 
 interface GoogleAuthButtonProps {
   onPress: () => Promise<void> | void;
@@ -17,12 +18,13 @@ interface GoogleAuthButtonProps {
 }
 
 const GOOGLE_BUTTON_LABELS: Record<NonNullable<GoogleAuthButtonProps['mode']>, string> = {
-  'sign-in': 'Googleでログイン',
-  'sign-up': 'Googleで登録',
-  continue: 'Googleで続ける',
+  'sign-in': 'auth.googleSignIn',
+  'sign-up': 'auth.googleSignUp',
+  continue: 'auth.googleContinue',
 };
 
 export function GoogleAuthButton({ onPress, loading, disabled, mode = 'continue' }: GoogleAuthButtonProps) {
+  const { t } = useTranslation();
   const configured = useMemo(() => {
     if (!isNativeAuthBuild()) return null;
     try {
@@ -35,11 +37,11 @@ export function GoogleAuthButton({ onPress, loading, disabled, mode = 'continue'
 
   if (configured === null) return null;
   if (!configured) {
-    return <Text style={styles.configurationError}>Googleログインの設定を読み込めませんでした。</Text>;
+    return <Text style={styles.configurationError}>{t('auth.googleConfigError')}</Text>;
   }
 
   const unavailable = !!disabled || !!loading;
-  const label = GOOGLE_BUTTON_LABELS[mode];
+  const label = t(GOOGLE_BUTTON_LABELS[mode]);
   return (
     <Pressable
       onPress={() => { void onPress(); }}

@@ -5,6 +5,7 @@ import type { GpsQualitySummary } from '../functions/src/gpsProcessing';
 export type { GpsQualitySummary } from '../functions/src/gpsProcessing';
 
 export type Plan = 'free' | 'pro';
+export type Market = 'JP' | 'US' | 'GLOBAL';
 export type MeasurementType = 'gps' | 'steps';
 export type PauseKind = 'manual' | 'auto' | null;
 
@@ -82,6 +83,10 @@ export interface User {
   avatarEmoji?: string;
   plan: Plan;
   role?: 'admin';
+  /** Public Battle content market. This is a user preference, not physical location. */
+  market: Market;
+  /** Last OS/app UI language synced for server-generated notifications. */
+  uiLanguage: 'ja' | 'en';
   createdAt: string;
   titles?: UserTitle[];
   battleIds: string[];   // 未参加なら [] （authListener が常に配列を返す）
@@ -193,6 +198,12 @@ export interface Battle {
   inviteCode: string | null;   // privateのみ6桁英数字、publicはnull
   createdBy: string | null;    // privateは作成者uid、publicは管理者uid
   seasonId: string | null;     // publicバトルが属するシーズン（任意、なければnull）
+  /** Public Battle配信市場。既存publicデータの未設定はJPとして解決する。privateでは未設定。 */
+  market?: Market;
+  /** テーマ内のターム番号。旧データ・単発チャレンジでは未設定。 */
+  termIndex?: number;
+  /** テーマ内の全ターム数。termIndex と常にセットで保存する。 */
+  termCount?: number;
   startAt: string;
   endAt: string;
 }
@@ -334,4 +345,6 @@ export interface AuthStore {
   setWeeklyGoal: (goal: WeeklyGoal | null) => Promise<void>;
   setRunningPresenceVisible: (visible: boolean) => Promise<void>;
   setRunDeclarationVisible: (visible: boolean) => Promise<void>;
+  setMarket: (market: Market) => Promise<void>;
+  syncUiLanguage: (language: 'ja' | 'en') => Promise<void>;
 }

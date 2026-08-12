@@ -17,57 +17,46 @@ import type { UserActivityStats, EarnedBadge, UserTitle } from '../types';
 import { Colors, BorderRadius, TextStyles } from '../design_tokens';
 import { ProgressBar } from '../components/ui/ProgressBar';
 import { teamTitleLabel } from '../lib/teamTitle';
+import { useTranslation } from '../lib/i18n';
 
 // ── バッジ定義 ─────────────────────────────────────────────────
 interface BadgeDef {
   id: string;
-  name: string;
-  desc: string;
   icon: string;
   color: string;
   check: (s: UserActivityStats) => boolean;
-  progress?: (s: UserActivityStats) => { current: number; target: number; unit: string };
+  progress?: (s: UserActivityStats) => { current: number; target: number; unit: 'days' | 'times' | 'km' };
 }
 
 const BADGE_DEFS: BadgeDef[] = [
   {
     id: 'first_run',
-    name: 'はじめの一歩',
-    desc: '初めて記録する',
     icon: 'flag',
     color: Colors.primary,
     check: (s) => s.activityCount >= 1,
   },
   {
     id: 'early_bird',
-    name: '朝活ランナー',
-    desc: '朝7時前に記録する',
     icon: 'sunny',
     color: Colors.goldText,
     check: (s) => s.earlyMorningCount >= 1,
   },
   {
     id: 'streak_3',
-    name: '3日連続ラン',
-    desc: '3日連続で記録する',
     icon: 'flame',
     color: Colors.accentText,
     check: (s) => s.consecutiveDays >= 3,
-    progress: (s) => ({ current: Math.min(s.consecutiveDays, 3), target: 3, unit: '日' }),
+    progress: (s) => ({ current: Math.min(s.consecutiveDays, 3), target: 3, unit: 'days' }),
   },
   {
     id: 'streak_7',
-    name: '7日連続ラン',
-    desc: '7日連続で記録する',
     icon: 'flash',
     color: Colors.primaryDark,
     check: (s) => s.consecutiveDays >= 7,
-    progress: (s) => ({ current: Math.min(s.consecutiveDays, 7), target: 7, unit: '日' }),
+    progress: (s) => ({ current: Math.min(s.consecutiveDays, 7), target: 7, unit: 'days' }),
   },
   {
     id: 'monthly_10km',
-    name: '月間10km',
-    desc: '月に10km記録する',
     icon: 'medal',
     color: Colors.primary,
     check: (s) => s.monthlyDistanceKm >= 10,
@@ -75,8 +64,6 @@ const BADGE_DEFS: BadgeDef[] = [
   },
   {
     id: 'monthly_30km',
-    name: '月間30km',
-    desc: '月に30km記録する',
     icon: 'trophy',
     color: Colors.goldText,
     check: (s) => s.monthlyDistanceKm >= 30,
@@ -84,17 +71,13 @@ const BADGE_DEFS: BadgeDef[] = [
   },
   {
     id: 'step_master',
-    name: 'ウォークマスター',
-    desc: '歩数モードで10回記録する',
     icon: 'footsteps',
     color: Colors.accentText,
     check: (s) => s.stepsModeCount >= 10,
-    progress: (s) => ({ current: Math.min(s.stepsModeCount, 10), target: 10, unit: '回' }),
+    progress: (s) => ({ current: Math.min(s.stepsModeCount, 10), target: 10, unit: 'times' }),
   },
   {
     id: 'total_100km',
-    name: '百里の旅人',
-    desc: '累計100km記録する',
     icon: 'earth',
     color: Colors.goldText,
     check: (s) => s.totalDistanceKm >= 100,
@@ -103,6 +86,7 @@ const BADGE_DEFS: BadgeDef[] = [
 ];
 
 export default function BadgesScreen() {
+  const { language, t } = useTranslation();
   const { user } = useAuthStore();
   const [stats, setStats] = useState<UserActivityStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -209,11 +193,11 @@ export default function BadgesScreen() {
     <SafeAreaView style={s.root} edges={['top']}>
       {/* Header */}
       <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel="戻る">
+        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel={t('common.back')}>
           <Ionicons name="chevron-back" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={s.headerTitle}>バッジ・称号</Text>
+          <Text style={s.headerTitle}>{t('badges.title')}</Text>
         </View>
       </View>
 
@@ -224,9 +208,9 @@ export default function BadgesScreen() {
 
           {/* 獲得済みバッジ */}
           <View style={s.section}>
-            <Text style={TextStyles.sectionTitle}>{`獲得済みバッジ ${earned.length}/${BADGE_DEFS.length}`}</Text>
+            <Text style={TextStyles.sectionTitle}>{t('badges.earned', { earned: earned.length, total: BADGE_DEFS.length })}</Text>
             {earned.length === 0 ? (
-              <Text style={s.emptyText}>まだバッジがありません。走って獲得しよう！</Text>
+              <Text style={s.emptyText}>{t('badges.noBadges')}</Text>
             ) : (
               <View style={s.badgeGrid}>
                 {earned.map((b) => (
@@ -234,7 +218,7 @@ export default function BadgesScreen() {
                     <View style={[s.badgeIcon, { backgroundColor: `${b.color}22` }]}>
                       <Ionicons name={b.icon as any} size={28} color={b.color} />
                     </View>
-                    <Text style={s.badgeName} numberOfLines={2}>{b.name}</Text>
+                    <Text style={s.badgeName} numberOfLines={2}>{t(`badges.defs.${b.id}.name`)}</Text>
                   </View>
                 ))}
               </View>
@@ -244,7 +228,7 @@ export default function BadgesScreen() {
           {/* 次に取れそうなバッジ */}
           {upcoming.length > 0 && (
             <View style={s.section}>
-              <Text style={TextStyles.sectionTitle}>次に取れそうなバッジ</Text>
+              <Text style={TextStyles.sectionTitle}>{t('badges.upcoming')}</Text>
               {upcoming.map(({ badge, prog }) => {
                 const pct = Math.min(prog.current / prog.target, 1);
                 // 日・回は小数にならないよう切り上げ整数で表示（「あと0.0日」「あと9.0回」を防ぐ）。
@@ -258,13 +242,13 @@ export default function BadgesScreen() {
                     </View>
                     <View style={{ flex: 1, gap: 4 }}>
                       <View style={s.upcomingTop}>
-                        <Text style={s.upcomingName}>{badge.name}</Text>
+                        <Text style={s.upcomingName}>{t(`badges.defs.${badge.id}.name`)}</Text>
                         <Text style={[s.upcomingLeft, { color: badge.color }]}>
-                          あと {left}{prog.unit}
+                          {t('badges.remaining', { value: left, unit: t(`badges.unit${prog.unit === 'days' ? 'Days' : prog.unit === 'times' ? 'Times' : 'Km'}`) })}
                         </Text>
                       </View>
                       <ProgressBar value={pct} color={badge.color} trackColor={Colors.surfaceGray} height={6} />
-                      <Text style={s.upcomingDesc}>{badge.desc}</Text>
+                      <Text style={s.upcomingDesc}>{t(`badges.defs.${badge.id}.desc`)}</Text>
                     </View>
                   </View>
                 );
@@ -275,14 +259,14 @@ export default function BadgesScreen() {
           {/* 未獲得バッジ */}
           {remainingUnearned.length > 0 && (
             <View style={s.section}>
-              <Text style={TextStyles.sectionTitle}>未獲得バッジ</Text>
+              <Text style={TextStyles.sectionTitle}>{t('badges.unearned')}</Text>
               <View style={s.badgeGrid}>
                 {remainingUnearned.map((b) => (
                   <View key={b.id} style={[s.badgeItem, s.badgeItemGray]}>
                     <View style={[s.badgeIcon, { backgroundColor: Colors.surfaceGray }]}>
                       <Ionicons name={b.icon as any} size={28} color={Colors.textTertiary} />
                     </View>
-                    <Text style={[s.badgeName, { color: Colors.textTertiary }]} numberOfLines={2}>{b.name}</Text>
+                    <Text style={[s.badgeName, { color: Colors.textTertiary }]} numberOfLines={2}>{t(`badges.defs.${b.id}.name`)}</Text>
                   </View>
                 ))}
               </View>
@@ -291,9 +275,9 @@ export default function BadgesScreen() {
 
           {/* 獲得称号 */}
           <View style={s.section}>
-            <Text style={TextStyles.sectionTitle}>獲得称号一覧</Text>
+            <Text style={TextStyles.sectionTitle}>{t('badges.earnedTitles')}</Text>
             {titles.length === 0 ? (
-              <Text style={s.emptyText}>まだ称号がありません。チャレンジで活躍しよう！</Text>
+              <Text style={s.emptyText}>{t('badges.noTitles')}</Text>
             ) : (
               <View style={{ gap: 8, marginTop: 8 }}>
                 {titles.map((t, i) => (
@@ -303,11 +287,11 @@ export default function BadgesScreen() {
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={s.titleBattleName} numberOfLines={1}>
-                        {t.rank === 1 ? '👑 ' : ''}{teamTitleLabel(t.rank)}
+                        {t.rank === 1 ? '👑 ' : ''}{teamTitleLabel(t.rank, language)}
                         　{t.battleTitle}
                       </Text>
                       <Text style={s.titleMeta}>
-                        {t.teamName} · {new Date(t.awardedAt).toLocaleDateString('ja-JP', { year: 'numeric', month: 'short' })}
+                        {t.teamName} · {new Date(t.awardedAt).toLocaleDateString(language === 'ja' ? 'ja-JP' : 'en-US', { year: 'numeric', month: 'short' })}
                       </Text>
                     </View>
                   </View>

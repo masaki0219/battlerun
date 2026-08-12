@@ -8,22 +8,24 @@ import { BorderRadius, Colors, Shadow, Spacing, Typography } from '../design_tok
 import { useBlockedUsers } from '../hooks/useBlockedUsers';
 import { unblockUser } from '../lib/moderation';
 import { useAuthStore } from '../stores/authStore';
+import { useTranslation } from '../lib/i18n';
 
 export default function BlockedUsersScreen() {
+  const { t } = useTranslation();
   const { user } = useAuthStore();
   const { blockedUsers } = useBlockedUsers(user?.id);
 
   function confirmUnblock(blockedUid: string, displayName: string) {
     if (!user) return;
-    Alert.alert(`${displayName}のブロックを解除しますか？`, undefined, [
-      { text: 'キャンセル', style: 'cancel' },
+    Alert.alert(t('blocked.confirm', { name: displayName }), undefined, [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: '解除する',
+        text: t('blocked.unblock'),
         onPress: async () => {
           try {
             await unblockUser(user.id, blockedUid);
           } catch {
-            Alert.alert('解除できませんでした', '通信状態を確認して、もう一度お試しください。');
+            Alert.alert(t('blocked.failed'), t('safety.retry'));
           }
         },
       },
@@ -33,22 +35,22 @@ export default function BlockedUsersScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="戻る">
+        <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel={t('common.back')}>
           <Ionicons name="chevron-back" size={22} color={Colors.textSecondary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>ブロック中のユーザー</Text>
+        <Text style={styles.headerTitle}>{t('blocked.title')}</Text>
         <View style={styles.headerSpacer} />
       </View>
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.infoCard}>
           <Ionicons name="shield-checkmark-outline" size={20} color={Colors.primaryDark} />
-          <Text style={styles.infoText}>ブロックした相手の投稿・ランキング・公開記録は表示されず、相互の応援やリアクションも停止します。相手には通知されません。</Text>
+          <Text style={styles.infoText}>{t('blocked.info')}</Text>
         </View>
         {blockedUsers.length === 0 ? (
           <View style={styles.empty}>
             <Ionicons name="people-outline" size={32} color={Colors.textTertiary} />
-            <Text style={styles.emptyTitle}>ブロック中のユーザーはいません</Text>
-            <Text style={styles.emptyDetail}>チャレンジ内の「…」から通報・ブロックできます</Text>
+            <Text style={styles.emptyTitle}>{t('blocked.empty')}</Text>
+            <Text style={styles.emptyDetail}>{t('blocked.emptyHint')}</Text>
           </View>
         ) : (
           <View style={styles.list}>
@@ -60,9 +62,9 @@ export default function BlockedUsersScreen() {
                   style={styles.unblockButton}
                   onPress={() => confirmUnblock(item.blockedUid, item.displayName)}
                   accessibilityRole="button"
-                  accessibilityLabel={`${item.displayName}のブロックを解除`}
+                  accessibilityLabel={t('blocked.unblockA11y', { name: item.displayName })}
                 >
-                  <Text style={styles.unblockText}>解除</Text>
+                  <Text style={styles.unblockText}>{t('blocked.shortUnblock')}</Text>
                 </TouchableOpacity>
               </View>
             ))}

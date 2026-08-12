@@ -5,6 +5,7 @@ import { ProgressRing } from '../viz/ProgressRing';
 import { Colors, Spacing, BorderRadius } from '../../design_tokens';
 import type { WeeklyGoal } from '../../types';
 import type { WeeklyBucket } from '../../utils/displayStats';
+import { useTranslation } from '../../lib/i18n';
 
 interface Props {
   goal: WeeklyGoal | null | undefined;
@@ -21,6 +22,7 @@ export function weeklyGoalValues(goal: WeeklyGoal, days: WeeklyBucket[]) {
 }
 
 export function WeeklyGoalProgress({ goal, days, onPress, compact = false }: Props) {
+  const { t } = useTranslation();
   if (!goal) {
     if (!onPress) return null;
     return (
@@ -29,8 +31,8 @@ export function WeeklyGoalProgress({ goal, days, onPress, compact = false }: Pro
           <Ionicons name="flag-outline" size={18} color={Colors.primaryDark} />
         </View>
         <View style={styles.copy}>
-          <Text style={styles.title}>週間目標を設定</Text>
-          <Text style={styles.hint}>10km または週3日から気軽に始められます</Text>
+          <Text style={styles.title}>{t('goal.setWeekly')}</Text>
+          <Text style={styles.hint}>{t('goal.startHint')}</Text>
         </View>
         <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
       </TouchableOpacity>
@@ -39,7 +41,7 @@ export function WeeklyGoalProgress({ goal, days, onPress, compact = false }: Pro
 
   const { current, progress } = weeklyGoalValues(goal, days);
   const achieved = progress >= 1;
-  const unit = goal.type === 'distance' ? 'km' : '日';
+  const unit = goal.type === 'distance' ? 'km' : t('profile.dayUnit');
   const currentLabel = goal.type === 'distance' ? current.toFixed(1) : String(current);
   const content = (
     <View style={[styles.row, compact && styles.rowCompact]}>
@@ -47,12 +49,12 @@ export function WeeklyGoalProgress({ goal, days, onPress, compact = false }: Pro
         <Text style={styles.percent}>{Math.min(100, Math.round(progress * 100))}%</Text>
       </ProgressRing>
       <View style={styles.copy}>
-        <Text style={styles.eyebrow}>週間目標</Text>
+        <Text style={styles.eyebrow}>{t('goal.weekly')}</Text>
         <Text style={styles.value}>
           {currentLabel}<Text style={styles.unit}> / {goal.value}{unit}</Text>
         </Text>
         <Text style={[styles.hint, achieved && styles.achieved]}>
-          {achieved ? '今週の目標を達成しました！' : goal.type === 'distance' ? '自分のペースで積み重ねよう' : '休息日も大切に続けよう'}
+          {t(achieved ? 'goal.achieved' : goal.type === 'distance' ? 'goal.distanceHint' : 'goal.daysHint')}
         </Text>
       </View>
       {onPress && <Ionicons name="settings-outline" size={18} color={Colors.textTertiary} />}

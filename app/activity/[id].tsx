@@ -27,6 +27,10 @@ import { useRunSharePreference } from '../../hooks/useRunSharePreference';
 import { Avatar } from '../../components/ui/Avatar';
 import { cachedPublicProfile } from '../../lib/publicProfileCache';
 import { dayKeyToDisplayDate, getBattleActivitySummary } from '../../lib/activitySummaries';
+import { useTranslation } from '../../lib/i18n';
+import type { AppLanguage } from '../../lib/language';
+import { translateIn } from '../../lib/translate';
+import { userFacingError } from '../../lib/userError';
 
 const ROUTE_PACE_COLOR: Record<RoutePaceBand, string> = {
   fast: RoutePaceColors.fast,
@@ -34,13 +38,13 @@ const ROUTE_PACE_COLOR: Record<RoutePaceBand, string> = {
   slow: RoutePaceColors.slow,
 };
 
-function formatTime(sec: number): string {
+function formatTime(sec: number, language: AppLanguage): string {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;
-  if (h > 0) return `${h}時間${m}分`;
-  if (m > 0) return `${m}分${s}秒`;
-  return `${s}秒`;
+  if (h > 0) return translateIn(language, 'activity.durationHours', { hours: h, minutes: m });
+  if (m > 0) return translateIn(language, 'activity.durationMinutes', { minutes: m, seconds: s });
+  return translateIn(language, 'activity.durationSeconds', { seconds: s });
 }
 
 function formatPace(km: number, sec: number): string {
@@ -51,11 +55,11 @@ function formatPace(km: number, sec: number): string {
   return `${m}'${String(s).padStart(2, '0')}"`;
 }
 
-const REACTIONS: { type: ReactionType; label: string }[] = [
-  { type: '👏', label: 'ナイス' },
-  { type: '🔥', label: 'すごい' },
-  { type: '💪', label: '助かった' },
-  { type: '⚡', label: '速い' },
+const REACTIONS: { type: ReactionType; translationKey: string }[] = [
+  { type: '👏', translationKey: 'activity.reactionNice' },
+  { type: '🔥', translationKey: 'activity.reactionGreat' },
+  { type: '💪', translationKey: 'activity.reactionHelped' },
+  { type: '⚡', translationKey: 'activity.reactionFast' },
 ];
 
 interface ActivityData {
@@ -86,6 +90,7 @@ interface ReactionCount {
 }
 
 export default function ActivityDetailScreen() {
+  const { language, t } = useTranslation();
   const { id, battleId } = useLocalSearchParams<{ id: string; battleId?: string }>();
   const { user, proEntitlement } = useAuthStore();
   const userIsPro = isPro(user?.plan, proEntitlement);
@@ -144,7 +149,7 @@ export default function ActivityDetailScreen() {
           setActivity({
             id: snap.id,
             userId: user.id,
-            displayName: profile?.name ?? (d['displayName'] as string) ?? 'メンバー',
+            displayName: profile?.name ?? (d['displayName'] as string) ?? t('activity.member'),
             avatarEmoji: profile?.avatarEmoji,
             battleIds: ownerBattleIds,
             distanceKm: activityDistanceKm,
@@ -181,7 +186,7 @@ export default function ActivityDetailScreen() {
             setActivity({
               id: shared.activity.id,
               userId: shared.activity.userId,
-              displayName: profile?.name ?? shared.activity.displayName ?? 'メンバー',
+              displayName: profile?.name ?? shared.activity.displayName ?? t('activity.member'),
               avatarEmoji: profile?.avatarEmoji,
               battleIds: [],
               distanceKm: shared.activity.distanceKm,
@@ -224,17 +229,17 @@ export default function ActivityDetailScreen() {
       }
     };
     load();
-  }, [battleId, id, user?.id]);
+  }, [battleId, id, user?.id, t]);
 
   function handleDelete() {
     if (!id || !activity) return;
     Alert.alert(
-      'この記録を削除しますか？',
-      '開催中のチャレンジに加算された距離も取り消されます。この操作は元に戻せません。',
+      t('activity.deleteTitle'),
+      t('activity.deleteBody'),
       [
-        { text: 'キャンセル', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: '削除する',
+          text: t('activity.delete'),
           style: 'destructive',
           onPress: async () => {
             setDeleting(true);
@@ -243,10 +248,8 @@ export default function ActivityDetailScreen() {
               await remove({ activityId: id });
               router.back();
             } catch (e: any) {
-              const message = typeof e?.message === 'string' && e.message.length > 0
-                ? e.message
-                : '通信状態を確認してもう一度お試しください。';
-              Alert.alert('削除できませんでした', message);
+              const message = userFacingError(e, t('activity.retry'));
+              Alert.alert(t('activity.deleteFailed'), message);
               setDeleting(false);
             }
           },
@@ -257,7 +260,8 @@ export default function ActivityDetailScreen() {
 
   async function handleShareRun() {
     if (!activity || activity.userId !== user?.id || sharing || !sharePreferenceLoaded) return;
-    const dateLabel = new Date(activity.startedAt).toLocaleDateString('ja-JP', {
+    const locale = language === 'ja' ? 'ja-JP' : 'en-US';
+    const dateLabel = new Date(activity.startedAt).toLocaleDateString(locale, {
       month: 'numeric', day: 'numeric',
     });
     const pace = activity.measurementType === 'gps'
@@ -265,7 +269,7 @@ export default function ActivityDetailScreen() {
       : null;
     const primaryContribution = battleContributions[0] ?? null;
     const impactLabel = primaryContribution
-      ? `「${primaryContribution.battleTitle}」に${formatRunDistanceKm(primaryContribution.creditedDistanceKm)}km貢献`
+      ? t('activity.contributionShare', { title: primaryContribution.battleTitle, distance: formatRunDistanceKm(primaryContribution.creditedDistanceKm) })
       : null;
     const message = buildRunShareMessage({
       distanceKm: activity.distanceKm,
@@ -273,14 +277,15 @@ export default function ActivityDetailScreen() {
       pace,
       dateLabel,
       impactLabel,
+      language,
     });
 
     setSharing(true);
     try {
-      await shareRunResult(shareCardRef.current, message, 'ラン結果をシェア');
+      await shareRunResult(shareCardRef.current, message, t('activity.shareDialog'));
     } catch (error) {
       console.warn('[ActivityDetail] share failed:', error);
-      Alert.alert('共有できませんでした', '時間をおいてもう一度お試しください。');
+      Alert.alert(t('summary.shareFailed'), t('summary.tryAgainLater'));
     } finally {
       setSharing(false);
     }
@@ -317,7 +322,7 @@ export default function ActivityDetailScreen() {
   if (!activity) {
     return (
       <SafeAreaView style={s.root}>
-        <View style={s.center}><Text style={{ color: Colors.textSecondary }}>記録が見つかりませんでした</Text></View>
+        <View style={s.center}><Text style={{ color: Colors.textSecondary }}>{t('activity.notFound')}</Text></View>
       </SafeAreaView>
     );
   }
@@ -326,15 +331,15 @@ export default function ActivityDetailScreen() {
     return (
       <SafeAreaView style={s.root}>
         <View style={s.header}>
-          <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="戻る">
+          <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel={t('common.back')}>
             <Ionicons name="chevron-back" size={20} color={Colors.textSecondary} />
           </TouchableOpacity>
-          <Text style={s.headerTitle}>公開記録</Text>
+          <Text style={s.headerTitle}>{t('activity.publicRecord')}</Text>
         </View>
         <View style={s.center}>
           <Ionicons name="eye-off-outline" size={34} color={Colors.textTertiary} />
-          <Text style={s.blockedTitle}>ブロック中のユーザーの記録です</Text>
-          <Text style={s.blockedDetail}>解除はプロフィールの「ブロック中のユーザー」から行えます</Text>
+          <Text style={s.blockedTitle}>{t('activity.blockedRecord')}</Text>
+          <Text style={s.blockedDetail}>{t('activity.unblockHint')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -342,10 +347,11 @@ export default function ActivityDetailScreen() {
 
   const startDt = new Date(activity.startedAt);
   const endDt = new Date(activity.endedAt);
-  const dateStr = startDt.toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
-  const shareDateStr = startDt.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' });
-  const startTimeStr = startDt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-  const endTimeStr = endDt.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+  const locale = language === 'ja' ? 'ja-JP' : 'en-US';
+  const dateStr = startDt.toLocaleDateString(locale, { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
+  const shareDateStr = startDt.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
+  const startTimeStr = startDt.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+  const endTimeStr = endDt.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
 
   const hasRoute = activity.measurementType === 'gps' && activity.route.length > 1;
   const splits = hasRoute ? kmSplits(activity.route) : [];
@@ -358,7 +364,9 @@ export default function ActivityDetailScreen() {
     : null;
   const primaryContribution = battleContributions[0] ?? null;
   const shareImpactLabel = primaryContribution
-    ? `「${primaryContribution.battleTitle}」に${formatRunDistanceKm(primaryContribution.creditedDistanceKm)}km貢献${battleContributions.length > 1 ? `・ほか${battleContributions.length - 1}件` : ''}`
+    ? battleContributions.length > 1
+      ? t('activity.contributionShareMore', { title: primaryContribution.battleTitle, distance: formatRunDistanceKm(primaryContribution.creditedDistanceKm), count: battleContributions.length - 1 })
+      : t('activity.contributionShare', { title: primaryContribution.battleTitle, distance: formatRunDistanceKm(primaryContribution.creditedDistanceKm) })
     : null;
   const isOwnActivity = user?.id === activity.userId;
   let mapRegion: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number } | null = null;
@@ -377,7 +385,7 @@ export default function ActivityDetailScreen() {
     <SafeAreaView style={s.root} edges={['top']}>
       {/* Header */}
       <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel="戻る">
+        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel={t('common.back')}>
           <Ionicons name="chevron-back" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
@@ -389,7 +397,7 @@ export default function ActivityDetailScreen() {
               onPress={handleShareRun}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               accessibilityRole="button"
-              accessibilityLabel="このラン結果をSNSに共有"
+              accessibilityLabel={t('activity.shareA11y')}
               accessibilityState={{ busy: sharing, disabled: sharing || !sharePreferenceLoaded }}
               disabled={sharing || !sharePreferenceLoaded}
             >
@@ -404,7 +412,7 @@ export default function ActivityDetailScreen() {
                 onPress={handleDelete}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 accessibilityRole="button"
-                accessibilityLabel="この記録を削除"
+                accessibilityLabel={t('activity.deleteA11y')}
               >
                 <Ionicons name="trash-outline" size={20} color={Colors.textTertiary} />
               </TouchableOpacity>
@@ -415,7 +423,7 @@ export default function ActivityDetailScreen() {
             onPress={() => setShowSafety(true)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityRole="button"
-            accessibilityLabel={`${activity.displayName}さんの安全メニュー`}
+            accessibilityLabel={t('activity.safetyA11y', { name: activity.displayName })}
           >
             <Ionicons name="ellipsis-horizontal" size={21} color={Colors.textTertiary} />
           </TouchableOpacity>
@@ -426,7 +434,7 @@ export default function ActivityDetailScreen() {
         <View style={s.runnerRow}>
           <Avatar name={activity.displayName} emoji={activity.avatarEmoji} size="md" />
           <View style={s.runnerCopy}>
-            <Text style={s.runnerName}>{isOwnActivity ? 'あなたのラン' : `${activity.displayName}さんのラン`}</Text>
+            <Text style={s.runnerName}>{isOwnActivity ? t('activity.ownRun') : t('activity.userRun', { name: activity.displayName })}</Text>
             <Text style={s.runnerDate}>{dateStr}</Text>
           </View>
         </View>
@@ -438,14 +446,14 @@ export default function ActivityDetailScreen() {
           </View>
           <View style={s.statRow}>
             <View style={s.statItem}>
-              <MonoLabel color={Colors.textTertiary} size={8}>時間</MonoLabel>
-              <Text style={s.statVal}>{formatTime(activity.durationSeconds)}</Text>
+              <MonoLabel color={Colors.textTertiary} size={8}>{t('activity.time')}</MonoLabel>
+              <Text style={s.statVal}>{formatTime(activity.durationSeconds, language)}</Text>
             </View>
             {activity.measurementType === 'gps' && (
               <>
                 <View style={s.statDivider} />
                 <View style={s.statItem}>
-                  <MonoLabel color={Colors.textTertiary} size={8}>ペース</MonoLabel>
+                  <MonoLabel color={Colors.textTertiary} size={8}>{t('activity.pace')}</MonoLabel>
                   <Text style={s.statVal}>{formatPace(activity.distanceKm, activity.durationSeconds)}<Text style={s.statUnit}>/km</Text></Text>
                 </View>
               </>
@@ -454,8 +462,8 @@ export default function ActivityDetailScreen() {
               <>
                 <View style={s.statDivider} />
                 <View style={s.statItem}>
-                  <MonoLabel color={Colors.textTertiary} size={8}>歩数</MonoLabel>
-                  <Text style={s.statVal}>{activity.steps.toLocaleString()}</Text>
+                  <MonoLabel color={Colors.textTertiary} size={8}>{t('activity.steps')}</MonoLabel>
+                  <Text style={s.statVal}>{activity.steps.toLocaleString(locale)}</Text>
                 </View>
               </>
             )}
@@ -463,9 +471,9 @@ export default function ActivityDetailScreen() {
           <View style={s.timeRow}>
             <Ionicons name={isOwnActivity ? 'time-outline' : 'shield-checkmark-outline'} size={12} color={DarkColors.textTertiary} />
             <Text style={s.timeText}>
-              {isOwnActivity ? `${startTimeStr} 〜 ${endTimeStr}` : '開始・終了時刻は本人だけに表示されます'}
+              {isOwnActivity ? `${startTimeStr} – ${endTimeStr}` : t('activity.privateTimes')}
             </Text>
-            {calories != null && <Text style={s.timeText}>・推定 {calories} kcal（体重60kg換算）</Text>}
+            {calories != null && <Text style={s.timeText}>{t('activity.calories', { calories })}</Text>}
           </View>
         </View>
 
@@ -494,7 +502,7 @@ export default function ActivityDetailScreen() {
                   anchor={{ x: 0.5, y: 0.5 }}
                   tracksViewChanges={false}
                   zIndex={2}
-                  accessibilityLabel={`${marker.km}キロ地点`}
+                  accessibilityLabel={t('activity.kmPointA11y', { km: marker.km })}
                 >
                   <View style={s.kmMarker}>
                     <Text style={s.kmMarkerText}>{marker.km}</Text>
@@ -505,15 +513,15 @@ export default function ActivityDetailScreen() {
             <View style={s.paceLegend} pointerEvents="none">
               <View style={s.legendItem}>
                 <View style={[s.legendDot, { backgroundColor: RoutePaceColors.fast }]} />
-                <Text style={s.legendText}>速い</Text>
+                <Text style={s.legendText}>{t('activity.fast')}</Text>
               </View>
               <View style={s.legendItem}>
                 <View style={[s.legendDot, { backgroundColor: RoutePaceColors.steady }]} />
-                <Text style={s.legendText}>普通</Text>
+                <Text style={s.legendText}>{t('activity.steady')}</Text>
               </View>
               <View style={s.legendItem}>
                 <View style={[s.legendDot, { backgroundColor: RoutePaceColors.slow }]} />
-                <Text style={s.legendText}>ゆっくり</Text>
+                <Text style={s.legendText}>{t('activity.slow')}</Text>
               </View>
             </View>
           </View>
@@ -522,7 +530,7 @@ export default function ActivityDetailScreen() {
         {/* ── 1km splits ── */}
         {splits.length > 0 && (
           <View style={s.section}>
-            <Text style={TextStyles.sectionTitle}>1kmラップ</Text>
+            <Text style={TextStyles.sectionTitle}>{t('activity.kmLaps')}</Text>
             <KmSplitsCard splits={splits} />
           </View>
         )}
@@ -530,7 +538,7 @@ export default function ActivityDetailScreen() {
         {/* ── Battle contribution ── */}
         {battleContributions.length > 0 && (
           <View style={s.section}>
-            <Text style={TextStyles.sectionTitle}>チャレンジへの貢献</Text>
+            <Text style={TextStyles.sectionTitle}>{t('activity.battleContribution')}</Text>
             {battleContributions.map((c) => (
               <TouchableOpacity
                 key={c.battleId}
@@ -541,7 +549,7 @@ export default function ActivityDetailScreen() {
                 <Ionicons name="flash" size={18} color={Colors.accentText} />
                 <View style={{ flex: 1 }}>
                   <Text style={s.battleTitle}>{c.battleTitle}</Text>
-                  <Text style={s.battleContrib}>+{formatRunDistanceKm(c.creditedDistanceKm)}km 貢献</Text>
+                  <Text style={s.battleContrib}>{t('activity.contribution', { distance: formatRunDistanceKm(c.creditedDistanceKm) })}</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
               </TouchableOpacity>
@@ -552,7 +560,7 @@ export default function ActivityDetailScreen() {
         {/* ── Share own activity ── */}
         {user?.id === activity.userId && (
           <View style={s.section}>
-            <Text style={TextStyles.sectionTitle}>このランをシェア</Text>
+            <Text style={TextStyles.sectionTitle}>{t('activity.shareRun')}</Text>
             <RunShareCard
               ref={shareCardRef}
               distanceKm={activity.distanceKm}
@@ -572,7 +580,7 @@ export default function ActivityDetailScreen() {
                 activeOpacity={0.75}
                 accessibilityRole="switch"
                 accessibilityState={{ checked: includeRouteInShare, disabled: !sharePreferenceLoaded }}
-                accessibilityLabel="共有画像にGPSルートを表示"
+                accessibilityLabel={t('summary.routeShareA11y')}
               >
                 <Ionicons
                   name={includeRouteInShare ? 'map' : 'map-outline'}
@@ -581,9 +589,9 @@ export default function ActivityDetailScreen() {
                 />
                 <View style={{ flex: 1 }}>
                   <Text style={s.routeShareToggleTitle}>
-                    {includeRouteInShare ? '共有画像にルートを表示中' : '共有画像のルートは非表示'}
+                    {includeRouteInShare ? t('summary.routeShown') : t('summary.routeHidden')}
                   </Text>
-                  <Text style={s.routeShareToggleHint}>自宅付近などが映っていないか、プレビューを確認してください</Text>
+                  <Text style={s.routeShareToggleHint}>{t('summary.routePrivacy')}</Text>
                 </View>
                 <Ionicons name="swap-horizontal" size={16} color={Colors.textTertiary} />
               </TouchableOpacity>
@@ -594,20 +602,20 @@ export default function ActivityDetailScreen() {
               activeOpacity={0.85}
               disabled={sharing || !sharePreferenceLoaded}
               accessibilityRole="button"
-              accessibilityLabel="このラン結果をSNSに共有"
+              accessibilityLabel={t('activity.shareA11y')}
               accessibilityState={{ busy: sharing, disabled: sharing || !sharePreferenceLoaded }}
             >
               {sharing
                 ? <ActivityIndicator size="small" color={Colors.textOnPrimary} />
                 : <Ionicons name="share-social-outline" size={18} color={Colors.textOnPrimary} />}
-              <Text style={s.shareBtnText}>{sharing ? '共有画像を準備中…' : 'SNSにシェア'}</Text>
+              <Text style={s.shareBtnText}>{sharing ? t('summary.preparingShare') : t('summary.shareSocial')}</Text>
             </TouchableOpacity>
           </View>
         )}
 
         {/* ── Reactions ── */}
         <View style={s.section}>
-          <Text style={TextStyles.sectionTitle}>リアクション</Text>
+          <Text style={TextStyles.sectionTitle}>{t('activity.reactions')}</Text>
           <View style={s.reactionsRow}>
             {reactions.map((r) => (
               <TouchableOpacity

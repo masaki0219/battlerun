@@ -1,6 +1,5 @@
 export interface AvatarEmojiCategory {
   id: 'animals' | 'sports' | 'faces' | 'nature' | 'food';
-  label: string;
   emojis: readonly string[];
 }
 
@@ -8,7 +7,6 @@ export interface AvatarEmojiCategory {
 export const AVATAR_EMOJI_CATEGORIES: readonly AvatarEmojiCategory[] = [
   {
     id: 'animals',
-    label: '動物',
     emojis: [
       '🐱', '🐶', '🐻', '🐼', '🐨', '🐯', '🦁', '🐸',
       '🐰', '🐹', '🦊', '🐺', '🐮', '🐷', '🐧', '🐬',
@@ -17,7 +15,6 @@ export const AVATAR_EMOJI_CATEGORIES: readonly AvatarEmojiCategory[] = [
   },
   {
     id: 'sports',
-    label: 'スポーツ',
     emojis: [
       '🏃', '🚶', '⚽', '🏀', '🏈', '⚾', '🎾', '🏐',
       '🏉', '🥏', '🏓', '🏸', '🥊', '🥋', '🎿', '🚴',
@@ -25,7 +22,6 @@ export const AVATAR_EMOJI_CATEGORIES: readonly AvatarEmojiCategory[] = [
   },
   {
     id: 'faces',
-    label: '表情',
     emojis: [
       '😀', '😄', '😊', '😎', '🤩', '🥳', '🙂', '😉',
       '😌', '🤗', '🤔', '😤',
@@ -33,7 +29,6 @@ export const AVATAR_EMOJI_CATEGORIES: readonly AvatarEmojiCategory[] = [
   },
   {
     id: 'nature',
-    label: '自然',
     emojis: [
       '🌱', '🌿', '🍀', '🌸', '🌻', '🌈', '⭐', '🌙',
       '☀️', '🔥', '🌊', '⛰️',
@@ -41,7 +36,6 @@ export const AVATAR_EMOJI_CATEGORIES: readonly AvatarEmojiCategory[] = [
   },
   {
     id: 'food',
-    label: 'フード',
     emojis: [
       '🍎', '🍊', '🍋', '🍉', '🍓', '🍒', '🥑', '🥕',
       '🍙', '🍜', '☕', '🍫',

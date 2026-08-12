@@ -5,6 +5,7 @@ import { Button } from '../ui/Button';
 import { PeriodPicker } from './PeriodPicker';
 import { Colors, Typography, Spacing, BorderRadius, TeamColorOptions } from '../../design_tokens';
 import type { Category, TeamColorId } from '../../types';
+import { useTranslation } from '../../lib/i18n';
 
 interface Props {
   title: string;
@@ -34,22 +35,23 @@ export function PrivateBattleCreateForm({
   onChangeCategoryColor,
   onChangeRankingType, onChangeStartAt, onChangeEndAt, onSubmit, onCancel,
 }: Props) {
+  const { t } = useTranslation();
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Card style={styles.card}>
-        <Text style={styles.formTitle}>新しい友達チャレンジを作る</Text>
+        <Text style={styles.formTitle}>{t('friends.formTitle')}</Text>
 
-        <Text style={styles.inputLabel}>チャレンジ名 *</Text>
+        <Text style={styles.inputLabel}>{t('friends.challengeName')}</Text>
         <TextInput style={styles.input} value={title} onChangeText={onChangeTitle}
-          placeholder="例: 春の部活対決" placeholderTextColor={Colors.textTertiary} maxLength={40} />
+          placeholder={t('friends.titlePlaceholder')} placeholderTextColor={Colors.textTertiary} maxLength={40} />
 
-        <Text style={styles.inputLabel}>説明（任意）</Text>
+        <Text style={styles.inputLabel}>{t('friends.descriptionOptional')}</Text>
         <TextInput style={[styles.input, styles.inputMulti]} value={desc} onChangeText={onChangeDesc}
-          placeholder="チャレンジの説明..." placeholderTextColor={Colors.textTertiary} multiline maxLength={200} />
+          placeholder={t('friends.descriptionPlaceholder')} placeholderTextColor={Colors.textTertiary} multiline maxLength={200} />
 
-        <Text style={styles.inputLabel}>チーム分け *（最低2つ）</Text>
+        <Text style={styles.inputLabel}>{t('friends.teamsRequired')}</Text>
         {/* 記入例に実在ブランド名（禁止語リスト収載語）を使わない */}
-        <Text style={styles.helpText}>参加者はどれか1つのチームに入って距離を競います（例: 朝ラン組 vs よる歩き隊）</Text>
+        <Text style={styles.helpText}>{t('friends.teamsHelp')}</Text>
         {categories.map((cat, i) => (
           <View key={i} style={styles.catBlock}>
             <View style={styles.catInputRow}>
@@ -57,7 +59,7 @@ export function PrivateBattleCreateForm({
                 style={[styles.input, { flex: 1 }]}
                 value={cat.label}
                 onChangeText={(v) => onChangeCategoryLabel(i, v)}
-                placeholder={i === 0 ? 'チーム 1（例: 朝ラン組）' : i === 1 ? 'チーム 2（例: よる歩き隊）' : `チーム ${i + 1}`}
+                placeholder={t(i === 0 ? 'friends.teamOnePlaceholder' : i === 1 ? 'friends.teamTwoPlaceholder' : 'friends.teamPlaceholder', { number: i + 1 })}
                 placeholderTextColor={Colors.textTertiary}
                 maxLength={20}
               />
@@ -66,13 +68,13 @@ export function PrivateBattleCreateForm({
                   style={styles.catRemoveBtn}
                   onPress={() => onRemoveCategory(i)}
                   accessibilityRole="button"
-                  accessibilityLabel={`チーム${i + 1}を削除`}
+                  accessibilityLabel={t('friends.deleteTeamA11y', { number: i + 1 })}
                 >
                   <Text style={styles.catRemoveText}>×</Text>
                 </TouchableOpacity>
               )}
             </View>
-            <Text style={styles.colorLabel}>識別色</Text>
+            <Text style={styles.colorLabel}>{t('friends.identifyingColor')}</Text>
             <View style={styles.colorRow}>
               {TeamColorOptions.map((option) => {
                 const selected = cat.colorId === option.id;
@@ -82,7 +84,10 @@ export function PrivateBattleCreateForm({
                     style={[styles.colorButton, selected && styles.colorButtonSelected]}
                     onPress={() => onChangeCategoryColor(i, option.id)}
                     accessibilityRole="radio"
-                    accessibilityLabel={`${option.label}をチーム${i + 1}の色にする`}
+                    accessibilityLabel={t('friends.chooseTeamColorA11y', {
+                      color: t(`colors.${option.id}`),
+                      number: i + 1,
+                    })}
                     accessibilityState={{ selected }}
                   >
                     <View style={[styles.colorSwatch, { backgroundColor: option.color }]}>
@@ -95,29 +100,29 @@ export function PrivateBattleCreateForm({
           </View>
         ))}
         <TouchableOpacity style={styles.addCatBtn} onPress={onAddCategory}>
-          <Text style={styles.addCatText}>＋ チームを追加</Text>
+          <Text style={styles.addCatText}>{t('friends.addTeam')}</Text>
         </TouchableOpacity>
 
-        <Text style={styles.inputLabel}>ランキング方式</Text>
+        <Text style={styles.inputLabel}>{t('friends.rankingMethod')}</Text>
         <View style={styles.modeRow}>
-          {(['average', 'total'] as const).map((t) => (
-            <TouchableOpacity key={t}
-              style={[styles.modeBtn, rankingType === t && styles.modeBtnActive]}
-              onPress={() => onChangeRankingType(t)}
+          {(['average', 'total'] as const).map((mode) => (
+            <TouchableOpacity key={mode}
+              style={[styles.modeBtn, rankingType === mode && styles.modeBtnActive]}
+              onPress={() => onChangeRankingType(mode)}
             >
-              <Text style={[styles.modeBtnText, rankingType === t && styles.modeBtnTextActive]}>
-                {t === 'average' ? '1人あたり平均' : '合計距離'}
+              <Text style={[styles.modeBtnText, rankingType === mode && styles.modeBtnTextActive]}>
+                {t(mode === 'average' ? 'friends.averagePerPerson' : 'friends.totalDistance')}
               </Text>
             </TouchableOpacity>
           ))}
         </View>
         <Text style={styles.helpText}>
           {rankingType === 'average'
-            ? '平均距離で競うので、チームの人数が違っても公平です'
-            : 'チーム全員の合計距離で競います。人数が多いチームほど有利です'}
+            ? t('friends.averageHelp')
+            : t('friends.totalHelp')}
         </Text>
 
-        <Text style={styles.inputLabel}>期間 *</Text>
+        <Text style={styles.inputLabel}>{t('friends.period')}</Text>
         <PeriodPicker
           startAt={startAt}
           endAt={endAt}
@@ -126,8 +131,8 @@ export function PrivateBattleCreateForm({
         />
 
         <View style={styles.formActions}>
-          <Button label="キャンセル" onPress={onCancel} variant="ghost" style={styles.formBtn} />
-          <Button label="作成する" onPress={onSubmit} loading={creating} style={styles.formBtn} />
+          <Button label={t('common.cancel')} onPress={onCancel} variant="ghost" style={styles.formBtn} />
+          <Button label={t('friends.createButton')} onPress={onSubmit} loading={creating} style={styles.formBtn} />
         </View>
       </Card>
     </KeyboardAvoidingView>

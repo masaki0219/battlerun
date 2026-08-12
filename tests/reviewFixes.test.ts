@@ -10,16 +10,16 @@ import { teamTitleLabel } from '../lib/teamTitle';
   const now = new Date('2026-07-29T11:00:00+09:00');
 
   // 残り4日23時間39分 → ホームも「4日」（従来の切り上げは「5日」で詳細と食い違った）
-  assert.equal(remainingLabel('2026-08-03T10:39:00+09:00', now), '4日');
-  assert.equal(remainingLabel('2026-07-30T11:00:00+09:00', now), '1日');
+  assert.equal(remainingLabel('2026-08-03T10:39:00+09:00', now, 'ja'), '4日');
+  assert.equal(remainingLabel('2026-07-30T11:00:00+09:00', now, 'ja'), '1日');
   // 1日未満は時間表示へ
-  assert.equal(remainingLabel('2026-07-30T10:59:00+09:00', now), '23時間');
-  assert.equal(remainingLabel('2026-07-29T12:30:00+09:00', now), '1時間');
+  assert.equal(remainingLabel('2026-07-30T10:59:00+09:00', now, 'ja'), '23時間');
+  assert.equal(remainingLabel('2026-07-29T12:30:00+09:00', now, 'ja'), '1時間');
   // 1時間未満は分表示
-  assert.equal(remainingLabel('2026-07-29T11:20:00+09:00', now), '20分');
+  assert.equal(remainingLabel('2026-07-29T11:20:00+09:00', now, 'ja'), '20分');
   // 終了済み・不正値
-  assert.equal(remainingLabel('2026-07-29T10:00:00+09:00', now), '終了');
-  assert.equal(remainingLabel('not-a-date', now), null);
+  assert.equal(remainingLabel('2026-07-29T10:00:00+09:00', now, 'ja'), '終了');
+  assert.equal(remainingLabel('not-a-date', now, 'ja'), null);
 }
 
 // 合計距離は100m単位、1回のランは10m単位で表示する。
@@ -29,9 +29,9 @@ assert.equal(formatTotalDistanceKm(Number.NaN), '0.0');
 assert.equal(formatRunDistanceKm(5.246), '5.25');
 assert.equal(formatRunDistanceKm(-1), '0.00');
 assert.equal(formatRunDistanceKm(Number.NaN), '0.00');
-assert.equal(teamTitleLabel(1), '優勝チームの一員');
-assert.equal(teamTitleLabel(2), '準優勝チームの一員');
-assert.equal(teamTitleLabel(4), '4位チームの一員');
+assert.equal(teamTitleLabel(1, 'ja'), '優勝チームの一員');
+assert.equal(teamTitleLabel(2, 'ja'), '準優勝チームの一員');
+assert.equal(teamTitleLabel(4, 'ja'), '4位チームの一員');
 assert.equal(fastestFullKmSplitIndex([
   { km: 1, seconds: 360, distanceKm: 1 },
   { km: 2, seconds: 330, distanceKm: 1 },

@@ -3,6 +3,8 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, Platform } from 'r
 import type { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Colors, Typography, Spacing, BorderRadius } from '../../design_tokens';
 import { formatDateInput, parseLocalDate, addDays } from '../../utils/dateInput';
+import { intlLocale, useTranslation } from '../../lib/i18n';
+import type { AppLanguage } from '../../lib/language';
 
 // ネイティブモジュール未リンクの実行環境（datetimepicker追加前のネイティブビルド等）で
 // クラッシュしないよう遅延ロードし、使えない場合は手入力へフォールバックする。
@@ -23,8 +25,6 @@ interface Props {
   onChangeStartAt: (v: string) => void;
   onChangeEndAt: (v: string) => void;
 }
-
-const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
 
 const toInput = formatDateInput;
 const fromInput = parseLocalDate;
@@ -69,8 +69,12 @@ function startOfDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
-function formatDisplay(date: Date): string {
-  return `${date.getMonth() + 1}月${date.getDate()}日(${WEEKDAYS[date.getDay()]})`;
+function formatDisplay(date: Date, language: AppLanguage): string {
+  return new Intl.DateTimeFormat(intlLocale(language), {
+    month: language === 'ja' ? 'numeric' : 'short',
+    day: 'numeric',
+    weekday: 'short',
+  }).format(date);
 }
 
 function diffDaysInclusive(start: Date, end: Date): number {
@@ -84,6 +88,7 @@ function diffDaysInclusive(start: Date, end: Date): number {
  * 値は親フォームの YYYY-MM-DD 文字列のまま受け渡す。
  */
 export function PeriodPicker({ startAt, endAt, onChangeStartAt, onChangeEndAt }: Props) {
+  const { language, t } = useTranslation();
   const [picker, setPicker] = useState<'start' | 'end' | null>(null);
 
   const today = startOfDay(new Date());
@@ -92,14 +97,14 @@ export function PeriodPicker({ startAt, endAt, onChangeStartAt, onChangeEndAt }:
   const duration = start && end ? diffDaysInclusive(start, end) : null;
 
   const startPresets: { label: string; date: Date }[] = [
-    { label: '今日から', date: today },
-    { label: '明日から', date: addDays(today, 1) },
-    { label: `月曜から`, date: nextMonday(today) },
+    { label: t('period.today'), date: today },
+    { label: t('period.tomorrow'), date: addDays(today, 1) },
+    { label: t('period.monday'), date: nextMonday(today) },
   ];
   const lengthPresets: { label: string; endFor: (s: Date) => Date }[] = [
-    { label: '1週間', endFor: (s) => addDays(s, 6) },
-    { label: '2週間', endFor: (s) => addDays(s, 13) },
-    { label: '1ヶ月', endFor: (s) => addOneMonth(s) },
+    { label: t('period.oneWeek'), endFor: (s) => addDays(s, 6) },
+    { label: t('period.twoWeeks'), endFor: (s) => addDays(s, 13) },
+    { label: t('period.oneMonth'), endFor: (s) => addOneMonth(s) },
   ];
 
   const startIsPreset = start ? startPresets.some((p) => toInput(p.date) === startAt) : false;
@@ -134,7 +139,7 @@ export function PeriodPicker({ startAt, endAt, onChangeStartAt, onChangeEndAt }:
 
   return (
     <View>
-      <Text style={styles.rowLabel}>いつから</Text>
+      <Text style={styles.rowLabel}>{t('period.fromWhen')}</Text>
       <View style={styles.chipRow}>
         {startPresets.map((p) => {
           const active = startAt === toInput(p.date);
@@ -151,15 +156,15 @@ export function PeriodPicker({ startAt, endAt, onChangeStartAt, onChangeEndAt }:
         <TouchableOpacity
           style={[styles.chip, !startIsPreset && styles.chipActive, picker === 'start' && styles.chipOpen]}
           onPress={() => setPicker(picker === 'start' ? null : 'start')}
-          accessibilityLabel="開始日をカレンダーで選ぶ"
+          accessibilityLabel={t('period.chooseStartA11y')}
         >
           <Text style={[styles.chipText, !startIsPreset && styles.chipTextActive]}>
-            {!startIsPreset && start ? formatDisplay(start) : '日付を選ぶ'} ▾
+            {!startIsPreset && start ? formatDisplay(start, language) : t('period.chooseDate')} ▾
           </Text>
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.rowLabel}>どのくらい</Text>
+      <Text style={styles.rowLabel}>{t('period.duration')}</Text>
       <View style={styles.chipRow}>
         {lengthPresets.map((p) => {
           const active = activeLength?.label === p.label;
@@ -176,10 +181,10 @@ export function PeriodPicker({ startAt, endAt, onChangeStartAt, onChangeEndAt }:
         <TouchableOpacity
           style={[styles.chip, !activeLength && styles.chipActive, picker === 'end' && styles.chipOpen]}
           onPress={() => setPicker(picker === 'end' ? null : 'end')}
-          accessibilityLabel="終了日をカレンダーで選ぶ"
+          accessibilityLabel={t('period.chooseEndA11y')}
         >
           <Text style={[styles.chipText, !activeLength && styles.chipTextActive]}>
-            {!activeLength && end ? `〜${formatDisplay(end)}` : '終了日を選ぶ'} ▾
+            {!activeLength && end ? t('period.endDisplay', { date: formatDisplay(end, language) }) : t('period.chooseEnd')} ▾
           </Text>
         </TouchableOpacity>
       </View>
@@ -188,13 +193,13 @@ export function PeriodPicker({ startAt, endAt, onChangeStartAt, onChangeEndAt }:
         const manualInput = (
           <View style={[styles.pickerWrap, styles.fallbackWrap]}>
             <Text style={styles.fallbackLabel}>
-              {picker === 'start' ? '開始日' : '終了日'}を入力（YYYY-MM-DD）
+              {t('period.enterDate', { label: t(picker === 'start' ? 'period.startDate' : 'period.endDate') })}
             </Text>
             <TextInput
               style={styles.fallbackInput}
               value={picker === 'start' ? startAt : endAt}
               onChangeText={picker === 'start' ? onChangeStartAt : onChangeEndAt}
-              placeholder="例: 2026-08-01"
+              placeholder={t('period.example')}
               placeholderTextColor={Colors.textTertiary}
               maxLength={10}
               keyboardType="numbers-and-punctuation"
@@ -209,7 +214,7 @@ export function PeriodPicker({ startAt, endAt, onChangeStartAt, onChangeEndAt }:
                 value={(picker === 'start' ? start : end) ?? today}
                 mode="date"
                 display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                locale="ja"
+                locale={language}
                 accentColor={Colors.primary}
                 minimumDate={picker === 'end' ? (start ?? today) : undefined}
                 onChange={handlePicked}
@@ -222,13 +227,13 @@ export function PeriodPicker({ startAt, endAt, onChangeStartAt, onChangeEndAt }:
       {start && end ? (
         <View style={[styles.summary, invalid && styles.summaryInvalid]}>
           <Text style={[styles.summaryMain, invalid && styles.summaryMainInvalid]}>
-            {formatDisplay(start)} 〜 {formatDisplay(end)}
+            {formatDisplay(start, language)} – {formatDisplay(end, language)}
           </Text>
           {invalid ? (
-            <Text style={styles.summaryError}>終了日が開始日より前になっています</Text>
+            <Text style={styles.summaryError}>{t('period.invalidOrder')}</Text>
           ) : (
             <Text style={styles.summarySub}>
-              {duration}日間・終了日の23:59までの記録が集計されます
+              {t('period.summary', { count: duration ?? 0 })}
             </Text>
           )}
         </View>
@@ -236,7 +241,7 @@ export function PeriodPicker({ startAt, endAt, onChangeStartAt, onChangeEndAt }:
         // 未入力はエラーではなく案内。赤いエラー表示は実際に不正なとき（終了<開始）と
         // 送信時バリデーション（親フォーム側）に任せる。
         <View style={styles.summary}>
-          <Text style={styles.summaryGuide}>開始日と終了日を選んでください</Text>
+          <Text style={styles.summaryGuide}>{t('period.chooseBoth')}</Text>
         </View>
       )}
     </View>

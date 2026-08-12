@@ -5,10 +5,14 @@
  * 入力は各画面が既に取得済みの Activity[] / CategoryStats[] / Battle のみ。
  */
 import type { Activity, CategoryStats, RoutePoint } from '../types';
+import type { AppLanguage } from '../lib/language';
 import { hasUsableAltitude } from './gpsQuality';
 
 const DAY_MS = 86_400_000;
-const WEEKDAY = ['日', '月', '火', '水', '木', '金', '土'] as const;
+const WEEKDAY = {
+  ja: ['日', '月', '火', '水', '木', '金', '土'],
+  en: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+} as const;
 
 /** ローカルタイムでその日の 0:00 を返す（日付境界の判定に使う） */
 function startOfDay(d: Date): Date {
@@ -41,13 +45,17 @@ export function calendarWeekStart(now: Date = new Date()): Date {
  * - label は曜日。isToday は今日のバケットのみ true（未来の曜日は km=0 のまま）。
  * - 空配列なら全 km=0 の7要素を返す（呼び出し側でプレースホルダー表示）。
  */
-export function weeklyBuckets(activities: Activity[], now: Date = new Date()): WeeklyBucket[] {
+export function weeklyBuckets(
+  activities: Activity[],
+  now: Date,
+  language: AppLanguage,
+): WeeklyBucket[] {
   const monday = calendarWeekStart(now);
   const today0 = startOfDay(now).getTime();
   const buckets = Array.from({ length: 7 }, (_, i) => {
     const day = new Date(monday);
     day.setDate(monday.getDate() + i); // i=0 が月曜、i=6 が日曜
-    return { time: day.getTime(), label: WEEKDAY[day.getDay()], km: 0, isToday: day.getTime() === today0 };
+    return { time: day.getTime(), label: WEEKDAY[language][day.getDay()], km: 0, isToday: day.getTime() === today0 };
   });
   const index = new Map(buckets.map((b, i) => [b.time, i]));
   for (const a of activities) {
@@ -61,14 +69,18 @@ export function weeklyBuckets(activities: Activity[], now: Date = new Date()): W
 }
 
 /** 直近7日の日別合計km。今日を常に右端に置き、古い日から並べる。 */
-export function rollingWeekBuckets(activities: Activity[], now: Date = new Date()): WeeklyBucket[] {
+export function rollingWeekBuckets(
+  activities: Activity[],
+  now: Date,
+  language: AppLanguage,
+): WeeklyBucket[] {
   const today = startOfDay(now);
   const buckets = Array.from({ length: 7 }, (_, index) => {
     const day = new Date(today);
     day.setDate(today.getDate() - (6 - index));
     return {
       time: day.getTime(),
-      label: WEEKDAY[day.getDay()],
+      label: WEEKDAY[language][day.getDay()],
       km: 0,
       isToday: index === 6,
     };
@@ -84,9 +96,11 @@ export function rollingWeekBuckets(activities: Activity[], now: Date = new Date(
 }
 
 /** 今週の起点（月曜）を「4月15日〜」形式で返す。週間カードの見出し用 */
-export function weekStartLabel(now: Date = new Date()): string {
+export function weekStartLabel(now: Date, language: AppLanguage): string {
   const from = calendarWeekStart(now);
-  return `${from.getMonth() + 1}月${from.getDate()}日〜`;
+  return language === 'ja'
+    ? `${from.getMonth() + 1}月${from.getDate()}日〜`
+    : `${from.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}–`;
 }
 
 /** 同一週の既読管理に使う、ローカル月曜始まりの YYYY-MM-DD キー。 */
@@ -226,15 +240,55 @@ export function statValue(s: CategoryStats, rankingType: RankingType): number {
 }
 
 /** 表示用の距離ラベル（total=「12.3km」/ average=「12.3km/人」）。 */
-export function statLabel(s: CategoryStats, rankingType: RankingType): string {
+export function statLabel(
+  s: CategoryStats,
+  rankingType: RankingType,
+  language: AppLanguage,
+): string {
   return rankingType === 'total'
-    ? `${formatTotalDistanceKm(s.totalDistanceKm)}km`
-    : `${formatTotalDistanceKm(s.avgDistanceKm)}km/人`;
+    ? `${formatTotalDistanceKm(s.totalDistanceKm)} km`
+    : `${formatTotalDistanceKm(s.avgDistanceKm)} ${language === 'ja' ? 'km/人' : 'km/person'}`;
 }
 
 /** 比較値の降順にソートした新配列を返す（元配列は変更しない）。 */
 export function sortedStats(stats: CategoryStats[], rankingType: RankingType): CategoryStats[] {
   return [...stats].sort((a, b) => statValue(b, rankingType) - statValue(a, rankingType));
+}
+
+export interface AdjacentRankRival {
+  stat: CategoryStats;
+  rank: number;
+  /** 自チームから見て、相手が上位か下位か。 */
+  direction: 'ahead' | 'behind';
+}
+
+/**
+ * 自チームに最も近い「別スコア」の相手を返す。
+ * 後方なら直上、首位（同率首位を含む）なら次の別スコアを対象にする。
+ */
+export function adjacentRankRival(
+  stats: CategoryStats[],
+  myCategoryId: string | null | undefined,
+  rankingType: RankingType,
+): AdjacentRankRival | null {
+  if (!myCategoryId) return null;
+  const sorted = sortedStats(stats, rankingType);
+  const mine = sorted.find((item) => item.categoryId === myCategoryId);
+  if (!mine) return null;
+
+  const myValue = statValue(mine, rankingType);
+  const higher = sorted.filter((item) => statValue(item, rankingType) > myValue);
+  const stat = higher.length > 0
+    ? higher[higher.length - 1]
+    : sorted.find((item) => statValue(item, rankingType) < myValue);
+  if (!stat) return null;
+
+  const rivalValue = statValue(stat, rankingType);
+  return {
+    stat,
+    rank: 1 + sorted.filter((item) => statValue(item, rankingType) > rivalValue).length,
+    direction: higher.length > 0 ? 'ahead' : 'behind',
+  };
 }
 
 /** プログレスバーの分母に使う最大比較値（0 除算回避のため下限 0.01）。 */
@@ -279,29 +333,37 @@ export function comebackTarget(
  * 同じ基準で丸める。切り上げ日数を表示へ流用すると、ホーム「残り5日」／詳細
  * 「4日23時間」のように食い違うため、この関数は切り捨てで揃える。
  */
-export function remainingLabel(endAt: string, now: Date = new Date()): string | null {
+export function remainingLabel(
+  endAt: string,
+  now: Date,
+  language: AppLanguage,
+): string | null {
   const end = parseDate(endAt);
   if (!end) return null;
   const ms = end.getTime() - now.getTime();
-  if (ms <= 0) return '終了';
+  if (ms <= 0) return language === 'ja' ? '終了' : 'Ended';
   const totalMinutes = Math.floor(ms / 60000);
   const days = Math.floor(totalMinutes / 1440);
-  if (days >= 1) return `${days}日`;
+  if (days >= 1) return language === 'ja' ? `${days}日` : `${days}d`;
   const hours = Math.floor(totalMinutes / 60);
-  if (hours >= 1) return `${hours}時間`;
-  return `${Math.max(1, totalMinutes)}分`;
+  if (hours >= 1) return language === 'ja' ? `${hours}時間` : `${hours}h`;
+  return language === 'ja' ? `${Math.max(1, totalMinutes)}分` : `${Math.max(1, totalMinutes)}m`;
 }
 
 /**
  * 相対的な日付表示。「今日」「昨日」「N日前」（2〜6日）「M/D」（7日以上・不正時は空文字）。
  */
-export function relativeDay(iso: string, now: Date = new Date()): string {
+export function relativeDay(
+  iso: string,
+  now: Date,
+  language: AppLanguage,
+): string {
   const d = parseDate(iso);
   if (!d) return '';
   const diffDays = Math.round((startOfDay(now).getTime() - startOfDay(d).getTime()) / DAY_MS);
-  if (diffDays === 0) return '今日';
-  if (diffDays === 1) return '昨日';
-  if (diffDays >= 2 && diffDays < 7) return `${diffDays}日前`;
+  if (diffDays === 0) return language === 'ja' ? '今日' : 'Today';
+  if (diffDays === 1) return language === 'ja' ? '昨日' : 'Yesterday';
+  if (diffDays >= 2 && diffDays < 7) return language === 'ja' ? `${diffDays}日前` : `${diffDays} days ago`;
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 

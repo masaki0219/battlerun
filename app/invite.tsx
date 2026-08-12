@@ -8,8 +8,10 @@ import { Button } from '../components/ui/Button';
 import { useAuthStore } from '../stores/authStore';
 import { PENDING_INVITE_CODE_KEY, normalizeInviteCode } from '../lib/invite';
 import { BorderRadius, Colors, Spacing, Typography } from '../design_tokens';
+import { useTranslation } from '../lib/i18n';
 
 export default function InviteScreen() {
+  const { t } = useTranslation();
   const params = useLocalSearchParams<{ code?: string }>();
   const { user, isLoading } = useAuthStore();
   const code = normalizeInviteCode(params.code);
@@ -47,20 +49,20 @@ export default function InviteScreen() {
         <View style={styles.icon}>
           <Ionicons name="people-outline" size={30} color={Colors.primaryDark} />
         </View>
-        <Text style={styles.eyebrow}>ZELIO 招待</Text>
-        <Text style={styles.title}>{code ? 'チャレンジに招待されました' : '招待リンクを確認できません'}</Text>
+        <Text style={styles.eyebrow}>{t('inviteLanding.eyebrow')}</Text>
+        <Text style={styles.title}>{code ? t('inviteLanding.invited') : t('inviteLanding.invalid')}</Text>
         {code ? (
           <>
-            <Text style={styles.body}>アカウントを作成またはログインすると、招待コードが自動入力されます。</Text>
+            <Text style={styles.body}>{t('inviteLanding.signInHint')}</Text>
             <View style={styles.codeBox}><Text style={styles.code}>{code}</Text></View>
-            <Button label="はじめる（新規登録）" onPress={() => router.push('/auth/signup')} />
-            <Button label="アカウントをお持ちの方はログイン" variant="secondary" onPress={() => router.push('/auth/login')} />
+            <Button label={t('inviteLanding.signup')} onPress={() => router.push('/auth/signup')} />
+            <Button label={t('inviteLanding.login')} variant="secondary" onPress={() => router.push('/auth/login')} />
           </>
         ) : (
           <>
-            <Text style={styles.body}>リンクが途中で切れている可能性があります。送信者から6桁の招待コードを受け取ってください。</Text>
+            <Text style={styles.body}>{t('inviteLanding.invalidHint')}</Text>
             <Button
-              label={user ? 'フレンドへ' : 'ログイン画面へ'}
+              label={user ? t('inviteLanding.friends') : t('inviteLanding.loginScreen')}
               onPress={() => router.replace(user ? '/(tabs)/friends' : '/auth/login')}
             />
           </>

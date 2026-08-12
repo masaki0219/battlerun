@@ -12,6 +12,7 @@
 // require を使って各関数内で遅延ロードする。
 import Constants from 'expo-constants';
 import { useAuthStore } from '../stores/authStore';
+import { translate } from './translate';
 
 const API_KEY = process.env['EXPO_PUBLIC_REVENUECAT_API_KEY'] ?? '';
 
@@ -117,7 +118,7 @@ export async function purchasePro(): Promise<boolean> {
   const Purchases = getPurchases();
   if (!API_KEY || !Purchases) {
     // 黙って false を返すと呼び出し元がガードを忘れたとき「押しても無反応」に戻るため、理由付きで失敗させる
-    throw new Error('この環境ではアプリ内購入を利用できません。実機のEASビルド（開発ビルド / TestFlight）でお試しください。');
+    throw new Error(translate('profile.purchaseBuildRequired'));
   }
   try {
     const offerings = await Purchases.getOfferings();
@@ -126,7 +127,7 @@ export async function purchasePro(): Promise<boolean> {
     );
     if (!proPackage) {
       throw new Error(
-        'ストアで販売中のプランが見つかりません。App Store Connect のサブスク商品登録と、RevenueCat の Offering 設定を確認してください。',
+        translate('profile.storePlanMissing'),
       );
     }
 
@@ -144,7 +145,7 @@ export async function purchasePro(): Promise<boolean> {
 export async function restorePurchases(): Promise<boolean> {
   const Purchases = getPurchases();
   if (!API_KEY || !Purchases) {
-    throw new Error('この環境では購入の復元を利用できません。実機のEASビルド（開発ビルド / TestFlight）でお試しください。');
+    throw new Error(translate('profile.restoreBuildRequired'));
   }
   try {
     const info = await Purchases.restorePurchases();

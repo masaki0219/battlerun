@@ -14,7 +14,7 @@ import { useAuthStore } from '../../../stores/authStore';
 import { useBattleStore } from '../../../stores/battleStore';
 import { isPro } from '../../../lib/pro';
 import type { Battle, CategoryStats } from '../../../types';
-import { Colors, DarkColors, Spacing, BorderRadius, teamColor, teamColorMap } from '../../../design_tokens';
+import { Colors, DarkColors, Spacing, BorderRadius, Typography, teamColor, teamColorMap } from '../../../design_tokens';
 import { MonoLabel } from '../../../components/ui/MonoLabel';
 import { RankBadge } from '../../../components/ui/RankBadge';
 import { VersusGauge } from '../../../components/viz/VersusGauge';
@@ -22,7 +22,7 @@ import { FactionColumns } from '../../../components/viz/FactionColumns';
 import { ProgressRing } from '../../../components/viz/ProgressRing';
 import { contributionShare } from '../../../utils/displayStats';
 import { useBattleParticipants } from '../../../hooks/useBattleParticipants';
-import { decorLabel } from '../../../lib/locale';
+import { useTranslation } from '../../../lib/i18n';
 import { prioritizeTeams } from '../../../utils/teamDisplay';
 import { teamTitleLabel } from '../../../lib/teamTitle';
 
@@ -40,10 +40,15 @@ function mapFirestoreToBattle(id: string, data: Record<string, unknown>): Battle
     status: (data['status'] as Battle['status']) ?? 'finished',
     createdBy: (data['createdBy'] as string | null) ?? null,
     inviteCode: (data['inviteCode'] as string | null) ?? null,
+    ...(Number.isInteger(data['termIndex']) && Number.isInteger(data['termCount']) ? {
+      termIndex: data['termIndex'] as number,
+      termCount: data['termCount'] as number,
+    } : {}),
   };
 }
 
 export default function BattleResultScreen() {
+  const { language, t } = useTranslation();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user, proEntitlement } = useAuthStore();
   const { publicBattles, privateBattles, myMemberships } = useBattleStore();
@@ -140,16 +145,16 @@ export default function BattleResultScreen() {
     return (
       <SafeAreaView style={s.root}>
         <View style={s.nav}>
-          <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="戻る">
+          <TouchableOpacity onPress={() => router.back()} accessibilityRole="button" accessibilityLabel={t('battleResult.backA11y')}>
             <Ionicons name="chevron-back" size={20} color={Colors.textSecondary} />
           </TouchableOpacity>
-          <MonoLabel color={Colors.textTertiary} size={9}>チャレンジ結果</MonoLabel>
+          <MonoLabel color={Colors.textTertiary} size={9}>{t('battleResult.label')}</MonoLabel>
           <View style={{ width: 28 }} />
         </View>
         <View style={s.center}>
           <Ionicons name="time-outline" size={40} color={Colors.textTertiary} />
-          <Text style={{ color: Colors.textPrimary, fontSize: 17, fontWeight: '800' }}>まだ開催中です</Text>
-          <Text style={{ color: Colors.textSecondary, fontSize: 13 }}>終了後に最終結果を確認できます</Text>
+          <Text style={{ color: Colors.textPrimary, fontSize: 17, fontWeight: '800' }}>{t('battleResult.stillActive')}</Text>
+          <Text style={{ color: Colors.textSecondary, fontSize: 13 }}>{t('battleResult.afterEnd')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -183,27 +188,28 @@ export default function BattleResultScreen() {
   }));
   const myShare = myTeam ? contributionShare(myStats.totalKm, myTeam.totalDistanceKm) : 0;
 
-  const startDate = new Date(localBattle.startAt).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' });
-  const endDate = new Date(localBattle.endAt).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' });
+  const dateLocale = language === 'ja' ? 'ja-JP' : 'en-US';
+  const startDate = new Date(localBattle.startAt).toLocaleDateString(dateLocale, { month: 'short', day: 'numeric' });
+  const endDate = new Date(localBattle.endAt).toLocaleDateString(dateLocale, { month: 'short', day: 'numeric' });
 
   function rankMedal(rank: number) {
-    if (rank === 1) return { emoji: '🥇', color: Colors.rank1Text, label: '優勝！', bg: `${Colors.accentYellow}18` };
-    if (rank === 2) return { emoji: '🥈', color: Colors.rank2, label: '準優勝', bg: `${Colors.rank2}28` };
-    if (rank === 3) return { emoji: '🥉', color: Colors.rank3, label: '3位入賞', bg: `${Colors.rank3}18` };
-    return { emoji: '🏃', color: Colors.textSecondary, label: `${rank}位`, bg: Colors.surfaceGray };
+    if (rank === 1) return { emoji: '🥇', color: Colors.rank1Text, label: t('battleResult.first'), bg: `${Colors.accentYellow}18` };
+    if (rank === 2) return { emoji: '🥈', color: Colors.rank2, label: t('battleResult.second'), bg: `${Colors.rank2}28` };
+    if (rank === 3) return { emoji: '🥉', color: Colors.rank3, label: t('battleResult.third'), bg: `${Colors.rank3}18` };
+    return { emoji: '🏃', color: Colors.textSecondary, label: t('common.rank', { rank }), bg: Colors.surfaceGray };
   }
 
   const medal = myRank ? rankMedal(myRank) : null;
 
   async function handleShare() {
-    const rankText = myRank ? `${myRank}位` : '参加';
+    const rankText = myRank ? t('common.rank', { rank: myRank }) : t('battleResult.participation');
     const kmText = myStats.totalKm.toFixed(1);
-    const message = `「${localBattle?.title ?? 'チャレンジ'}」で${rankText}！\n自分の貢献: ${kmText}km\n#ZELIO で走ろう`;
+    const message = t('battleResult.shareMessage', { title: localBattle?.title ?? t('battle.title'), rank: rankText, distance: kmText });
 
     try {
       if (shareCardRef.current && (await Sharing.isAvailableAsync())) {
         const uri = await captureRef(shareCardRef, { format: 'png', quality: 0.92 });
-        await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: '結果をシェア' });
+        await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: t('battleResult.shareDialog') });
         return;
       }
     } catch (e) {
@@ -218,16 +224,16 @@ export default function BattleResultScreen() {
   // 称号（優勝/準優勝陣営の一員）はサーバー（battleStatusScheduler）が付与したuser.titlesを正とする。
   // 結果画面を開いたクライアントでは計算しない。
   const myTitle = user?.titles?.find((t) => t.battleId === localBattle.id) ?? null;
-  const titleName = myTitle ? teamTitleLabel(myTitle.rank) : null;
+  const titleName = myTitle ? teamTitleLabel(myTitle.rank, language) : null;
 
   return (
     <SafeAreaView style={s.root} edges={['top']}>
       {/* Nav */}
       <View style={s.nav}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel="戻る">
+        <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel={t('battleResult.backA11y')}>
           <Ionicons name="chevron-back" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
-        <MonoLabel color={Colors.textTertiary} size={9}>チャレンジ結果</MonoLabel>
+        <MonoLabel color={Colors.textTertiary} size={9}>{t('battleResult.label')}</MonoLabel>
         <View style={{ width: 28 }} />
       </View>
 
@@ -235,21 +241,21 @@ export default function BattleResultScreen() {
         {/* ── 最終 VS ゲージ（ダーク演出） ── */}
         {!loading && sorted.length >= 3 ? (
           <View style={s.finalVs}>
-            <MonoLabel color={DarkColors.textTertiary} size={9}>{decorLabel('最終結果', 'FINAL')}</MonoLabel>
+            <MonoLabel color={DarkColors.textTertiary} size={9}>{t('locale.final')}</MonoLabel>
             <View style={{ marginTop: 12 }}>
-              <FactionColumns factions={finalColumns} valueSuffix={rankType === 'average' ? 'km/人' : 'km'} />
+              <FactionColumns factions={finalColumns} valueSuffix={rankType === 'average' ? t('common.perPersonKm') : 'km'} />
             </View>
           </View>
         ) : !loading && gaugeLeft && gaugeRight ? (
           <View style={s.finalVs}>
-            <MonoLabel color={DarkColors.textTertiary} size={9}>{decorLabel('最終結果', 'FINAL')}</MonoLabel>
+            <MonoLabel color={DarkColors.textTertiary} size={9}>{t('locale.final')}</MonoLabel>
             <View style={{ marginTop: 12 }}>
               <VersusGauge
                 left={{ label: gaugeLeft.label, km: valOf(gaugeLeft), isMine: gaugeLeft.categoryId === myCatId, color: colorsByCategory[gaugeLeft.categoryId] ?? teamColor(gaugeLeft.categoryId) }}
                 right={{ label: gaugeRight.label, km: valOf(gaugeRight), isMine: gaugeRight.categoryId === myCatId, color: colorsByCategory[gaugeRight.categoryId] ?? teamColor(gaugeRight.categoryId) }}
                 size="lg"
                 dark
-                unit={rankType === 'average' ? 'km/人' : 'km'}
+                unit={rankType === 'average' ? t('common.perPersonKm') : 'km'}
               />
             </View>
           </View>
@@ -257,7 +263,12 @@ export default function BattleResultScreen() {
 
         {/* ── Hero ── */}
         <View style={s.heroCard}>
-          <MonoLabel color={Colors.textTertiary} size={9}>{decorLabel('チャレンジ終了', 'RESULT')}</MonoLabel>
+          <MonoLabel color={Colors.textTertiary} size={9}>{t('locale.result')}</MonoLabel>
+          {localBattle.termIndex != null && localBattle.termCount != null && (
+            <Text style={s.termLabel}>
+              {t('battle.termLabel', { index: localBattle.termIndex, count: localBattle.termCount })}
+            </Text>
+          )}
           <Text style={s.heroTitle}>{localBattle.title}</Text>
           <Text style={s.heroDates}>{startDate} 〜 {endDate}</Text>
 
@@ -274,7 +285,7 @@ export default function BattleResultScreen() {
           ) : (
             <View style={s.medalBlock}>
               <Text style={s.medalEmoji}>🏃</Text>
-              <Text style={s.medalLabel}>お疲れさまでした！</Text>
+              <Text style={s.medalLabel}>{t('battleResult.completed')}</Text>
             </View>
           )}
         </View>
@@ -282,7 +293,7 @@ export default function BattleResultScreen() {
         {/* ── 称号発表 ── */}
         {titleName && (
           <View style={s.section}>
-            <MonoLabel color={Colors.textTertiary} size={9}>{decorLabel('称号獲得', 'TITLE EARNED')}</MonoLabel>
+            <MonoLabel color={Colors.textTertiary} size={9}>{t('locale.titleEarned')}</MonoLabel>
             <View style={s.titleCard}>
               <View style={s.titleIconWrap}>
                 <Ionicons name="ribbon" size={28} color={Colors.goldText} />
@@ -290,43 +301,41 @@ export default function BattleResultScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={s.titleName}>{titleName}</Text>
                 <Text style={s.titleDesc}>
-                  {myTitle?.teamName ? `「${myTitle.teamName}」として走った仲間に贈られる称号` : 'チームとして勝ち取った称号'}
+                  {myTitle?.teamName ? t('battleResult.titleForTeam', { team: myTitle.teamName }) : t('battleResult.titleForWin')}
                 </Text>
               </View>
-              <View style={s.titleNewChip}><Text style={s.titleNew}>{decorLabel('新しい称号', 'NEW')}</Text></View>
+              <View style={s.titleNewChip}><Text style={s.titleNew}>{t('locale.new')}</Text></View>
             </View>
           </View>
         )}
 
         {/* ── 個人成績 ── */}
         <View style={s.section}>
-          <MonoLabel color={Colors.textTertiary} size={9}>{decorLabel('個人成績', 'MY STATS')}</MonoLabel>
+          <MonoLabel color={Colors.textTertiary} size={9}>{t('locale.myStats')}</MonoLabel>
           <View style={s.statsCard}>
             {myTeam && (
               <View style={s.contribRow}>
                 <ProgressRing progress={myShare} size={64} strokeWidth={8}>
                   <Text style={s.contribPct}>{Math.round(myShare * 100)}%</Text>
                 </ProgressRing>
-                <Text style={s.contribText}>
-                  あなたはチームの{'\n'}<Text style={s.contribBold}>{Math.round(myShare * 100)}%</Text> を走った
-                </Text>
+                <Text style={s.contribText}>{t('battleResult.teamShare', { percent: Math.round(myShare * 100) })}</Text>
               </View>
             )}
             <View style={s.statRow}>
               <View style={s.statItem}>
-                <MonoLabel color={Colors.textTertiary} size={8}>貢献距離</MonoLabel>
+                <MonoLabel color={Colors.textTertiary} size={8}>{t('battleResult.contributionDistance')}</MonoLabel>
                 <Text style={s.statVal}>{myStats.totalKm.toFixed(1)}<Text style={s.statUnit}> km</Text></Text>
               </View>
               <View style={s.statDivider} />
               <View style={s.statItem}>
-                <MonoLabel color={Colors.textTertiary} size={8}>記録回数</MonoLabel>
-                <Text style={s.statVal}>{myStats.actCount ?? '—'}<Text style={s.statUnit}> 回</Text></Text>
+                <MonoLabel color={Colors.textTertiary} size={8}>{t('battleResult.activityCount')}</MonoLabel>
+                <Text style={s.statVal}>{myStats.actCount ?? '—'}<Text style={s.statUnit}>{t('battleResult.timesUnit')}</Text></Text>
               </View>
               <View style={s.statDivider} />
               <View style={s.statItem}>
                 {/* myRank は陣営同士の最終順位（チーム内の個人順位ではない）なのでラベルを値に合わせる */}
-                <MonoLabel color={Colors.textTertiary} size={8}>チーム順位</MonoLabel>
-                <Text style={s.statVal}>{myRank ?? '—'}<Text style={s.statUnit}> 位</Text></Text>
+                <MonoLabel color={Colors.textTertiary} size={8}>{t('battleResult.teamRank')}</MonoLabel>
+                <Text style={s.statVal}>{myRank ?? '—'}<Text style={s.statUnit}>{t('battleResult.rankUnit')}</Text></Text>
               </View>
             </View>
           </View>
@@ -335,7 +344,7 @@ export default function BattleResultScreen() {
         {/* ── 陣営ランキング ── */}
         {sorted.length > 0 && (
           <View style={s.section}>
-            <MonoLabel color={Colors.textTertiary} size={9}>{decorLabel('最終ランキング', 'FINAL RANKING')}</MonoLabel>
+            <MonoLabel color={Colors.textTertiary} size={9}>{t('locale.finalRanking')}</MonoLabel>
             <View style={s.rankCard}>
               {sorted.map((cat, i) => {
                 const isMe = cat.categoryId === myCatId;
@@ -345,10 +354,10 @@ export default function BattleResultScreen() {
                   <View key={cat.categoryId} style={[s.rankRow, isMe && s.rankRowMe, i > 0 && s.rankRowBorder]}>
                     {displayRank ? <RankBadge rank={displayRank} /> : <Text style={s.rankKm}>—</Text>}
                     <Text style={[s.rankName, isMe && { color: Colors.primary, fontWeight: '900' }]} numberOfLines={1}>
-                      {cat.label}{isMe ? ' （あなた）' : ''}
+                      {cat.label}{isMe ? t('battleDetail.youSuffix') : ''}
                     </Text>
                     <Text style={[s.rankKm, isMe && { color: Colors.primary }]}>
-                      {val.toFixed(1)}<Text style={s.rankKmUnit}>{rankType === 'average' ? ' km/人' : ' km'}</Text>
+                      {val.toFixed(1)}<Text style={s.rankKmUnit}>{rankType === 'average' ? ` ${t('common.perPersonKm')}` : ' km'}</Text>
                     </Text>
                   </View>
                 );
@@ -360,7 +369,7 @@ export default function BattleResultScreen() {
         {/* ── 個人貢献ランキング (上位5名) ── */}
         {participants.length > 0 && (
           <View style={s.section}>
-            <MonoLabel color={Colors.textTertiary} size={9}>{decorLabel('個人貢献ランキング', 'TOP RUNNERS')}</MonoLabel>
+            <MonoLabel color={Colors.textTertiary} size={9}>{t('locale.topRunners')}</MonoLabel>
             <View style={s.rankCard}>
               {participants.slice(0, 5).map((p, i) => {
                 const isMe = p.userId === user?.id;
@@ -371,7 +380,7 @@ export default function BattleResultScreen() {
                   <View key={p.userId} style={[s.rankRow, isMe && s.rankRowMe, i > 0 && s.rankRowBorder]}>
                     {participantRank ? <RankBadge rank={participantRank} /> : <Text style={s.rankKm}>—</Text>}
                     <Text style={[s.rankName, isMe && { color: Colors.primary, fontWeight: '900' }]} numberOfLines={1}>
-                      {p.displayName}{isMe ? ' （あなた）' : ''}
+                      {p.displayName}{isMe ? t('battleDetail.youSuffix') : ''}
                     </Text>
                     <Text style={[s.rankKm, isMe && { color: Colors.primary }]}>
                       {p.totalDistanceKm.toFixed(1)}<Text style={s.rankKmUnit}> km</Text>
@@ -385,12 +394,12 @@ export default function BattleResultScreen() {
 
         {/* ── 共有 ── */}
         <View style={s.section}>
-          <MonoLabel color={Colors.textTertiary} size={9}>{decorLabel('結果をシェア', 'SHARE RESULT')}</MonoLabel>
+          <MonoLabel color={Colors.textTertiary} size={9}>{t('locale.shareResult')}</MonoLabel>
           <View ref={shareCardRef} collapsable={false} style={s.sharePreview}>
             <View style={s.sharePreviewContent}>
               <Text style={s.sharePreviewTitle}>{localBattle.title}</Text>
               <Text style={s.sharePreviewRank}>
-                {myRank ? `${myRank}位` : '参加'} · {myStats.totalKm.toFixed(1)}km
+                {myRank ? t('common.rank', { rank: myRank }) : t('battleResult.participation')} · {myStats.totalKm.toFixed(1)}km
               </Text>
               {myTeam?.label ? (
                 <Text style={s.sharePreviewTeam}>{myTeam.label}</Text>
@@ -405,36 +414,36 @@ export default function BattleResultScreen() {
           </View>
           <TouchableOpacity style={s.shareBtn} onPress={handleShare} activeOpacity={0.85}>
             <Ionicons name="share-outline" size={18} color={Colors.textOnAccent} />
-            <Text style={s.shareBtnText}>結果をシェアする</Text>
+            <Text style={s.shareBtnText}>{t('battleResult.share')}</Text>
           </TouchableOpacity>
           {!userIsPro && (
             <TouchableOpacity onPress={() => router.push('/(tabs)/profile' as any)}>
-              <Text style={s.proHint}>Proなら透かしなしでシェアできます →</Text>
+              <Text style={s.proHint}>{t('battleResult.proShare')}</Text>
             </TouchableOpacity>
           )}
         </View>
 
         {/* ── 次のアクション ── */}
         <View style={s.section}>
-          <MonoLabel color={Colors.textTertiary} size={9}>{decorLabel('次にすること', 'NEXT ACTION')}</MonoLabel>
+          <MonoLabel color={Colors.textTertiary} size={9}>{t('locale.nextAction')}</MonoLabel>
           <View style={s.nextActions}>
             <TouchableOpacity
               style={s.nextBtn}
               onPress={() => router.replace('/(tabs)/battle' as any)}
               activeOpacity={0.85}
               accessibilityRole="button"
-              accessibilityLabel="次のチャレンジを探す"
+              accessibilityLabel={t('battleResult.findNext')}
             >
               <Ionicons name="search-outline" size={18} color={Colors.textPrimary} />
-              <Text style={s.nextBtnText}>次のチャレンジを探す</Text>
+              <Text style={s.nextBtnText}>{t('battleResult.findNext')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[s.nextBtn, userIsPro && s.nextBtnPro]}
               onPress={() => {
                 if (!userIsPro) {
                   Alert.alert(
-                    'Proプランが必要です',
-                    '友達チャレンジの作成にはProプランが必要です。\nプロフィール画面からアップグレードできます。',
+                    t('friends.proRequiredTitle'),
+                    t('friends.proRequiredBody'),
                   );
                   return;
                 }
@@ -442,11 +451,11 @@ export default function BattleResultScreen() {
               }}
               activeOpacity={0.85}
               accessibilityRole="button"
-              accessibilityLabel={userIsPro ? 'チャレンジを作る' : 'チャレンジを作る、Proプランが必要'}
+              accessibilityLabel={userIsPro ? t('battleResult.create') : t('battleResult.createProA11y')}
             >
               <Ionicons name="add-circle-outline" size={18} color={userIsPro ? Colors.primary : Colors.textPrimary} />
               <Text style={[s.nextBtnText, userIsPro && { color: Colors.primary }]}>
-                チャレンジを作る{!userIsPro ? ' (Pro)' : ''}
+                {t('battleResult.create')}{!userIsPro ? ' (Pro)' : ''}
               </Text>
             </TouchableOpacity>
           </View>
@@ -483,6 +492,7 @@ const s = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
+  termLabel: { marginTop: Spacing.sm, fontSize: Typography.fontSize.xs, fontWeight: Typography.fontWeight.bold, color: Colors.primary },
   heroTitle: { fontSize: 20, fontWeight: '900', color: Colors.textPrimary, textAlign: 'center', marginTop: 4 },
   heroDates: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600' },
   medalBlock: {

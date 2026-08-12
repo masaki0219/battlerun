@@ -19,6 +19,8 @@ import {
 } from '../utils/autoPause';
 import { completeDeclarationsForActivity } from '../lib/declarations';
 import { deviceTimeZone } from '../utils/declarations';
+import { translate } from '../lib/translate';
+import { userFacingError } from '../lib/userError';
 import {
   DEFAULT_GPS_PROCESSING_CONFIG,
   DISTANCE_MAX_ACCURACY_M,
@@ -436,7 +438,7 @@ export const useRecordStore = create<RecordState>((set, get) => ({
 
   stopRecording: async () => {
     const state = get();
-    if (!state.isRecording) throw new Error('記録はすでに停止しています。');
+    if (!state.isRecording) throw new Error(translate('stats.alreadyStopped'));
     const endedAt = new Date().toISOString();
 
     // v3は最後の1点を保留している。純粋finalizeで正常な移動だけを確定し、
@@ -784,7 +786,7 @@ function errorCode(error: unknown): string {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : '記録を送信できませんでした。';
+  return userFacingError(error, translate('stats.uploadFailed'));
 }
 
 function isPermanentSubmissionError(error: unknown): boolean {
@@ -804,7 +806,7 @@ interface SubmittedActivityResult {
 
 async function submitPending(item: PendingActivity): Promise<SubmittedActivityResult> {
   if (item.ownerUserId && auth.currentUser?.uid !== item.ownerUserId) {
-    throw new Error('ログイン中のアカウントが変わったため、この記録の送信を保留しました。');
+    throw new Error(translate('stats.accountChanged'));
   }
   const submit = httpsCallable(functions, 'submitActivity');
   const result = await submit({

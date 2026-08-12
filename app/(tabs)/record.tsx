@@ -49,7 +49,7 @@ import {
   WARMUP_POINT_MAX_AGE_MS,
 } from '../../utils/gpsProcessing';
 import { STEP_BATTLE_DAILY_CAP_KM } from '../../lib/constants';
-import { decorLabel } from '../../lib/locale';
+import { intlLocale, useTranslation } from '../../lib/i18n';
 import {
   resolveDisplayedBattle,
   selectedBattleStorageKey,
@@ -75,18 +75,14 @@ function useElapsedTime(): number {
   return elapsed;
 }
 
-const GOAL_OPTIONS: { label: string; goal: RunGoal | null }[] = [
-  { label: '目標なし', goal: null },
-  { label: '3km', goal: { type: 'distance', value: 3 } },
-  { label: '5km', goal: { type: 'distance', value: 5 } },
-  { label: '10km', goal: { type: 'distance', value: 10 } },
-  { label: '30分', goal: { type: 'duration', value: 1800 } },
-  { label: '60分', goal: { type: 'duration', value: 3600 } },
+const GOAL_OPTIONS: { goal: RunGoal | null }[] = [
+  { goal: null },
+  { goal: { type: 'distance', value: 3 } },
+  { goal: { type: 'distance', value: 5 } },
+  { goal: { type: 'distance', value: 10 } },
+  { goal: { type: 'duration', value: 1800 } },
+  { goal: { type: 'duration', value: 3600 } },
 ];
-
-function goalLabel(goal: RunGoal): string {
-  return goal.type === 'distance' ? `${goal.value}km` : `${Math.round(goal.value / 60)}分`;
-}
 
 type GpsReadiness =
   | 'preparing'
@@ -123,6 +119,7 @@ function displayRouteSegments(points: RoutePoint[]): RoutePoint[][] {
 }
 
 export default function RecordScreen() {
+  const { language, t } = useTranslation();
   const { fontScale } = useWindowDimensions();
   const { user } = useAuthStore();
   const {
@@ -187,7 +184,7 @@ export default function RecordScreen() {
   // 開始前の下段データ（前回のラン・週間ミニバー・ストリーク）
   const { activities: recentActivities, loading: recentLoading } = useRecentActivities(20);
   const last = lastRun(recentActivities);
-  const weekBuckets = rollingWeekBuckets(recentActivities);
+  const weekBuckets = rollingWeekBuckets(recentActivities, new Date(), language);
   const streak = streakDays(recentActivities);
 
   const [selectedMode, setSelectedMode] = useState<MeasurementType>('gps');
@@ -243,13 +240,25 @@ export default function RecordScreen() {
   }, [gpsReadiness]);
 
   const voiceGuide = voiceSettings.enabled;
+  const speechLanguage = intlLocale(language);
+  const goalOptions = GOAL_OPTIONS.map(({ goal }) => ({
+    goal,
+    label: goal
+      ? goal.type === 'distance'
+        ? `${goal.value}km`
+        : t('run.minutesValue', { count: Math.round(goal.value / 60) })
+      : t('run.noGoal'),
+  }));
+  const formatGoalLabel = (runGoal: RunGoal) => runGoal.type === 'distance'
+    ? `${runGoal.value}km`
+    : t('run.minutesValue', { count: Math.round(runGoal.value / 60) });
 
   useEffect(() => {
     if (!latestRunCheer) return;
     setHudCheerName(latestRunCheer.senderName);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     if (voiceSettings.enabled) {
-      Speech.speak(`${latestRunCheer.senderName}さんから応援が届きました`, { language: 'ja-JP', rate: 1.0 });
+      Speech.speak(t('run.cheerSpeech', { name: latestRunCheer.senderName }), { language: speechLanguage, rate: 1.0 });
     }
     const timer = setTimeout(() => setHudCheerName(null), 8_000);
     return () => clearTimeout(timer);
@@ -298,11 +307,11 @@ export default function RecordScreen() {
       distanceKm,
       lapElapsedSeconds: elapsed - lastVoiceElapsedRef.current,
       lapDistanceKm: distanceKm - lastVoiceDistanceRef.current,
-    });
+    }, language);
     lastVoiceElapsedRef.current = elapsed;
     lastVoiceDistanceRef.current = distanceKm;
-    if (message) Speech.speak(message, { language: 'ja-JP', rate: 1.0 });
-  }, [distanceKm, elapsed, isPaused, isRecording, voiceSettings]);
+    if (message) Speech.speak(message, { language: speechLanguage, rate: 1.0 });
+  }, [distanceKm, elapsed, isPaused, isRecording, language, speechLanguage, voiceSettings]);
 
   // 目標達成を一度だけアナウンス
   useEffect(() => {
@@ -312,7 +321,10 @@ export default function RecordScreen() {
     if (achieved) {
       goalAnnouncedRef.current = true;
       if (voiceGuide) {
-        Speech.speak(`目標の${goal.type === 'distance' ? `${goal.value}キロメートル` : `${Math.round(goal.value / 60)}分`}を達成しました`, { language: 'ja-JP', rate: 1.0 });
+        const spokenGoal = goal.type === 'distance'
+          ? t('run.kilometersSpeech', { value: goal.value })
+          : t('run.minutesValue', { count: Math.round(goal.value / 60) });
+        Speech.speak(t('run.goalReachedSpeech', { goal: spokenGoal }), { language: speechLanguage, rate: 1.0 });
       }
     }
   }, [distanceKm, elapsed, isRecording, goal, voiceGuide]);
@@ -495,7 +507,7 @@ export default function RecordScreen() {
         );
       }
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      Speech.speak('スタート', { language: 'ja-JP', rate: 1.0 });
+      Speech.speak(t('run.startSpeech'), { language: speechLanguage, rate: 1.0 });
       finishingCountdownRef.current = false;
     };
     const update = () => {
@@ -525,18 +537,18 @@ export default function RecordScreen() {
     const provider = await Location.getProviderStatusAsync().catch(() => null);
     if (!provider) {
       Alert.alert(
-        '位置情報を確認できません',
-        '端末の位置情報状態を確認できませんでした。少し待ってからもう一度お試しください。',
+        t('run.locationUnknownTitle'),
+        t('run.locationUnknownBody'),
       );
       return false;
     }
     if (!provider.locationServicesEnabled) {
       Alert.alert(
-        '位置情報サービスがOFFです',
-        'GPS距離を記録するには、端末の位置情報サービスをONにしてください。',
+        t('run.servicesOffTitle'),
+        t('run.servicesOffBody'),
         [
-          { text: '閉じる', style: 'cancel' },
-          { text: '端末設定を開く', onPress: () => { void Linking.openSettings(); } },
+          { text: t('common.close'), style: 'cancel' },
+          { text: t('run.openSettings'), onPress: () => { void Linking.openSettings(); } },
         ],
       );
       return false;
@@ -546,8 +558,8 @@ export default function RecordScreen() {
     if (!foreground?.granted) {
       if (foreground && !foreground.canAskAgain) {
         Alert.alert(
-          '位置情報の許可が必要です',
-          'GPSモードで距離を計測するには、端末の設定から ZELIO の位置情報を「使用中のみ許可」以上にしてください。歩数モードなら位置情報なしで記録できます。',
+          t('run.permissionRequiredTitle'),
+          t('run.permissionRequiredBody'),
         );
         return false;
       }
@@ -556,19 +568,19 @@ export default function RecordScreen() {
     }
     if (!foreground?.granted) {
       Alert.alert(
-        '位置情報を許可すると記録できます',
-        'GPSモードは走行ルートから距離を計算します。許可せずに記録すると距離が0のままになるため、開始しませんでした。歩数モードなら位置情報なしで記録できます。',
+        t('run.allowLocationTitle'),
+        t('run.allowLocationBody'),
       );
       return false;
     }
 
     if (Platform.OS === 'android' && foreground.android?.accuracy !== 'fine') {
       Alert.alert(
-        '正確な位置情報が必要です',
-        '概算位置では走行距離とチーム貢献距離を正確に計測できません。端末設定でZELIOの位置情報を「正確」にしてください。',
+        t('run.preciseRequiredTitle'),
+        t('run.preciseRequiredBody'),
         [
-          { text: '閉じる', style: 'cancel' },
-          { text: '端末設定を開く', onPress: () => { void Linking.openSettings(); } },
+          { text: t('common.close'), style: 'cancel' },
+          { text: t('run.openSettings'), onPress: () => { void Linking.openSettings(); } },
         ],
       );
       return false;
@@ -591,8 +603,8 @@ export default function RecordScreen() {
     if (background?.granted) {
       setBackgroundPermissionGranted(true);
       Alert.alert(
-        '設定済みです',
-        '位置情報は「常に許可」されています。実際の動作状態は記録開始後の画面にも表示します。',
+        t('run.alreadyConfigured'),
+        t('run.alreadyConfiguredBody'),
       );
       return;
     }
@@ -605,8 +617,8 @@ export default function RecordScreen() {
       if (background?.granted) {
         setForegroundOnlyApproved(false);
         Alert.alert(
-          '位置情報の設定が完了しました',
-          '「常に許可」に設定できました。準備ができたら「スタート」を押してください。',
+          t('run.backgroundConfigured'),
+          t('run.backgroundConfiguredBody'),
         );
         return;
       }
@@ -615,11 +627,11 @@ export default function RecordScreen() {
     }
 
     Alert.alert(
-      '設定はまだ完了していません',
-      '端末設定で ZELIO の位置情報を「常に許可」にしてください。この画面へ戻ると設定状態が更新されます。',
+      t('run.backgroundNotConfigured'),
+      t('run.backgroundNotConfiguredBody'),
       [
-        { text: '閉じる', style: 'cancel' },
-        { text: '端末設定を開く', onPress: () => { void Linking.openSettings(); } },
+        { text: t('common.close'), style: 'cancel' },
+        { text: t('run.openSettings'), onPress: () => { void Linking.openSettings(); } },
       ],
     );
   }
@@ -628,7 +640,7 @@ export default function RecordScreen() {
     if (selectedMode === 'steps') {
       const permission = await Pedometer.requestPermissionsAsync().catch(() => ({ status: 'denied' as const }));
       if (permission.status !== 'granted') {
-        Alert.alert('モーション権限が必要です', '歩数モードを使うには、端末設定でモーションとフィットネスを許可してください。');
+        Alert.alert(t('run.motionRequiredTitle'), t('run.motionRequiredBody'));
         return;
       }
     } else {
@@ -685,7 +697,7 @@ export default function RecordScreen() {
   async function saveAndStop() {
     if (!user) {
       cancelStopSheet();
-      Alert.alert('エラー', 'ログインが必要です');
+      Alert.alert(t('common.error'), t('auth.loginRequired'));
       return;
     }
     setShowStopSheet(false);
@@ -697,16 +709,16 @@ export default function RecordScreen() {
       stoppedActivity = activity;
       if (voiceGuide) {
         Speech.speak(
-          `記録を終了しました。${formatRunDistanceKm(activity.distanceKm)}キロメートルです`,
-          { language: 'ja-JP', rate: 1.0 },
+          t('run.finishSpeech', { distance: formatRunDistanceKm(activity.distanceKm) }),
+          { language: speechLanguage, rate: 1.0 },
         );
       }
       const submitted = await saveActivityToFirestore({ activity });
       if (!submitted) {
         reset();
         Alert.alert(
-          '記録を保存できませんでした',
-          '有効な距離が計測されていないため、この記録は保存されませんでした。',
+          t('run.saveFailedTitle'),
+          t('run.noValidDistance'),
         );
         return;
       }
@@ -730,14 +742,14 @@ export default function RecordScreen() {
       if (e instanceof ActivitySaveError && e.kind === 'queued') {
         reset();
         Alert.alert(
-          '端末に保存しました',
-          '通信できなかったため、記録を端末に保管しました。オンライン復帰時に自動で再送します。開催中のチャレンジには、結果確定前に再送できた場合に加算されます。',
+          t('run.savedOnDevice'),
+          t('run.queuedBody'),
         );
       } else if (e instanceof ActivitySaveError && e.kind === 'rejected') {
         reset();
         Alert.alert(
-          '記録を保存できませんでした',
-          '記録データがサーバーの検証条件を満たさなかったため、再送対象には残していません。',
+          t('run.saveFailedTitle'),
+          t('run.rejectedBody'),
         );
       } else {
         if (stoppedActivity) {
@@ -754,8 +766,8 @@ export default function RecordScreen() {
           });
         }
         Alert.alert(
-          '端末への保存に失敗しました',
-          '記録を端末の再送キューへ保存できなかったため、一時停止状態に戻しました。空き容量を確認して、もう一度停止してください。',
+          t('run.deviceSaveFailed'),
+          t('run.deviceSaveFailedBody'),
         );
       }
       console.error('saveActivityToFirestore error:', e);
@@ -768,12 +780,12 @@ export default function RecordScreen() {
   function confirmDiscard() {
     setShowStopSheet(false);
     Alert.alert(
-      'この記録を破棄しますか？',
-      '距離・ルート・歩数は保存されず、元に戻せません。',
+      t('run.discardTitle'),
+      t('run.discardBody'),
       [
-        { text: '戻る', style: 'cancel', onPress: () => { stopGuardRef.current = false; } },
+        { text: t('common.back'), style: 'cancel', onPress: () => { stopGuardRef.current = false; } },
         {
-          text: '破棄する',
+          text: t('run.discard'),
           style: 'destructive',
           onPress: () => {
             Speech.stop();
@@ -791,12 +803,12 @@ export default function RecordScreen() {
   const gpsBackgroundChoiceReady = backgroundPermissionGranted === true || foregroundOnlyApproved;
   const startDisabled = selectedMode === 'gps' && (!gpsQualityReady || !gpsBackgroundChoiceReady);
   const startHint = selectedMode !== 'gps'
-    ? 'タップしてラン開始'
+    ? t('run.tapToStart')
     : !gpsBackgroundChoiceReady
-      ? '下で画面OFFの設定、または画面を開いたまま使う方法を選んでください'
+      ? t('run.chooseBackground')
       : !gpsQualityReady
-        ? 'GPSの準備ができるとスタートできます'
-        : 'タップしてラン開始';
+        ? t('run.waitForGps')
+        : t('run.tapToStart');
 
   async function handleGpsStatusPress() {
     if (gpsReadiness === 'no-permission') {
@@ -821,7 +833,7 @@ export default function RecordScreen() {
         onPress={() => router.push(declarationPublishingEnabled ? '/(tabs)/battle' as any : '/(tabs)/profile' as any)}
         activeOpacity={0.7}
         accessibilityRole="button"
-        accessibilityLabel={declarationPublishingEnabled ? '今日のラン宣言を開く' : 'プロフィールでラン宣言の公開設定を開く'}
+        accessibilityLabel={t(declarationPublishingEnabled ? 'run.declarationOpenA11y' : 'battle.declarationSettingsA11y')}
       >
         <View style={s.declarationGuideIcon}>
           <Ionicons name={ownDeclaration?.status === 'done' ? 'checkmark' : 'flag-outline'} size={16} color={Colors.accentText} />
@@ -829,17 +841,17 @@ export default function RecordScreen() {
         <View style={[s.declarationGuideCopy, fontScale >= 1.6 && s.declarationGuideCopyLargeText]}>
           <Text style={s.declarationGuideTitle} numberOfLines={fontScale >= 1.6 ? undefined : 1}>
             {!declarationPublishingEnabled
-              ? 'ラン宣言は公開OFFです'
+              ? t('run.declarationOff')
               : ownDeclaration?.status === 'done'
-              ? '今日のラン宣言を達成しました'
+              ? t('run.declarationDone')
               : ownDeclaration
-                ? `今日の予定：${declarationTimeLabel(ownDeclaration.plannedAt, ownDeclaration.timezone)}`
-                : '今日、走る予定はありますか？'}
+                ? t('run.todayPlan', { time: declarationTimeLabel(ownDeclaration.plannedAt, ownDeclaration.timezone, language) })
+                : t('run.planQuestion')}
           </Text>
           <Text style={s.declarationGuideBattle} numberOfLines={fontScale >= 1.6 ? undefined : 1}>{declarationBattle.title}</Text>
         </View>
         <Text style={s.declarationGuideAction}>
-          {!declarationPublishingEnabled ? '設定' : ownDeclaration?.status === 'planned' ? '変更' : ownDeclaration ? '確認' : '宣言する'}
+          {t(!declarationPublishingEnabled ? 'profile.settings' : ownDeclaration?.status === 'planned' ? 'battle.edit' : ownDeclaration ? 'run.check' : 'run.declare')}
         </Text>
         <Ionicons name="chevron-forward" size={15} color={Colors.textTertiary} />
       </TouchableOpacity>
@@ -853,7 +865,7 @@ export default function RecordScreen() {
         <ScrollView contentContainerStyle={s.preScroll} showsVerticalScrollIndicator={false}>
           <View style={s.preHeader}>
             <Text style={s.preEyebrow}>ZELIO</Text>
-            <Text style={s.preTitle}>ラン</Text>
+            <Text style={s.preTitle}>{t('run.title')}</Text>
           </View>
 
           {/* Mode toggle */}
@@ -866,13 +878,13 @@ export default function RecordScreen() {
                   style={[s.modeBtn, active && s.modeBtnActive]}
                   onPress={() => {
                     if (mode === 'steps' && !isStepAvailable) {
-                      Alert.alert('歩数センサー非対応', 'GPSモードをご利用ください。');
+                      Alert.alert(t('run.stepsUnsupported'), t('run.useGps'));
                       return;
                     }
                     setSelectedMode(mode);
                   }}
                   accessibilityRole="radio"
-                  accessibilityLabel={mode === 'gps' ? 'GPSモード' : '歩数モード'}
+                  accessibilityLabel={t(mode === 'gps' ? 'run.gpsMode' : 'run.stepsMode')}
                   accessibilityState={{ selected: active }}
                 >
                   <Ionicons
@@ -881,7 +893,7 @@ export default function RecordScreen() {
                     color={active ? Colors.textPrimary : Colors.textTertiary}
                   />
                   <Text style={[s.modeBtnText, active && s.modeBtnTextActive]}>
-                    {mode === 'gps' ? 'GPSモード' : '歩数'}
+                    {t(mode === 'gps' ? 'run.gpsMode' : 'run.steps')}
                   </Text>
                 </TouchableOpacity>
               );
@@ -889,15 +901,15 @@ export default function RecordScreen() {
           </View>
           {selectedMode === 'steps' && (
             <Text style={s.stepsFairnessNote}>
-              個人記録には全距離を保存し、チャレンジには1日{STEP_BATTLE_DAILY_CAP_KM}kmまで加算されます
+              {t('run.stepsFairness', { cap: STEP_BATTLE_DAILY_CAP_KM })}
             </Text>
           )}
 
           {/* Goal chips */}
           <View style={[s.goalRow, fontScale >= 1.6 && s.goalRowLargeText]}>
-            <Text style={s.goalRowLabel}>目標</Text>
+            <Text style={s.goalRowLabel}>{t('run.goal')}</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.goalChips}>
-              {GOAL_OPTIONS.map((option, idx) => {
+              {goalOptions.map((option, idx) => {
                 const active = selectedGoalIdx === idx;
                 return (
                   <TouchableOpacity
@@ -905,7 +917,7 @@ export default function RecordScreen() {
                     style={[s.goalChip, active && s.goalChipActive]}
                     onPress={() => setSelectedGoalIdx(idx)}
                     accessibilityRole="radio"
-                    accessibilityLabel={`目標 ${option.label}`}
+                    accessibilityLabel={t('run.goalA11y', { goal: option.label })}
                     accessibilityState={{ selected: active }}
                   >
                     <Text style={[s.goalChipText, active && s.goalChipTextActive]}>{option.label}</Text>
@@ -926,7 +938,7 @@ export default function RecordScreen() {
                 disabled={startDisabled}
                 activeOpacity={0.85}
                 accessibilityRole="button"
-                accessibilityLabel="ランの記録を開始"
+                accessibilityLabel={t('run.startA11y')}
                 accessibilityState={{ disabled: startDisabled }}
               >
                 <Text
@@ -936,7 +948,7 @@ export default function RecordScreen() {
                   adjustsFontSizeToFit
                   minimumFontScale={0.8}
                 >
-                  {decorLabel('スタート', 'START')}
+                  {t('locale.start')}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -949,7 +961,7 @@ export default function RecordScreen() {
                 style={s.gpsChip}
                 onPress={() => { void handleGpsStatusPress(); }}
                 accessibilityRole="button"
-                accessibilityLabel="GPS状態を更新または設定"
+                accessibilityLabel={t('run.gpsStatusA11y')}
               >
                 <View
                   style={[
@@ -962,13 +974,13 @@ export default function RecordScreen() {
                   ]}
                 />
                 <Text style={s.gpsChipText}>
-                  {gpsReadiness === 'preparing' && 'GPS 準備中…'}
-                  {gpsReadiness === 'ready' && 'GPS 準備OK'}
-                  {gpsReadiness === 'acceptable' && 'GPS精度はやや低めですが開始できます'}
-                  {gpsReadiness === 'no-permission' && '位置情報は開始時に許可できます'}
-                  {gpsReadiness === 'approximate' && '正確な位置情報を設定してください'}
-                  {gpsReadiness === 'services-disabled' && '端末の位置情報サービスがOFFです'}
-                  {gpsReadiness === 'unavailable' && 'GPS信号を取得できません'}
+                  {gpsReadiness === 'preparing' && t('run.gpsPreparing')}
+                  {gpsReadiness === 'ready' && t('run.gpsReady')}
+                  {gpsReadiness === 'acceptable' && t('run.gpsAcceptable')}
+                  {gpsReadiness === 'no-permission' && t('run.gpsPermissionAtStart')}
+                  {gpsReadiness === 'approximate' && t('run.gpsPreciseSettings')}
+                  {gpsReadiness === 'services-disabled' && t('run.gpsServicesOff')}
+                  {gpsReadiness === 'unavailable' && t('run.gpsUnavailable')}
                 </Text>
                 <Ionicons name="refresh-outline" size={13} color={Colors.textTertiary} />
               </TouchableOpacity>
@@ -991,21 +1003,21 @@ export default function RecordScreen() {
                 <View style={s.backgroundStatusCopy}>
                   <Text style={s.backgroundStatusTitle}>
                     {backgroundPermissionGranted === null
-                      ? '画面OFFの位置情報を確認中…'
+                      ? t('run.backgroundChecking')
                       : backgroundPermissionGranted
-                        ? '画面OFFの位置情報：許可済み'
+                        ? t('run.backgroundAllowed')
                         : foregroundOnlyApproved
-                          ? '画面を開いたまま記録'
-                          : '画面OFFの位置情報：未設定'}
+                          ? t('run.foregroundRecording')
+                          : t('run.backgroundUnset')}
                   </Text>
                   <Text style={s.backgroundStatusHint}>
                     {backgroundPermissionGranted === null
-                      ? '端末の権限状態を確認しています'
+                      ? t('run.permissionChecking')
                       : backgroundPermissionGranted
-                        ? '記録開始後にも実際の動作状態を表示します'
+                        ? t('run.statusShownAfterStart')
                         : foregroundOnlyApproved
-                          ? '自動ロックを抑止して前景で記録します'
-                          : '下のどちらかを選ぶとSTARTを使えます'}
+                          ? t('run.foregroundHint')
+                          : t('run.chooseRecordingMode')}
                   </Text>
                 </View>
                 {backgroundPermissionGranted === false && (
@@ -1014,17 +1026,17 @@ export default function RecordScreen() {
                       style={s.backgroundSecondaryButton}
                       onPress={() => setForegroundOnlyApproved(true)}
                       accessibilityRole="button"
-                      accessibilityLabel="画面を開いたまま記録する"
+                      accessibilityLabel={t('run.foregroundA11y')}
                     >
-                      <Text style={s.backgroundSecondaryButtonText}>画面を開いたまま</Text>
+                      <Text style={s.backgroundSecondaryButtonText}>{t('run.foregroundButton')}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={s.backgroundSettingsButton}
                       onPress={() => { void configureBackgroundLocation(); }}
                       accessibilityRole="button"
-                      accessibilityLabel="画面OFFでも記録する設定を開く"
+                      accessibilityLabel={t('run.backgroundA11y')}
                     >
-                      <Text style={s.backgroundSettingsButtonText}>常に許可を設定</Text>
+                      <Text style={s.backgroundSettingsButtonText}>{t('run.alwaysAllow')}</Text>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -1035,13 +1047,13 @@ export default function RecordScreen() {
             {currentActiveBattles.length === 1 ? (
               <View style={s.contribBadge}>
                 <Text style={s.contribBadgeText}>
-                  このランは「{currentActiveBattles[0].title}」に加算されます
+                  {t('run.addedToOne', { title: currentActiveBattles[0].title })}
                 </Text>
               </View>
             ) : currentActiveBattles.length > 1 ? (
               <View style={s.contribBadge}>
                 <Text style={s.contribBadgeText}>
-                  このランは参加中の{currentActiveBattles.length}件のチャレンジに加算されます
+                  {t('run.addedToMany', { count: currentActiveBattles.length })}
                 </Text>
               </View>
             ) : (
@@ -1051,7 +1063,7 @@ export default function RecordScreen() {
                 activeOpacity={0.7}
               >
                 <Text style={[s.contribBadgeText, { color: Colors.textSecondary }]}>
-                  チャレンジに参加するとこのランが加算されます
+                  {t('run.joinToAdd')}
                 </Text>
               </TouchableOpacity>
             )}
@@ -1063,16 +1075,16 @@ export default function RecordScreen() {
               style={s.voiceSettingsButton}
               onPress={() => setShowVoiceSettings(true)}
               accessibilityRole="button"
-              accessibilityLabel="音声コーチの設定を開く"
+              accessibilityLabel={t('run.voiceSettingsA11y')}
             >
               <Ionicons name="volume-medium-outline" size={16} color={voiceGuide ? Colors.primaryDark : Colors.textTertiary} />
               <View style={s.voiceLabelWrap}>
-                <Text style={[s.voiceLabel, voiceGuide && { color: Colors.primaryDark }]}>音声コーチ</Text>
+                <Text style={[s.voiceLabel, voiceGuide && { color: Colors.primaryDark }]}>{t('run.voiceCoach')}</Text>
                 {voiceGuide && (
                   <Text style={s.voiceSummary}>
                     {voiceSettings.intervalType === 'distance'
-                      ? `${voiceSettings.distanceKm}kmごと`
-                      : `${voiceSettings.timeMinutes}分ごと`}
+                      ? t('run.everyKm', { value: voiceSettings.distanceKm })
+                      : t('run.everyMinutes', { value: voiceSettings.timeMinutes })}
                   </Text>
                 )}
               </View>
@@ -1092,10 +1104,10 @@ export default function RecordScreen() {
               <Ionicons name="pause-circle-outline" size={16} color={autoPauseEnabled ? Colors.primaryDark : Colors.textTertiary} />
               <View style={s.voiceLabelWrap}>
                 <View style={s.autoPauseTitleRow}>
-                  <Text style={[s.voiceLabel, autoPauseEnabled && { color: Colors.primaryDark }]}>オートポーズ</Text>
-                  <Text style={s.experimentalBadge} maxFontSizeMultiplier={1.3}>試験的</Text>
+                  <Text style={[s.voiceLabel, autoPauseEnabled && { color: Colors.primaryDark }]}>{t('run.autoPause')}</Text>
+                  <Text style={s.experimentalBadge} maxFontSizeMultiplier={1.3}>{t('run.experimental')}</Text>
                 </View>
-                <Text style={s.voiceSummary}>停止を誤検知する場合があります（初期設定OFF）</Text>
+                <Text style={s.voiceSummary}>{t('run.autoPauseHint')}</Text>
               </View>
               <Switch
                 value={autoPauseEnabled}
@@ -1116,13 +1128,17 @@ export default function RecordScreen() {
               </>
             ) : last ? (
               <>
-                <SectionHeader label="前回のラン" />
+                <SectionHeader label={t('run.lastRun')} />
                 <TouchableOpacity
                   style={s.lastRunCard}
                   onPress={() => router.push(`/activity/${last.id}` as any)}
                   activeOpacity={0.65}
                   accessibilityRole="button"
-                  accessibilityLabel={`前回のラン、距離${formatRunDistanceKm(last.distanceKm)}キロ、時間${formatTime(last.durationSeconds)}、${relativeDay(last.startedAt)}`}
+                  accessibilityLabel={t('run.lastRunA11y', {
+                    distance: formatRunDistanceKm(last.distanceKm),
+                    time: formatTime(last.durationSeconds),
+                    day: relativeDay(last.startedAt, new Date(), language),
+                  })}
                 >
                   <View style={[s.lastRunContent, fontScale >= 2 && s.lastRunContentLarge]}>
                     <View style={s.lastRunIcon}>
@@ -1133,27 +1149,27 @@ export default function RecordScreen() {
                       />
                     </View>
                     <View style={s.lastRunMetrics}>
-                      <Text style={s.lastRunMetric}>距離 {formatRunDistanceKm(last.distanceKm)}km</Text>
-                      <Text style={s.lastRunMetric}>時間 {formatTime(last.durationSeconds)}</Text>
+                      <Text style={s.lastRunMetric}>{t('run.distanceMetric', { value: formatRunDistanceKm(last.distanceKm) })}</Text>
+                      <Text style={s.lastRunMetric}>{t('run.timeMetric', { value: formatTime(last.durationSeconds) })}</Text>
                     </View>
                     <View style={s.lastRunRight}>
-                      <Text style={s.lastRunAgo}>{relativeDay(last.startedAt)}</Text>
+                      <Text style={s.lastRunAgo}>{relativeDay(last.startedAt, new Date(), language)}</Text>
                       <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
                     </View>
                   </View>
                 </TouchableOpacity>
 
                 <View style={s.weekHead}>
-                  <Text style={TextStyles.sectionTitle}>直近7日</Text>
+                  <Text style={TextStyles.sectionTitle}>{t('battle.lastSevenDays')}</Text>
                   <StreakChip days={streak} />
                 </View>
-                <WeeklyBarChart days={weekBuckets} height={40} compact periodLabel="直近7日" />
+                <WeeklyBarChart days={weekBuckets} height={40} compact periodLabel={t('battle.lastSevenDays')} />
               </>
             ) : (
               <EmptyState
                 icon="walk-outline"
-                title="最初のランを記録しよう"
-                hint="「スタート」を押して走り出そう"
+                title={t('run.firstRun')}
+                hint={t('run.firstRunHint')}
               />
             )}
           </View>
@@ -1165,10 +1181,10 @@ export default function RecordScreen() {
             style={s.countdownOverlay}
             onPress={cancelCountdown}
             accessibilityRole="button"
-            accessibilityLabel="カウントダウンをキャンセル"
+            accessibilityLabel={t('run.cancelCountdownA11y')}
           >
             <Text style={s.countdownNum}>{countdown}</Text>
-            <Text style={s.countdownHint}>タップでキャンセル</Text>
+            <Text style={s.countdownHint}>{t('run.tapToCancel')}</Text>
           </Pressable>
         )}
 
@@ -1196,14 +1212,14 @@ export default function RecordScreen() {
             ]}
           />
           <MonoLabel color={DarkColors.textTertiary} size={9}>
-            {pauseKind === 'auto' ? decorLabel('自動停止中', 'AUTO PAUSED') : isPaused ? decorLabel('一時停止中', 'PAUSED') : decorLabel('記録中', 'RUN IN PROGRESS')}
+            {pauseKind === 'auto' ? t('locale.autoPaused') : isPaused ? t('locale.paused') : t('locale.runInProgress')}
           </MonoLabel>
         </View>
       </SafeAreaView>
 
       {/* Distance hero */}
       <View style={s.hudHero}>
-        <MonoLabel color={DarkColors.primary} size={9}>距離</MonoLabel>
+        <MonoLabel color={DarkColors.primary} size={9}>{t('run.distance')}</MonoLabel>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 4 }}>
           <Text style={s.hudBigNum}>{distanceKm.toFixed(2)}</Text>
           <Text style={s.hudUnit}>KM</Text>
@@ -1216,14 +1232,14 @@ export default function RecordScreen() {
           <StatBlock
             dark
             align="center"
-            label={measurementType === 'steps' ? '歩数' : 'ペース'}
-            value={measurementType === 'steps' ? steps.toLocaleString() : formatPace(distanceKm, elapsed)}
+            label={t(measurementType === 'steps' ? 'run.steps' : 'run.pace')}
+            value={measurementType === 'steps' ? steps.toLocaleString(language) : formatPace(distanceKm, elapsed)}
             unit={measurementType === 'gps' ? '/km' : undefined}
           />
         </View>
         <View style={s.hudStatDivider} />
         <View style={s.hudStat}>
-          <StatBlock dark align="center" label="時間" value={formatTime(elapsed)} />
+          <StatBlock dark align="center" label={t('run.time')} value={formatTime(elapsed)} />
         </View>
       </View>
 
@@ -1232,14 +1248,14 @@ export default function RecordScreen() {
         const progress = goal.type === 'distance' ? distanceKm / goal.value : elapsed / goal.value;
         const achieved = progress >= 1;
         const remainText = goal.type === 'distance'
-          ? `残り ${Math.max(0, goal.value - distanceKm).toFixed(1)}km`
-          : `残り ${formatTime(Math.max(0, goal.value - elapsed))}`;
+          ? t('run.remainingDistance', { value: Math.max(0, goal.value - distanceKm).toFixed(1) })
+          : t('run.remainingTime', { value: formatTime(Math.max(0, goal.value - elapsed)) });
         return (
           <View style={s.hudGoalRow}>
             <View style={s.hudGoalHead}>
-              <Text style={s.hudGoalLabel}>目標 {goalLabel(goal)}</Text>
+              <Text style={s.hudGoalLabel}>{t('run.goalA11y', { goal: formatGoalLabel(goal) })}</Text>
               <Text style={[s.hudGoalRemain, achieved && { color: DarkColors.primary }]}>
-                {achieved ? '達成！' : remainText}
+                {achieved ? t('run.reached') : remainText}
               </Text>
             </View>
             <ProgressBar
@@ -1257,10 +1273,10 @@ export default function RecordScreen() {
         <View style={s.hudContribRow}>
           <Text style={s.hudContribText}>
             {measurementType === 'steps'
-              ? `歩数モードは各チャレンジへ1日${STEP_BATTLE_DAILY_CAP_KM}kmまで加算`
+              ? t('run.stepsCapHud', { cap: STEP_BATTLE_DAILY_CAP_KM })
               : currentActiveBattles.length === 1
-                ? `+${distanceKm.toFixed(2)}km → 「${currentActiveBattles[0].title}」に加算`
-                : `+${distanceKm.toFixed(2)}km → 参加中の${currentActiveBattles.length}件のチャレンジに加算`}
+                ? t('run.contributionOne', { distance: distanceKm.toFixed(2), title: currentActiveBattles[0].title })
+                : t('run.contributionMany', { distance: distanceKm.toFixed(2), count: currentActiveBattles.length })}
           </Text>
         </View>
       )}
@@ -1268,7 +1284,7 @@ export default function RecordScreen() {
       {hudCheerName && (
         <View style={s.hudCheerBanner} accessibilityLiveRegion="polite">
           <Ionicons name="flame" size={15} color={DarkColors.accent} />
-          <Text style={s.hudCheerText}>{hudCheerName}さんから応援が届きました</Text>
+          <Text style={s.hudCheerText}>{t('run.cheerReceived', { name: hudCheerName })}</Text>
         </View>
       )}
 
@@ -1278,8 +1294,8 @@ export default function RecordScreen() {
           <Ionicons name="pause-circle-outline" size={14} color={DarkColors.accent} />
           <Text style={s.warnBannerText}>
             {pauseKind === 'auto'
-              ? '自動停止中 — 動き出すと自動で再開します'
-              : '一時停止中 — この間の移動と時間は記録されません'}
+              ? t('run.autoPausedHint')
+              : t('run.pausedHint')}
           </Text>
         </View>
       )}
@@ -1288,31 +1304,31 @@ export default function RecordScreen() {
       {!isPaused && measurementType === 'gps' && gpsWarning && (
         <View style={s.warnBanner}>
           <Ionicons name="warning-outline" size={14} color={DarkColors.accent} />
-          <Text style={s.warnBannerText}>GPS信号が不安定です。画面を開いたまま走ってください</Text>
+          <Text style={s.warnBannerText}>{t('run.gpsUnstable')}</Text>
         </View>
       )}
       {!isPaused && measurementType === 'gps' && !gpsWarning && locationMode === 'foreground' && (
         <View style={s.warnBanner}>
           <Ionicons name="warning-outline" size={14} color={DarkColors.accent} />
-          <Text style={s.warnBannerText}>アプリを閉じると記録が止まる可能性があります</Text>
+          <Text style={s.warnBannerText}>{t('run.foregroundWarning')}</Text>
         </View>
       )}
       {!isPaused && measurementType === 'gps' && locationMode === 'denied' && (
         <View style={s.warnBanner}>
           <Ionicons name="warning-outline" size={14} color={DarkColors.accent} />
-          <Text style={s.warnBannerText}>位置情報の権限がありません。設定から許可してください</Text>
+          <Text style={s.warnBannerText}>{t('run.permissionDenied')}</Text>
         </View>
       )}
       {!isPaused && measurementType === 'gps' && !gpsWarning && locationMode === 'background' && (
         <View style={s.hudReadyBanner}>
           <Ionicons name="checkmark-circle-outline" size={14} color={DarkColors.primary} />
-          <Text style={s.hudReadyBannerText}>画面OFFでも記録できます</Text>
+          <Text style={s.hudReadyBannerText}>{t('run.backgroundReady')}</Text>
         </View>
       )}
       {!isPaused && measurementType === 'steps' && (
         <View style={s.warnBanner}>
           <Ionicons name="information-circle-outline" size={14} color={DarkColors.accent} />
-          <Text style={s.warnBannerText}>歩数モードは画面を閉じると計測が止まる場合があります</Text>
+          <Text style={s.warnBannerText}>{t('run.stepsBackgroundWarning')}</Text>
         </View>
       )}
 
@@ -1341,14 +1357,14 @@ export default function RecordScreen() {
         ) : (
           <View style={[s.hudMap, s.hudMapPlaceholder]}>
             <ActivityIndicator color={DarkColors.primary} />
-            <Text style={{ color: DarkColors.textTertiary, marginTop: 8, fontSize: 12 }}>GPS信号を取得中...</Text>
+            <Text style={{ color: DarkColors.textTertiary, marginTop: 8, fontSize: 12 }}>{t('run.gpsAcquiring')}</Text>
           </View>
         )
       ) : (
         <View style={[s.hudMap, s.hudMapPlaceholder]}>
           <Ionicons name="footsteps-outline" size={48} color={DarkColors.textTertiary} />
           <Text style={{ color: DarkColors.textTertiary, marginTop: 12, fontSize: 14, fontWeight: '700' }}>
-            歩数モード
+            {t('run.stepsMode')}
           </Text>
         </View>
       )}
@@ -1367,10 +1383,10 @@ export default function RecordScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={
                   pauseKind === 'manual'
-                    ? 'ランの記録を再開'
+                    ? t('run.resumeA11y')
                     : pauseKind === 'auto'
-                      ? '自動停止を手動停止へ切り替え'
-                      : 'ランの記録を一時停止'
+                      ? t('run.switchManualA11y')
+                      : t('run.pauseA11y')
                 }
               >
                 <Ionicons
@@ -1380,7 +1396,7 @@ export default function RecordScreen() {
                 />
               </TouchableOpacity>
               <Text style={s.stopLabel}>
-                {pauseKind === 'manual' ? '再開' : pauseKind === 'auto' ? '手動停止' : '一時停止'}
+                {t(pauseKind === 'manual' ? 'run.resume' : pauseKind === 'auto' ? 'run.manualPause' : 'run.pause')}
               </Text>
             </View>
             <View style={s.hudControl}>
@@ -1391,12 +1407,12 @@ export default function RecordScreen() {
                 onAccessibilityTap={handleStop}
                 activeOpacity={0.8}
                 accessibilityRole="button"
-                accessibilityLabel="ランの記録を停止して保存メニューを開く"
-                accessibilityHint="長押しすると停止確認を開きます"
+                accessibilityLabel={t('run.stopA11y')}
+                accessibilityHint={t('run.stopHintA11y')}
               >
                 <View style={s.stopSquare} />
               </TouchableOpacity>
-              <Text style={s.stopLabel}>長押しで停止</Text>
+              <Text style={s.stopLabel}>{t('run.holdToStop')}</Text>
             </View>
           </>
         )}
@@ -1407,22 +1423,22 @@ export default function RecordScreen() {
           <Pressable style={s.sheetBackdrop} onPress={cancelStopSheet} />
           <SafeAreaView style={s.stopConfirmSheet} edges={['bottom']}>
             <View style={s.sheetHandle} />
-            <Text style={s.stopConfirmTitle}>ランを終了しますか？</Text>
-            <Text style={s.stopConfirmBody}>距離・時間を確認して、記録を保存します。</Text>
+            <Text style={s.stopConfirmTitle}>{t('run.finishTitle')}</Text>
+            <Text style={s.stopConfirmBody}>{t('run.finishBody')}</Text>
             <TouchableOpacity
               style={s.stopSaveButton}
               onPress={() => { void saveAndStop(); }}
               accessibilityRole="button"
-              accessibilityLabel="停止して記録を保存"
+              accessibilityLabel={t('run.stopSaveA11y')}
             >
               <Ionicons name="checkmark-circle" size={22} color={Colors.textOnPrimary} />
-              <Text style={s.stopSaveButtonText}>停止して保存</Text>
+              <Text style={s.stopSaveButtonText}>{t('run.stopSave')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={s.stopDiscardButton} onPress={confirmDiscard} accessibilityRole="button">
-              <Text style={s.stopDiscardButtonText}>保存せず破棄</Text>
+              <Text style={s.stopDiscardButtonText}>{t('run.discardWithoutSaving')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={s.stopCancelButton} onPress={cancelStopSheet} accessibilityRole="button">
-              <Text style={s.stopCancelButtonText}>記録を続ける</Text>
+              <Text style={s.stopCancelButtonText}>{t('run.continueRun')}</Text>
             </TouchableOpacity>
           </SafeAreaView>
         </View>
@@ -1433,10 +1449,10 @@ export default function RecordScreen() {
           style={s.countdownOverlay}
           onPress={cancelCountdown}
           accessibilityRole="button"
-          accessibilityLabel="カウントダウンをキャンセル"
+          accessibilityLabel={t('run.cancelCountdownA11y')}
         >
           <Text style={s.countdownNum}>{countdown}</Text>
-          <Text style={s.countdownHint}>タップでキャンセル</Text>
+          <Text style={s.countdownHint}>{t('run.tapToCancel')}</Text>
         </Pressable>
       )}
 
@@ -1452,11 +1468,12 @@ function VoiceCoachSettingsModal({
   onChange: (patch: Partial<VoiceCoachSettings>) => void;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const contentOptions: { key: keyof VoiceCoachSettings; label: string }[] = [
-    { key: 'announceElapsed', label: '経過時間' },
-    { key: 'announceDistance', label: '距離' },
-    { key: 'announceLapPace', label: '直近ラップペース' },
-    { key: 'announceAveragePace', label: '平均ペース' },
+    { key: 'announceElapsed', label: t('run.elapsed') },
+    { key: 'announceDistance', label: t('run.distance') },
+    { key: 'announceLapPace', label: t('run.lapPace') },
+    { key: 'announceAveragePace', label: t('run.averagePace') },
   ];
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -1466,8 +1483,8 @@ function VoiceCoachSettingsModal({
           <View style={s.sheetHandle} />
           <View style={s.sheetHeader}>
             <View>
-              <Text style={s.sheetTitle}>音声コーチ</Text>
-              <Text style={s.sheetHint}>ラン中に聞きたい情報を選べます</Text>
+              <Text style={s.sheetTitle}>{t('run.voiceCoach')}</Text>
+              <Text style={s.sheetHint}>{t('run.voiceHint')}</Text>
             </View>
             <Switch
               value={settings.enabled}
@@ -1477,7 +1494,7 @@ function VoiceCoachSettingsModal({
             />
           </View>
 
-          <Text style={s.sheetSectionLabel}>読み上げ間隔</Text>
+          <Text style={s.sheetSectionLabel}>{t('run.announceInterval')}</Text>
           <View style={s.sheetSegment}>
             {(['distance', 'time'] as const).map((type) => (
               <TouchableOpacity
@@ -1486,7 +1503,7 @@ function VoiceCoachSettingsModal({
                 onPress={() => onChange({ intervalType: type })}
               >
                 <Text style={[s.sheetSegmentText, settings.intervalType === type && s.sheetSegmentTextActive]}>
-                  {type === 'distance' ? '距離ごと' : '時間ごと'}
+                  {t(type === 'distance' ? 'run.byDistance' : 'run.byTime')}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -1506,14 +1523,14 @@ function VoiceCoachSettingsModal({
                     : onChange({ timeMinutes: value as VoiceCoachSettings['timeMinutes'] })}
                 >
                   <Text style={[s.sheetChipText, active && s.sheetChipTextActive]}>
-                    {value}{settings.intervalType === 'distance' ? 'km' : '分'}
+                    {settings.intervalType === 'distance' ? `${value}km` : t('run.minutesValue', { count: value })}
                   </Text>
                 </TouchableOpacity>
               );
             })}
           </View>
 
-          <Text style={s.sheetSectionLabel}>読み上げる内容</Text>
+          <Text style={s.sheetSectionLabel}>{t('run.announceContent')}</Text>
           <View style={s.sheetOptions}>
             {contentOptions.map((option) => (
               <View key={option.key} style={s.sheetOptionRow}>
@@ -1529,7 +1546,7 @@ function VoiceCoachSettingsModal({
             ))}
           </View>
           <TouchableOpacity style={s.sheetDoneButton} onPress={onClose}>
-            <Text style={s.sheetDoneText}>完了</Text>
+            <Text style={s.sheetDoneText}>{t('common.done')}</Text>
           </TouchableOpacity>
         </SafeAreaView>
       </View>

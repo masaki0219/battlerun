@@ -2,6 +2,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions/v2';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { sendPushToUser } from './push';
+import { notificationCopy, userUiLanguage } from './i18n';
 
 // 1バトルあたりのrank_change通知は1日3回まで（通知過多によるアンインストールを防ぐため）
 const MAX_DAILY_NOTIFY_COUNT = 3;
@@ -75,15 +76,14 @@ export async function runRankChangeScan(): Promise<void> {
 
     if (notifyCount < MAX_DAILY_NOTIFY_COUNT) {
       await Promise.all(changes.map(async (change) => {
-        const title = 'チャレンジの順位が更新されました';
-        const body = `現在のチーム順位は${change.rank}位です。最新の状況を確認できます。`;
-
         const participantsSnap = await battleDoc.ref
           .collection('participants')
           .where('categoryId', '==', change.categoryId)
           .get();
 
         await Promise.all(participantsSnap.docs.map(async (p) => {
+          const language = await userUiLanguage(db, p.id);
+          const { title, body } = notificationCopy.rankChanged(language, change.rank);
           await db.collection(`users/${p.id}/notifications`).add({
             type: 'rank_change',
             title,

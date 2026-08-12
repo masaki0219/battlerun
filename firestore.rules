@@ -8,8 +8,9 @@ service cloud.firestore {
     //   Owner/admin read; client may create its own free profile and update only settings.
     // users/{uid}/{notifications|badges|monthlyStats|activityRoutes|blocks}: private owner data.
     // publicProfiles/{uid}: signed-in users may read the bounded public name/avatar projection.
-    // seasons/{id}: signed-in read, admin write.
-    // battles/{id}: public challenges are signed-in readable; private challenges are limited to
+    // seasons/{id}: bounded theme title/period/status; signed-in read, validated admin create/update.
+    // battles/{id}: public challenges may carry bounded termIndex/termCount metadata and are
+    //   signed-in readable; private challenges are limited to
     //   creator/admin/participants. Private creation and participation use Callable Functions.
     // battles/{id}/{participants|category_stats|presence|declarations}: battle-scoped data.
     // activities/{id}: authoritative activity, exact times, memberships and aggregation metadata;
@@ -33,7 +34,11 @@ service cloud.firestore {
     }
     function safeUserText(text) {
       return text is string
-        && !text.matches('.*(死ね|しねよ|消えろ|殺すぞ|ころすぞ|ぶっ殺す|レイプ|輪姦|児童ポルノ|援助交際|パパ活募集|ママ活募集).*');
+        && !text.matches('.*(死ね|しねよ|消えろ|殺すぞ|ころすぞ|ぶっ殺す|レイプ|輪姦|児童ポルノ|援助交際|パパ活募集|ママ活募集).*')
+        // 英語は大文字小文字を無視する。単語内の部分一致を避けるため、短い単語は
+        // 下段で英字境界を要求する（grape→rape、therapist→rapistを拒否しない）。
+        && !text.matches('(?i).*(kill[^a-z0-9]*yourself|go[^a-z0-9]*die|i[^a-z0-9]*will[^a-z0-9]*kill[^a-z0-9]*you|i[^a-z0-9]*ll[^a-z0-9]*kill[^a-z0-9]*you|im[^a-z0-9]*going[^a-z0-9]*to[^a-z0-9]*kill[^a-z0-9]*you|murder[^a-z0-9]*you|shoot[^a-z0-9]*you|bomb[^a-z0-9]*threat|child[^a-z0-9]*porn|child[^a-z0-9]*pornography|looking[^a-z0-9]*for[^a-z0-9]*sex|sex[^a-z0-9]*for[^a-z0-9]*money|buy[^a-z0-9]*sex|sell[^a-z0-9]*sex).*')
+        && !text.matches('(?i)(.*[^a-z])?(nigger|nigga|faggot|wetback|kike|tranny|rape|rapist)([^a-z].*|$)');
     }
     function hasBlockBetween(firstUid, secondUid) {
       return exists(/databases/$(database)/documents/users/$(firstUid)/blocks/$(secondUid))
@@ -62,6 +67,105 @@ service cloud.firestore {
     function validRunDeclarationSetting(data) {
       return !('runDeclarationVisible' in data)
         || data.runDeclarationVisible is bool;
+    }
+    function validMarketSetting(data) {
+      return !('market' in data) || data.market in ['JP', 'US', 'GLOBAL'];
+    }
+    function validUiLanguageSetting(data) {
+      return !('uiLanguage' in data) || data.uiLanguage in ['ja', 'en'];
+    }
+    function validBattleMarket(data) {
+      return !('market' in data) || data.market in ['JP', 'US', 'GLOBAL'];
+    }
+    function validBattleTerm(data) {
+      return (
+          !('termIndex' in data)
+          && !('termCount' in data)
+        ) || (
+          data.type == 'public'
+          && data.termIndex is int
+          && data.termCount is int
+          && data.termIndex >= 1
+          && data.termCount >= data.termIndex
+          && data.termCount <= 12
+        );
+    }
+    function validSeasonDocument(data) {
+      return data.keys().hasOnly([
+          'title', 'startAt', 'endAt', 'status', 'createdAt'
+        ])
+        && data.keys().hasAll(['title', 'startAt', 'endAt', 'status'])
+        && data.title is string
+        && data.title.size() >= 1
+        && data.title.size() <= 30
+        && safeUserText(data.title)
+        && data.startAt is timestamp
+        && data.endAt is timestamp
+        && data.endAt > data.startAt
+        && data.status in ['active', 'archived']
+        && (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+    function validUserDocument(data) {
+      return data.get('name', '') is string
+        && data.get('name', '').size() >= 1
+        && data.get('name', '').size() <= 40
+        && safeUserText(data.get('name', ''))
+        && data.get('plan', '') in ['free', 'pro']
+        && data.get('createdAt', request.time) is timestamp
+        && validAvatarEmoji(data)
+        && validWeeklyGoal(data.get('weeklyGoal', null))
+        && validRunningPresenceSetting(data)
+        && validRunDeclarationSetting(data)
+        && validMarketSetting(data)
+        && validUiLanguageSetting(data)
+        && validExpoPushToken(data);
+    }
+    function validBattleDocument(data) {
+      return data.type in ['public', 'private']
+        && data.status in ['upcoming', 'active', 'finished']
+        && data.title is string
+        && data.title.size() >= 1
+        && data.title.size() <= 60
+        && safeUserText(data.title)
+        && data.description is string
+        && data.description.size() <= 200
+        && safeUserText(data.description)
+        && data.categories is list
+        && data.categories.size() >= 2
+        && data.categories.size() <= 20
+        && data.categoryIds is list
+        && data.categoryIds.size() == data.categories.size()
+        && data.rankingType in ['average', 'total']
+        && data.startAt is timestamp
+        && data.endAt is timestamp
+        && data.endAt > data.startAt
+        && (data.get('createdBy', null) == null || data.createdBy is string)
+        && (data.get('seasonId', null) == null || data.seasonId is string)
+        && (data.get('inviteCode', null) == null || data.inviteCode is string)
+        && (!('createdAt' in data) || data.createdAt is timestamp)
+        && validBattleMarket(data)
+        && validBattleTerm(data);
+    }
+    function validLegacyBattleLifecycleUpdate() {
+      return !('categoryIds' in resource.data)
+        && !('categoryIds' in request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'startAt', 'endAt'
+        ])
+        && request.resource.data.status in ['upcoming', 'active', 'finished']
+        && request.resource.data.startAt is timestamp
+        && request.resource.data.endAt is timestamp
+        && request.resource.data.endAt > request.resource.data.startAt;
+    }
+    function validPublicProfileDocument(data) {
+      return data.keys().hasOnly(['name', 'avatarEmoji', 'avatarUrl', 'updatedAt'])
+        && data.keys().hasAll(['name', 'updatedAt'])
+        && data.name is string
+        && data.name.size() >= 1
+        && data.name.size() <= 40
+        && safeUserText(data.name)
+        && data.updatedAt is timestamp
+        && validAvatarEmoji(data);
     }
     function isSameBattleCategory(battleId, categoryId) {
       let participantPath = /databases/$(database)/documents/battles/$(battleId)/participants/$(request.auth.uid);
@@ -215,37 +319,21 @@ service cloud.firestore {
       allow create: if isSelf(userId)
         && request.resource.data.keys().hasOnly([
           'name', 'plan', 'avatarEmoji', 'weeklyGoal',
-          'runningPresenceVisible', 'runDeclarationVisible', 'createdAt', 'expoPushToken'
+          'runningPresenceVisible', 'runDeclarationVisible', 'createdAt', 'expoPushToken',
+          'market', 'uiLanguage'
         ])
         && request.resource.data.keys().hasAll([
           'name', 'plan', 'runningPresenceVisible', 'createdAt'
         ])
         && request.resource.data.plan == 'free'
-        && request.resource.data.createdAt is timestamp
-        && validAvatarEmoji(request.resource.data)
-        && validWeeklyGoal(request.resource.data.get('weeklyGoal', null))
-        && validRunningPresenceSetting(request.resource.data)
-        && validRunDeclarationSetting(request.resource.data)
-        && validExpoPushToken(request.resource.data)
-        && request.resource.data.get('name', '') is string
-        && request.resource.data.get('name', '').size() >= 1
-        && request.resource.data.get('name', '').size() <= 40
-        && safeUserText(request.resource.data.get('name', ''));
+        && validUserDocument(request.resource.data);
       allow update: if isSelf(userId)
-        && request.resource.data.get('name', '') is string
-        && request.resource.data.get('name', '').size() >= 1
-        && request.resource.data.get('name', '').size() <= 40
-        && safeUserText(request.resource.data.get('name', ''))
-        && request.resource.data.plan in ['free', 'pro']
+        && validUserDocument(request.resource.data)
         && keepsOrRemovesLegacyAvatarUrl()
-        && validAvatarEmoji(request.resource.data)
-        && validWeeklyGoal(request.resource.data.get('weeklyGoal', null))
-        && validRunningPresenceSetting(request.resource.data)
-        && validRunDeclarationSetting(request.resource.data)
-        && validExpoPushToken(request.resource.data)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name', 'avatarEmoji', 'avatarUrl', 'weeklyGoal',
-          'runningPresenceVisible', 'runDeclarationVisible', 'expoPushToken'
+          'runningPresenceVisible', 'runDeclarationVisible', 'expoPushToken',
+          'market', 'uiLanguage'
         ]);
       allow delete: if false;
 
@@ -295,25 +383,23 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create: if isSelf(userId)
         && request.resource.data.keys().hasOnly(['name', 'avatarEmoji', 'updatedAt'])
-        && validAvatarEmoji(request.resource.data)
-        && request.resource.data.get('name', '') is string
-        && request.resource.data.get('name', '').size() >= 1
-        && request.resource.data.get('name', '').size() <= 40
-        && safeUserText(request.resource.data.get('name', ''));
+        && validPublicProfileDocument(request.resource.data);
       allow update: if isSelf(userId)
-        && request.resource.data.keys().hasOnly(['name', 'avatarEmoji', 'avatarUrl', 'updatedAt'])
-        && keepsOrRemovesLegacyAvatarUrl()
-        && validAvatarEmoji(request.resource.data)
-        && request.resource.data.get('name', '') is string
-        && request.resource.data.get('name', '').size() >= 1
-        && request.resource.data.get('name', '').size() <= 40
-        && safeUserText(request.resource.data.get('name', ''));
+        && validPublicProfileDocument(request.resource.data)
+        && keepsOrRemovesLegacyAvatarUrl();
       allow delete: if false;
     }
 
     match /seasons/{seasonId} {
       allow read: if signedIn();
-      allow write: if isAdmin();
+      allow create: if isAdmin()
+        && validSeasonDocument(request.resource.data);
+      allow update: if isAdmin()
+        && validSeasonDocument(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && resource.data.status == 'active'
+        && request.resource.data.status == 'archived';
+      allow delete: if false;
     }
 
     match /battles/{battleId} {
@@ -325,30 +411,22 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.keys().hasOnly([
           'type', 'seasonId', 'title', 'description', 'categories', 'categoryIds',
-          'rankingType', 'startAt', 'endAt', 'status', 'createdBy', 'inviteCode', 'createdAt'
+          'rankingType', 'startAt', 'endAt', 'status', 'createdBy', 'inviteCode', 'createdAt',
+          'market', 'termIndex', 'termCount'
         ])
-        && request.resource.data.title is string
-        && request.resource.data.title.size() >= 1
-        && request.resource.data.title.size() <= 60
-        && safeUserText(request.resource.data.title)
-        && request.resource.data.description is string
-        && request.resource.data.description.size() <= 200
-        && safeUserText(request.resource.data.description)
-        && request.resource.data.categories is list
-        && request.resource.data.categories.size() >= 2
-        && request.resource.data.categories.size() <= 20
-        && request.resource.data.categoryIds is list
-        && request.resource.data.categoryIds.size() == request.resource.data.categories.size()
-        && request.resource.data.rankingType in ['average', 'total']
-        && request.resource.data.startAt is timestamp
-        && request.resource.data.endAt is timestamp
-        && request.resource.data.endAt > request.resource.data.startAt
+        && validBattleDocument(request.resource.data)
+        && request.resource.data.market in ['JP', 'US', 'GLOBAL']
         && request.resource.data.createdBy == request.auth.uid
         // private は招待コードの一意予約を伴う createPrivateBattle だけが作成する。
         && request.resource.data.type == 'public'
         && request.resource.data.inviteCode == null
         && isAdmin();
-      allow update: if isAdmin();
+      // categoryIds 導入前の本番Battleは、管理者による開始・終了だけを継続可能にする。
+      // 本文などの変更は拒否し、現行クライアントの操作時にcategoryIdsを補完する。
+      allow update: if isAdmin() && (
+        validBattleDocument(request.resource.data)
+        || validLegacyBattleLifecycleUpdate()
+      );
       allow delete: if isAdmin();
 
       match /participants/{userId} {
@@ -460,7 +538,10 @@ service cloud.firestore {
           && (
             resource.data.status == 'cancelled'
             || resource.data.get('visible', true) == false
-            || validLegacyDeclaration(resource.data, declarationId)
+            || (
+              !('categoryId' in resource.data)
+              && validLegacyDeclaration(resource.data, declarationId)
+            )
           )
           && validFreshDeclarationV2(request.resource.data, declarationId, battleId)
           && request.resource.data.uid == resource.data.uid
@@ -470,8 +551,7 @@ service cloud.firestore {
           && (
             // 公開OFFは退出後や終了後でも即時反映でき、他のフィールドは一切変えられない。
             (
-              validDeclarationV2(resource.data, declarationId)
-              && validDeclarationV2(request.resource.data, declarationId)
+              validDeclarationV2(request.resource.data, declarationId)
               && resource.data.visible == true
               && request.resource.data.visible == false
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['visible'])
@@ -482,8 +562,7 @@ service cloud.firestore {
               && (
                 // 現行スキーマの通常編集・達成・取消。
                 (
-                  validDeclarationV2(resource.data, declarationId)
-                  && validDeclarationV2(request.resource.data, declarationId)
+                  validDeclarationV2(request.resource.data, declarationId)
                   && request.resource.data.expireAt > request.time
                   && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'plannedAt', 'note'])
                   && (
@@ -507,8 +586,7 @@ service cloud.firestore {
                 )
                 // デプロイ前に作られた宣言は本人の編集・取消・達成だけを維持する。
                 || (
-                  validLegacyDeclaration(resource.data, declarationId)
-                  && validLegacyDeclaration(request.resource.data, declarationId)
+                  validLegacyDeclaration(request.resource.data, declarationId)
                   && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'plannedAt', 'note'])
                   && (
                     (

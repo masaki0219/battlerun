@@ -1,0 +1,6 @@
+{
+  "CFBundleDisplayName": "ZELIO",
+  "NSLocationWhenInUseUsageDescription": "ランニング・ウォーキングの走行距離を計測し、参加中のチャレンジへ反映するために位置情報を使用します。",
+  "NSLocationAlwaysAndWhenInUseUsageDescription": "記録中にアプリがバックグラウンドへ移動しても走行距離の計測を続けるために使用します。",
+  "NSMotionUsageDescription": "歩数モードで歩数と推定距離を計測するためにモーションデータを使用します。"
+}

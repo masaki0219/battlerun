@@ -10,6 +10,7 @@ import {
   signInWithCredential,
 } from 'firebase/auth';
 import { auth } from './firebase';
+import { translate } from './translate';
 
 export type SocialProviderId = 'apple.com' | 'google.com';
 
@@ -53,7 +54,7 @@ function requireGoogleSignIn(): typeof import('react-native-nitro-google-signin'
   if (!isNativeAuthBuild()) {
     throw new SocialAuthError(
       'social/native-build-required',
-      'Apple／Googleログインは開発ビルドまたはストア版で利用できます。',
+      translate('auth.nativeBuildOnly'),
     );
   }
   // Expo Goにはこのネイティブモジュールが無いため、対応ビルドでだけ遅延ロードする。
@@ -66,7 +67,7 @@ export function configureGoogleSignIn(): typeof import('react-native-nitro-googl
   if (!webClientId || !webClientId.endsWith('.apps.googleusercontent.com')) {
     throw new SocialAuthError(
       'social/google-not-configured',
-      'Googleログインの設定が不足しています。サポートへお問い合わせください。',
+      translate('auth.googleNotConfigured'),
     );
   }
   const google = requireGoogleSignIn();
@@ -87,7 +88,7 @@ export function googleCredentialBundle(
   if (!data.idToken) {
     throw new SocialAuthError(
       'social/google-missing-id-token',
-      'Googleから認証情報を取得できませんでした。もう一度お試しください。',
+      translate('auth.googleMissingCredential'),
     );
   }
   return {
@@ -104,7 +105,7 @@ export async function requestGoogleCredential(): Promise<SocialCredentialBundle>
   await google.GoogleOneTapSignIn.checkPlayServices(true);
   const response = await google.GoogleOneTapSignIn.presentExplicitSignIn();
   if (!google.isSuccessResponse(response)) {
-    throw new SocialAuthError('social/cancelled', 'Googleログインをキャンセルしました。');
+    throw new SocialAuthError('social/cancelled', translate('auth.googleCancelled'));
   }
   return googleCredentialBundle(response.data);
 }
@@ -113,7 +114,7 @@ export async function requestAppleCredential(): Promise<SocialCredentialBundle> 
   if (Platform.OS !== 'ios' || !isNativeAuthBuild() || !(await AppleAuthentication.isAvailableAsync())) {
     throw new SocialAuthError(
       'social/apple-unavailable',
-      'AppleでサインインはiPhone／iPadの開発ビルドまたはストア版で利用できます。',
+      translate('auth.appleUnavailable'),
     );
   }
 
@@ -135,13 +136,13 @@ export async function requestAppleCredential(): Promise<SocialCredentialBundle> 
   if (appleCredential.state !== state) {
     throw new SocialAuthError(
       'social/apple-invalid-state',
-      'Appleログインの応答を確認できませんでした。もう一度お試しください。',
+      translate('auth.appleInvalidResponse'),
     );
   }
   if (!appleCredential.identityToken) {
     throw new SocialAuthError(
       'social/apple-missing-id-token',
-      'Appleから認証情報を取得できませんでした。もう一度お試しください。',
+      translate('auth.appleMissingCredential'),
     );
   }
 
@@ -207,18 +208,18 @@ export function socialAuthErrorMessage(error: unknown): string | null {
   }
   if (error instanceof SocialAuthError) return error.message;
   if (code === 'DEVELOPER_ERROR') {
-    return 'Googleログインの署名設定を確認できませんでした。アプリを最新版へ更新しても解決しない場合はサポートへお問い合わせください。';
+    return translate('auth.googleSignature');
   }
   if (code === 'PLAY_SERVICES_NOT_AVAILABLE') {
-    return 'Google Play開発者サービスを更新して、もう一度お試しください。';
+    return translate('auth.playServices');
   }
   if (code === 'auth/credential-already-in-use') {
-    return 'このログイン方法は別のZELIOアカウントに連携されています。';
+    return translate('auth.credentialLinkedElsewhere');
   }
   if (code === 'auth/user-mismatch') {
-    return '現在のアカウントと異なる認証情報です。正しいアカウントを選んでください。';
+    return translate('auth.authMismatch');
   }
-  return '認証できませんでした。通信状態を確認して、もう一度お試しください。';
+  return translate('auth.socialFailed');
 }
 
 export async function signOutGoogleSession(): Promise<void> {
@@ -240,7 +241,7 @@ export async function revokeAppleAuthorizationCode(authorizationCode: string): P
   if (Platform.OS !== 'ios' || !isNativeAuthBuild()) {
     throw new SocialAuthError(
       'social/apple-revoke-unavailable',
-      'Apple認証を連携したアカウントは、iPhone／iPadの開発ビルドまたはストア版から削除してください。',
+      translate('auth.appleDeleteDevice'),
     );
   }
   // Firebase JS SDKのrevokeAccessTokenはApple OAuth access token用。

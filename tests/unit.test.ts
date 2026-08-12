@@ -14,9 +14,11 @@ import './moderation.test';
 import './battleSelection.test';
 import './runShare.test';
 import './battleParticipation.test';
+import './battleTerms.test';
 import './declarations.test';
 import './avatarEmojis.test';
 import './designTokens.test';
 import './providerButtons.test';
+import './localizationMarket.test';
 
 console.log('all unit tests passed');

@@ -11,8 +11,10 @@ import { validateDisplayName, DISPLAY_NAME_MAX_LENGTH } from '../../lib/validati
 import { Button } from '../../components/ui/Button';
 import { SocialAuthButtons } from '../../components/auth/SocialAuthButtons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../design_tokens';
+import { useTranslation } from '../../lib/i18n';
 
 export default function SignupScreen() {
+  const { t } = useTranslation();
   const { signUp, isLoading } = useAuthStore();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -20,24 +22,24 @@ export default function SignupScreen() {
 
   async function handleSignup() {
     if (!name || !email || !password) {
-      Alert.alert('エラー', 'すべての項目を入力してください');
+      Alert.alert(t('common.error'), t('auth.allFieldsRequired'));
       return;
     }
     // ニックネームは他の参加者に常時表示されるため、チャレンジ名と同じ基準で検証する
     const nameCheck = validateDisplayName(name);
     if (!nameCheck.ok) {
-      Alert.alert('ニックネームを確認してください', nameCheck.reason);
+      Alert.alert(t('auth.nicknameCheck'), nameCheck.reason);
       return;
     }
     if (password.length < 6) {
-      Alert.alert('エラー', 'パスワードは6文字以上で設定してください');
+      Alert.alert(t('common.error'), t('auth.passwordMin'));
       return;
     }
     try {
       await signUp(email, password, name);
       // 画面遷移は onAuthStateChanged → user セット → TabLayout に任せる
     } catch (e: unknown) {
-      Alert.alert('登録できませんでした', authErrorMessage(e));
+      Alert.alert(t('auth.registrationFailed'), authErrorMessage(e));
     }
   }
 
@@ -51,13 +53,13 @@ export default function SignupScreen() {
         >
           <View style={styles.header}>
             <Text style={styles.logo}>ZELIO</Text>
-            <Text style={styles.tagline}>新規アカウント作成</Text>
+            <Text style={styles.tagline}>{t('auth.createAccount')}</Text>
           </View>
 
           <View style={styles.form}>
           <TextInput
             style={styles.input}
-            placeholder={`ニックネーム（${DISPLAY_NAME_MAX_LENGTH}文字以内）`}
+            placeholder={t('auth.nicknamePlaceholder', { count: DISPLAY_NAME_MAX_LENGTH })}
             placeholderTextColor={Colors.textTertiary}
             value={name}
             onChangeText={setName}
@@ -67,7 +69,7 @@ export default function SignupScreen() {
           />
           <TextInput
             style={styles.input}
-            placeholder="メールアドレス"
+            placeholder={t('auth.email')}
             placeholderTextColor={Colors.textTertiary}
             value={email}
             onChangeText={setEmail}
@@ -80,7 +82,7 @@ export default function SignupScreen() {
           />
           <TextInput
             style={styles.input}
-            placeholder="パスワード（6文字以上）"
+            placeholder={t('auth.passwordMinPlaceholder')}
             placeholderTextColor={Colors.textTertiary}
             value={password}
             onChangeText={setPassword}
@@ -91,17 +93,17 @@ export default function SignupScreen() {
             returnKeyType="go"
             onSubmitEditing={handleSignup}
           />
-          <Text style={styles.nameNote}>ニックネームは他の参加者のランキングに表示されます。</Text>
+          <Text style={styles.nameNote}>{t('auth.nicknameVisibility')}</Text>
 
-            <Button label="アカウントを作成" onPress={handleSignup} loading={isLoading} style={styles.btn} />
+            <Button label={t('auth.createAccountButton')} onPress={handleSignup} loading={isLoading} style={styles.btn} />
             <SocialAuthButtons mode="sign-up" />
             {/* オンボーディングから replace で来た場合は戻り先が無いため back() は使わない */}
-            <Button label="ログインに戻る" onPress={() => router.replace('/auth/login')} variant="ghost" />
-            <Text style={styles.consent}>登録すると、以下の内容に同意したものとみなされます。</Text>
+            <Button label={t('auth.backToLogin')} onPress={() => router.replace('/auth/login')} variant="ghost" />
+            <Text style={styles.consent}>{t('auth.consent')}</Text>
             <View style={styles.legalRow}>
-              <TouchableOpacity onPress={() => router.push('/legal/terms')} accessibilityRole="link"><Text style={styles.legalText}>利用規約</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => router.push('/legal/terms')} accessibilityRole="link"><Text style={styles.legalText}>{t('common.terms')}</Text></TouchableOpacity>
               <Text style={styles.legalDivider}>・</Text>
-              <TouchableOpacity onPress={() => router.push('/legal/privacy')} accessibilityRole="link"><Text style={styles.legalText}>プライバシーポリシー</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => router.push('/legal/privacy')} accessibilityRole="link"><Text style={styles.legalText}>{t('common.privacy')}</Text></TouchableOpacity>
             </View>
           </View>
         </ScrollView>

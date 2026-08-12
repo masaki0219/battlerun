@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Colors, Spacing, BorderRadius } from '../../design_tokens';
 import { fastestFullKmSplitIndex, type KmSplit } from '../../utils/displayStats';
+import { useTranslation } from '../../lib/i18n';
 
 function formatSplitPace(secondsPerKm: number): string {
   if (!Number.isFinite(secondsPerKm) || secondsPerKm <= 0) return "--'--\"";
@@ -22,6 +23,7 @@ const FLOOR = 0.35;
  * 色による強調はせず「最速」バッジで示す。
  */
 export function KmSplitsCard({ splits }: { splits: KmSplit[] }) {
+  const { t } = useTranslation();
   if (splits.length === 0) return null;
 
   const paces = splits.map((s) => s.seconds / s.distanceKm);
@@ -52,7 +54,7 @@ export function KmSplitsCard({ splits }: { splits: KmSplit[] }) {
             </View>
             {isFastest && (
               <View style={s.fastestBadge}>
-                <Text style={s.fastestBadgeText}>最速</Text>
+                <Text style={s.fastestBadgeText}>{t('summary.fastest')}</Text>
               </View>
             )}
             <Text style={[s.paceLabel, isFastest && s.paceLabelFastest]}>

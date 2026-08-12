@@ -15,7 +15,6 @@ import { auth, db, functions } from '../../lib/firebase';
 import { useAuthStore } from '../../stores/authStore';
 import { purchasePro, restorePurchases, getProMonthlyPlan, isStoreAvailable, type ProPackageInfo } from '../../lib/revenuecat';
 import { isPro } from '../../lib/pro';
-import { SUBSCRIPTION_DISCLAIMER } from '../../lib/legal';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '../../components/ui/Avatar';
 import { useRecentActivities } from '../../hooks/useRecentActivities';
@@ -23,7 +22,7 @@ import { useMonthlyStats } from '../../hooks/useMonthlyStats';
 import { streakDays } from '../../utils/displayStats';
 import { monthlyDistanceLowerBound, reconcileMonthlyStats } from '../../utils/monthlyStats';
 import { Colors, DarkColors, Typography, Spacing, BorderRadius, Shadow } from '../../design_tokens';
-import type { UserTitle } from '../../types';
+import type { Market, UserTitle } from '../../types';
 import { httpsCallable } from 'firebase/functions';
 import { registerPushToken } from '../../lib/notifications';
 import Constants from 'expo-constants';
@@ -37,10 +36,15 @@ import {
   socialAuthErrorMessage,
 } from '../../lib/socialAuth';
 import { AVATAR_EMOJI_CATEGORIES } from '../../lib/avatarEmojis';
+import { MARKETS } from '../../lib/market';
+import { intlLocale, useTranslation } from '../../lib/i18n';
+import { useBattleStore } from '../../stores/battleStore';
+import { userFacingError } from '../../lib/userError';
 
 function TitleBadge({ title, selected }: { title: UserTitle; selected: boolean }) {
-  const rankLabel = teamTitleLabel(title.rank);
-  const awardedDate = new Date(title.awardedAt).toLocaleDateString('ja-JP', {
+  const { language, t } = useTranslation();
+  const rankLabel = teamTitleLabel(title.rank, language);
+  const awardedDate = new Date(title.awardedAt).toLocaleDateString(intlLocale(language), {
     year: 'numeric', month: 'short',
   });
   return (
@@ -51,12 +55,12 @@ function TitleBadge({ title, selected }: { title: UserTitle; selected: boolean }
       <View style={styles.titleInfo}>
         <View style={styles.titleNameRow}>
           <Text style={styles.titleName}>{rankLabel}</Text>
-          {selected && <Text style={styles.titleSelectedLabel}>表示中</Text>}
+          {selected && <Text style={styles.titleSelectedLabel}>{t('profile.selected')}</Text>}
         </View>
         <Text style={styles.titleBattle} numberOfLines={1}>{title.battleTitle}</Text>
         <Text style={styles.titleSeason} numberOfLines={1}>
           {/* seasonId は Firestore の内部IDなので表示しない（本番は自動生成の英数字になる） */}
-          {[title.teamName, `${awardedDate}獲得`].filter(Boolean).join(' ・ ')}
+          {[title.teamName, t('profile.awarded', { date: awardedDate })].filter(Boolean).join(' · ')}
         </Text>
       </View>
     </View>
@@ -92,17 +96,21 @@ function nonNegativeStat(value: unknown): number {
 }
 
 export default function ProfileScreen() {
+  const { language, t } = useTranslation();
   const {
     user,
     proEntitlement,
     signOut,
     setRunningPresenceVisible,
     setRunDeclarationVisible,
+    setMarket,
   } = useAuthStore();
+  const fetchPublicBattles = useBattleStore((state) => state.fetchPublicBattles);
   const [purchasing, setPurchasing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [presenceSaving, setPresenceSaving] = useState(false);
   const [declarationVisibilitySaving, setDeclarationVisibilitySaving] = useState(false);
+  const [showMarketPicker, setShowMarketPicker] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [avatarCategoryId, setAvatarCategoryId] = useState(AVATAR_EMOJI_CATEGORIES[0].id);
   const [showDeletePasswordPrompt, setShowDeletePasswordPrompt] = useState(false);
@@ -174,7 +182,7 @@ export default function ProfileScreen() {
       await setRunningPresenceVisible(visible);
       if (visible && user) void registerPushToken(user.id, false);
     } catch {
-      Alert.alert('設定を更新できませんでした', '通信状態を確認して、もう一度お試しください。');
+      Alert.alert(t('profile.updateFailed'), t('connection.tryAgain'));
     } finally {
       setPresenceSaving(false);
     }
@@ -186,12 +194,28 @@ export default function ProfileScreen() {
       await setRunDeclarationVisible(visible);
     } catch (error) {
       Alert.alert(
-        '設定を更新できませんでした',
-        error instanceof Error ? error.message : '通信状態を確認して、もう一度お試しください。',
+        t('profile.updateFailed'),
+        userFacingError(error, t('connection.tryAgain')),
       );
     } finally {
       setDeclarationVisibilitySaving(false);
     }
+  }
+
+  async function handleMarketChange(market: Market) {
+    setShowMarketPicker(false);
+    if (!user || user.market === market) return;
+    try {
+      await setMarket(market);
+      await fetchPublicBattles(market);
+      Alert.alert(t('profile.regionUpdated'));
+    } catch {
+      Alert.alert(t('profile.regionUpdateFailed'), t('connection.tryAgain'));
+    }
+  }
+
+  function showMarketOptions() {
+    setShowMarketPicker(true);
   }
 
   async function handleEmojiSelect(emoji: string) {
@@ -208,7 +232,7 @@ export default function ProfileScreen() {
         user: s.user ? { ...s.user, avatarEmoji: emoji } : null,
       }));
     } catch {
-      Alert.alert('エラー', 'アイコンの更新に失敗しました');
+      Alert.alert(t('common.error'), t('profile.iconUpdateFailed'));
     }
   }
 
@@ -216,8 +240,8 @@ export default function ProfileScreen() {
     if (!user) return;
     if (!isStoreAvailable()) {
       Alert.alert(
-        'この環境では購入できません',
-        'アプリ内購入はExpo Goやシミュレータでは動作しません。実機のEASビルド（開発ビルド / TestFlight）でテストしてください。',
+        t('profile.purchaseUnavailableTitle'),
+        t('profile.storeUnavailableBody'),
       );
       return;
     }
@@ -225,11 +249,11 @@ export default function ProfileScreen() {
     try {
       const ok = await purchasePro();
       if (ok) {
-        Alert.alert('🎉 ありがとうございます！', 'Proプランが有効になりました。');
+        Alert.alert(t('profile.purchaseThanks'), t('profile.proEnabled'));
       }
     } catch (e: any) {
       // RevenueCat/StoreKit のエラー内容は原因切り分けに必須なのでそのまま見せる
-      Alert.alert('購入に失敗しました', e?.message ?? '通信状態を確認してください。');
+      Alert.alert(t('profile.purchaseFailed'), e?.message ?? t('profile.connectionCheck'));
     } finally {
       setPurchasing(false);
     }
@@ -239,17 +263,17 @@ export default function ProfileScreen() {
     if (!user) return;
     if (!isStoreAvailable()) {
       Alert.alert(
-        'この環境では復元できません',
-        'アプリ内購入はExpo Goやシミュレータでは動作しません。実機のEASビルド（開発ビルド / TestFlight）でテストしてください。',
+        t('profile.restoreUnavailableTitle'),
+        t('profile.storeUnavailableBody'),
       );
       return;
     }
     setPurchasing(true);
     try {
       const ok = await restorePurchases();
-      Alert.alert(ok ? '復元しました' : '購入履歴が見つかりませんでした');
+      Alert.alert(t(ok ? 'profile.restored' : 'profile.noPurchaseHistory'));
     } catch {
-      Alert.alert('エラー', '復元に失敗しました');
+      Alert.alert(t('common.error'), t('profile.restoreFailed'));
     } finally {
       setPurchasing(false);
     }
@@ -259,8 +283,8 @@ export default function ProfileScreen() {
     if (!user) return;
     const enabled = await registerPushToken(user.id, true);
     Alert.alert(
-      enabled ? '通知を有効にしました' : '通知を有効にできませんでした',
-      enabled ? '順位変動やチャレンジ終了をお知らせします。' : '端末の設定からZELIOの通知を許可してください。',
+      t(enabled ? 'profile.notificationsEnabled' : 'profile.notificationsEnableFailed'),
+      t(enabled ? 'profile.notificationsEnabledBody' : 'profile.notificationsPermissionBody'),
     );
   }
 
@@ -269,7 +293,7 @@ export default function ProfileScreen() {
     setDeleting(true);
     try {
       const currentUser = auth.currentUser;
-      if (!currentUser) throw new Error('認証情報が見つかりません');
+      if (!currentUser) throw new Error(t('profile.authMissing'));
 
       await task();
 
@@ -286,11 +310,11 @@ export default function ProfileScreen() {
         return;
       }
       if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
-        Alert.alert('エラー', 'パスワードが正しくありません');
+        Alert.alert(t('common.error'), t('profile.wrongPassword'));
       } else if (socialMessage) {
-        Alert.alert('アカウントを削除できませんでした', socialMessage);
+        Alert.alert(t('profile.accountDeleteFailedTitle'), socialMessage);
       } else {
-        Alert.alert('エラー', 'アカウントの削除に失敗しました。もう一度お試しください。');
+        Alert.alert(t('common.error'), t('profile.accountDeleteFailed'));
       }
     } finally {
       setDeleting(false);
@@ -300,7 +324,7 @@ export default function ProfileScreen() {
   async function doDeleteWithPassword(password: string) {
     const currentUser = auth.currentUser;
     if (!currentUser?.email) {
-      Alert.alert('エラー', 'メール認証情報が見つかりません。');
+      Alert.alert(t('common.error'), t('profile.emailAuthMissing'));
       return;
     }
     await deleteFirebaseAccountAfter(async () => {
@@ -329,7 +353,7 @@ export default function ProfileScreen() {
       if (!bundle.appleAuthorizationCode) {
         throw new SocialAuthError(
           'social/apple-missing-authorization-code',
-          'Appleからトークン失効用の認可コードを取得できませんでした。もう一度お試しください。',
+          t('profile.appleCodeMissing'),
         );
       }
       await revokeAppleAuthorizationCode(bundle.appleAuthorizationCode);
@@ -350,12 +374,12 @@ export default function ProfileScreen() {
 
   function handleDeleteAccount() {
     Alert.alert(
-      'アカウント削除',
-      'アカウントを削除すると、すべてのデータが完全に失われます。この操作は取り消せません。',
+      t('profile.deleteAccount'),
+      t('profile.deleteWarning'),
       [
-        { text: 'キャンセル', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: '削除する',
+          text: t('profile.deleteAction'),
           style: 'destructive',
           onPress: beginProviderReauthentication,
         },
@@ -364,10 +388,10 @@ export default function ProfileScreen() {
   }
 
   async function handleSignOut() {
-    Alert.alert('ログアウト', 'ログアウトしますか？', [
-      { text: 'キャンセル', style: 'cancel' },
+    Alert.alert(t('profile.logout'), t('profile.logoutConfirm'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'ログアウト', style: 'destructive', onPress: async () => {
+        text: t('profile.logout'), style: 'destructive', onPress: async () => {
           await signOut();
           router.replace('/auth/login');
         },
@@ -381,8 +405,9 @@ export default function ProfileScreen() {
     (a, b) => new Date(b.awardedAt).getTime() - new Date(a.awardedAt).getTime()
   );
   const profileTitle = titles[0]
-    ? `称号：${teamTitleLabel(titles[0].rank)}`
-    : 'チャレンジで称号を獲得しよう';
+    ? t('profile.titlePrefix', { title: teamTitleLabel(titles[0].rank, language) })
+    : t('profile.earnTitle');
+  const displayedTitle = titles[0] ? teamTitleLabel(titles[0].rank, language) : t('profile.earnTitle');
   const userIsPro = isPro(user.plan, proEntitlement);
   // 価格（期間つき）を提示できるときだけ購入導線を有効にする
   const hasProPrice = proMonthlyPlan !== null;
@@ -392,7 +417,7 @@ export default function ProfileScreen() {
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
         <Text style={styles.headerEyebrow}>ZELIO</Text>
-        <Text style={styles.headerTitle}>プロフィール</Text>
+        <Text style={styles.headerTitle}>{t('profile.pageTitle')}</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -401,7 +426,7 @@ export default function ProfileScreen() {
             <TouchableOpacity
               onPress={handleAvatarOptions}
               accessibilityRole="button"
-              accessibilityLabel="アバターアイコンを変更"
+              accessibilityLabel={t('profile.changeAvatarA11y')}
             >
               <View>
                 <Avatar name={user.name} emoji={user.avatarEmoji} size="lg" />
@@ -426,25 +451,25 @@ export default function ProfileScreen() {
           </View>
 
           <View style={styles.statTrio}>
-            <ProfileStat label="累計距離" value={totalKm.toFixed(1)} unit="km" />
+            <ProfileStat label={t('profile.totalDistance')} value={totalKm.toFixed(1)} unit="km" />
             <View style={styles.statDivider} />
-            <ProfileStat label="ラン回数" value={String(totalRuns)} unit="回" />
+            <ProfileStat label={t('profile.runCount')} value={String(totalRuns)} unit={t('profile.times')} />
             <View style={styles.statDivider} />
-            <ProfileStat label="連続日数" value={String(streak)} unit="日" accent />
+            <ProfileStat label={t('profile.streak')} value={String(streak)} unit={t('profile.dayUnit')} accent />
           </View>
         </View>
 
         <View>
           <View style={styles.sectionHead}>
-            <Text style={styles.sectionHeading}>獲得称号</Text>
+            <Text style={styles.sectionHeading}>{t('profile.earnedTitles')}</Text>
             <TouchableOpacity style={styles.showAllButton} onPress={() => router.push('/badges' as any)} activeOpacity={0.7}>
-              <Text style={styles.showAllText}>すべて見る</Text>
+              <Text style={styles.showAllText}>{t('profile.viewAll')}</Text>
               <Ionicons name="chevron-forward" size={15} color={Colors.primaryDark} />
             </TouchableOpacity>
           </View>
           <View style={styles.surfaceCard}>
             {titles.length === 0 ? (
-              <Text style={styles.emptyText}>まだ称号がありません。チャレンジで上位入賞しよう！</Text>
+              <Text style={styles.emptyText}>{t('profile.noTitles')}</Text>
             ) : (
               titles.map((title, index) => (
                 <React.Fragment key={`${title.battleId}_${index}`}>
@@ -459,17 +484,17 @@ export default function ProfileScreen() {
         <View>
           <View style={styles.sectionHead}>
             <Text style={styles.sectionHeading}>ZELIO Pro</Text>
-            <View style={styles.freePlanBadge}><Text style={styles.freePlanText}>{userIsPro ? 'Proプラン' : 'Freeプラン'}</Text></View>
+            <View style={styles.freePlanBadge}><Text style={styles.freePlanText}>{t(userIsPro ? 'profile.proPlan' : 'profile.freePlan')}</Text></View>
           </View>
           <View style={[styles.proCard, userIsPro && styles.proCardActive]}>
             {userIsPro ? (
               <View style={styles.proRow}>
                 <View style={styles.proActiveRow}>
                   <Ionicons name="sparkles" size={16} color={Colors.goldText} />
-                  <Text style={styles.proLabel}>Proプラン 有効中</Text>
+                  <Text style={styles.proLabel}>{t('profile.proActive')}</Text>
                 </View>
                 <TouchableOpacity onPress={() => Linking.openURL('https://apps.apple.com/account/subscriptions')} accessibilityRole="link">
-                  <Text style={styles.manageLink}>管理する</Text>
+                  <Text style={styles.manageLink}>{t('profile.manage')}</Text>
                 </TouchableOpacity>
               </View>
             ) : (
@@ -477,8 +502,8 @@ export default function ProfileScreen() {
                 <View style={styles.proIntro}>
                   <View style={styles.proIcon}><Ionicons name="diamond-outline" size={20} color={Colors.accentText} /></View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.proUpsellTitle}>もっと走りを楽しむ</Text>
-                    <Text style={styles.freeDesc}>友達チャレンジ作成、透かしなし共有を利用できます。</Text>
+                    <Text style={styles.proUpsellTitle}>{t('profile.enjoyMore')}</Text>
+                    <Text style={styles.freeDesc}>{t('profile.proFeatures')}</Text>
                   </View>
                 </View>
                 {proMonthlyPlan && (
@@ -486,9 +511,9 @@ export default function ProfileScreen() {
                     <View
                       style={[styles.planOption, styles.planOptionSelected]}
                       accessible
-                      accessibilityLabel={`月額 ${proMonthlyPlan.priceString}`}
+                      accessibilityLabel={t('profile.monthlyPriceA11y', { price: proMonthlyPlan.priceString })}
                     >
-                      <Text style={[styles.planPeriod, styles.planPeriodSelected]}>月額</Text>
+                      <Text style={[styles.planPeriod, styles.planPeriodSelected]}>{t('profile.monthly')}</Text>
                       <Text style={[styles.planPrice, styles.planPriceSelected]}>{proMonthlyPlan.priceString}</Text>
                     </View>
                   </View>
@@ -497,9 +522,9 @@ export default function ProfileScreen() {
                     取得できていないときは非活性にして再試行を出す。 */}
                 {!hasProPrice && !proPlanLoading && (
                   <View style={styles.priceErrorBox}>
-                    <Text style={styles.priceErrorText}>価格を読み込めませんでした。通信状態を確認してください。</Text>
+                    <Text style={styles.priceErrorText}>{t('profile.priceLoadFailed')}</Text>
                     <TouchableOpacity onPress={() => setProPlanReloadKey((key) => key + 1)} accessibilityRole="button">
-                      <Text style={styles.priceRetryText}>再読み込み</Text>
+                      <Text style={styles.priceRetryText}>{t('profile.reload')}</Text>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -513,23 +538,30 @@ export default function ProfileScreen() {
                 >
                   {purchasing || proPlanLoading
                     ? <ActivityIndicator color={Colors.textOnAccent} />
-                    : <><Text style={styles.proStartText}>月額Proをはじめる</Text><Ionicons name="chevron-forward" size={16} color={Colors.textOnAccent} /></>}
+                    : <><Text style={styles.proStartText}>{t('profile.startMonthlyPro')}</Text><Ionicons name="chevron-forward" size={16} color={Colors.textOnAccent} /></>}
                 </TouchableOpacity>
-                <TouchableOpacity onPress={handleRestore} style={styles.restoreButton}><Text style={styles.restoreText}>購入を復元する</Text></TouchableOpacity>
-                <Text style={styles.subscriptionDisclaimer}>{SUBSCRIPTION_DISCLAIMER}</Text>
+                <TouchableOpacity onPress={handleRestore} style={styles.restoreButton}><Text style={styles.restoreText}>{t('profile.restorePurchase')}</Text></TouchableOpacity>
+                <Text style={styles.subscriptionDisclaimer}>{t('profile.subscriptionDisclaimer')}</Text>
               </>
             )}
           </View>
         </View>
 
         <View>
-          <Text style={styles.sectionHeading}>設定</Text>
+          <Text style={styles.sectionHeading}>{t('profile.settings')}</Text>
           <View style={[styles.surfaceCard, styles.listCard]}>
+            <ProfileRow
+              icon="globe-outline"
+              title={t('profile.region')}
+              detail={t('profile.regionCurrent', { market: t(`market.${user.market}`) })}
+              onPress={showMarketOptions}
+            />
+            <View style={styles.rowDivider} />
             <View style={styles.profileRow}>
               <View style={styles.profileRowIcon}><Ionicons name="radio-outline" size={18} color={Colors.primaryDark} /></View>
               <View style={styles.profileRowBody}>
-                <Text style={styles.profileRowTitle}>走行中の表示を仲間に公開</Text>
-                <Text style={styles.profileRowDetail}>参加中のチャレンジに「ラン中」の事実だけを表示します。位置情報は共有しません。</Text>
+                <Text style={styles.profileRowTitle}>{t('profile.presenceTitle')}</Text>
+                <Text style={styles.profileRowDetail}>{t('profile.presenceDetail')}</Text>
               </View>
               <Switch
                 value={user.runningPresenceVisible}
@@ -537,15 +569,15 @@ export default function ProfileScreen() {
                 disabled={presenceSaving}
                 trackColor={{ false: Colors.surfaceGray, true: Colors.primaryLight }}
                 thumbColor={user.runningPresenceVisible ? Colors.primary : Colors.textTertiary}
-                accessibilityLabel="走行中の表示を仲間に公開"
+                accessibilityLabel={t('profile.presenceTitle')}
               />
             </View>
             <View style={styles.rowDivider} />
             <View style={styles.profileRow}>
               <View style={styles.profileRowIcon}><Ionicons name="flag-outline" size={18} color={Colors.primaryDark} /></View>
               <View style={styles.profileRowBody}>
-                <Text style={styles.profileRowTitle}>ラン宣言をチームに公開</Text>
-                <Text style={styles.profileRowDetail}>予定時刻と20字以内のひとことを、同じチームだけに48時間以内公開します。位置情報は共有しません。</Text>
+                <Text style={styles.profileRowTitle}>{t('profile.declarationTitle')}</Text>
+                <Text style={styles.profileRowDetail}>{t('profile.declarationDetail')}</Text>
               </View>
               <Switch
                 value={user.runDeclarationVisible}
@@ -553,40 +585,40 @@ export default function ProfileScreen() {
                 disabled={declarationVisibilitySaving}
                 trackColor={{ false: Colors.surfaceGray, true: Colors.primaryLight }}
                 thumbColor={user.runDeclarationVisible ? Colors.primary : Colors.textTertiary}
-                accessibilityLabel="ラン宣言をチームに公開"
+                accessibilityLabel={t('profile.declarationTitle')}
               />
             </View>
             <View style={styles.rowDivider} />
-            <ProfileRow icon="notifications-outline" title="通知センター" detail="チャレンジ・ランの通知を確認する" onPress={() => router.push('/notifications' as any)} />
+            <ProfileRow icon="notifications-outline" title={t('profile.notificationCenter')} detail={t('profile.notificationCenterDetail')} onPress={() => router.push('/notifications' as any)} />
             <View style={styles.rowDivider} />
-            <ProfileRow icon="notifications-circle-outline" title="プッシュ通知を有効にする" detail="順位変動や終了時刻を受け取る" onPress={handleEnableNotifications} />
+            <ProfileRow icon="notifications-circle-outline" title={t('profile.enablePush')} detail={t('profile.enablePushDetail')} onPress={handleEnableNotifications} />
             <View style={styles.rowDivider} />
-            <ProfileRow icon="medal-outline" title="表示中の称号" detail={profileTitle.replace('称号：', '')} onPress={() => router.push('/badges' as any)} />
+            <ProfileRow icon="medal-outline" title={t('profile.displayedTitle')} detail={displayedTitle} onPress={() => router.push('/badges' as any)} />
             <View style={styles.rowDivider} />
-            <ProfileRow icon="person-outline" title="アバターアイコン" detail="アプリ内のアイコンから選ぶ" onPress={handleAvatarOptions} />
+            <ProfileRow icon="person-outline" title={t('profile.avatarIcon')} detail={t('profile.avatarDetail')} onPress={handleAvatarOptions} />
             <View style={styles.rowDivider} />
-            <ProfileRow icon="person-remove-outline" title="ブロック中のユーザー" detail="非表示にした相手の確認・解除" onPress={() => router.push('/blocked-users' as any)} />
+            <ProfileRow icon="person-remove-outline" title={t('profile.blockedUsers')} detail={t('profile.blockedUsersDetail')} onPress={() => router.push('/blocked-users' as any)} />
           </View>
         </View>
 
         <View>
-          <Text style={styles.sectionHeading}>ヘルプ・アプリ情報</Text>
+          <Text style={styles.sectionHeading}>{t('profile.helpInfo')}</Text>
           <View style={[styles.surfaceCard, styles.listCard]}>
-            <ProfileRow icon="book-outline" title="使い方ガイド" detail="記録・チャレンジ・安全設定を確認する" onPress={() => router.push('/guide' as any)} />
+            <ProfileRow icon="book-outline" title={t('profile.guide')} detail={t('profile.guideDetail')} onPress={() => router.push('/guide' as any)} />
             <View style={styles.rowDivider} />
-            <ProfileRow icon="help-circle-outline" title="ヘルプ・お問い合わせ" onPress={() => router.push('/help' as any)} />
+            <ProfileRow icon="help-circle-outline" title={t('profile.helpContact')} onPress={() => router.push('/help' as any)} />
             <View style={styles.rowDivider} />
-            <ProfileRow icon="information-circle-outline" title="ZELIOについて" detail={`バージョン ${Constants.expoConfig?.version ?? '—'}`} onPress={() => Alert.alert('ZELIO', '仲間と距離を競うチーム対抗ランニング・ウォーキングアプリです。')} />
+            <ProfileRow icon="information-circle-outline" title={t('profile.about')} detail={t('profile.version', { version: Constants.expoConfig?.version ?? '—' })} onPress={() => Alert.alert('ZELIO', t('profile.aboutBody'))} />
           </View>
         </View>
 
         <View style={styles.legalRow}>
           <TouchableOpacity style={styles.legalButton} onPress={() => router.push('/legal/terms' as any)}>
-            <Text style={styles.legalLink}>利用規約</Text><Ionicons name="open-outline" size={11} color={Colors.textSecondary} />
+            <Text style={styles.legalLink}>{t('common.terms')}</Text><Ionicons name="open-outline" size={11} color={Colors.textSecondary} />
           </TouchableOpacity>
           <Text style={styles.legalSeparator}>|</Text>
           <TouchableOpacity style={styles.legalButton} onPress={() => router.push('/legal/privacy' as any)}>
-            <Text style={styles.legalLink}>プライバシーポリシー</Text><Ionicons name="open-outline" size={11} color={Colors.textSecondary} />
+            <Text style={styles.legalLink}>{t('common.privacy')}</Text><Ionicons name="open-outline" size={11} color={Colors.textSecondary} />
           </TouchableOpacity>
         </View>
 
@@ -597,13 +629,13 @@ export default function ProfileScreen() {
             onPress={() => router.push('/admin')}
           >
             <Ionicons name="settings-outline" size={15} color={Colors.info} />
-            <Text style={styles.adminBtnText}>管理画面</Text>
+            <Text style={styles.adminBtnText}>{t('profile.admin')}</Text>
           </TouchableOpacity>
         )}
 
         <TouchableOpacity style={styles.logoutButton} onPress={handleSignOut} activeOpacity={0.8}>
           <Ionicons name="log-out-outline" size={17} color={Colors.primaryDark} />
-          <Text style={styles.logoutText}>ログアウト</Text>
+          <Text style={styles.logoutText}>{t('profile.logout')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -614,10 +646,59 @@ export default function ProfileScreen() {
           {deleting ? (
             <ActivityIndicator size="small" color={Colors.error} />
           ) : (
-            <Text style={styles.deleteAccountText}>アカウントを削除する</Text>
+            <Text style={styles.deleteAccountText}>{t('profile.deleteAccount')}</Text>
           )}
         </TouchableOpacity>
       </ScrollView>
+
+      {/* AndroidのAlertは最大3ボタンのため、3地域＋キャンセルは共通Modalで表示する。 */}
+      <Modal
+        visible={showMarketPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowMarketPicker(false)}
+      >
+        <Pressable style={styles.marketModalOverlay} onPress={() => setShowMarketPicker(false)}>
+          <Pressable
+            style={styles.marketModalCard}
+            onPress={() => {}}
+            accessibilityViewIsModal
+          >
+            <Text style={styles.marketModalTitle}>{t('profile.region')}</Text>
+            <Text style={styles.marketModalBody}>{t('profile.regionDescription')}</Text>
+            <View style={styles.marketOptions}>
+              {MARKETS.map((market) => {
+                const selected = user.market === market;
+                return (
+                  <TouchableOpacity
+                    key={market}
+                    style={[styles.marketOption, selected && styles.marketOptionSelected]}
+                    onPress={() => { void handleMarketChange(market); }}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: selected }}
+                  >
+                    <Ionicons
+                      name={selected ? 'radio-button-on' : 'radio-button-off'}
+                      size={22}
+                      color={selected ? Colors.primary : Colors.textTertiary}
+                    />
+                    <Text style={[styles.marketOptionText, selected && styles.marketOptionTextSelected]}>
+                      {t(`market.${market}`)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <TouchableOpacity
+              style={styles.marketModalCancel}
+              onPress={() => setShowMarketPicker(false)}
+              accessibilityRole="button"
+            >
+              <Text style={styles.marketModalCancelText}>{t('common.cancel')}</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* アプリ内アバターアイコン選択モーダル */}
       <Modal
@@ -629,7 +710,7 @@ export default function ProfileScreen() {
         <Pressable style={styles.modalOverlay} onPress={() => setShowEmojiPicker(false)}>
           <Pressable style={styles.modalSheet} onPress={() => {}}>
             <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>アイコンを選ぶ</Text>
+            <Text style={styles.modalTitle}>{t('profile.chooseIcon')}</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -646,7 +727,7 @@ export default function ProfileScreen() {
                     accessibilityState={{ selected }}
                   >
                     <Text style={[styles.avatarCategoryText, selected && styles.avatarCategoryTextSelected]}>
-                      {category.label}
+                      {t(`avatarCategories.${category.id}`)}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -682,13 +763,13 @@ export default function ProfileScreen() {
       >
         <Pressable style={styles.deleteModalOverlay} onPress={() => setShowDeletePasswordPrompt(false)}>
           <Pressable style={styles.deleteModalCard} onPress={() => {}}>
-            <Text style={styles.deleteModalTitle}>パスワードを確認</Text>
-            <Text style={styles.deleteModalBody}>本人確認のため、現在のパスワードを入力してください。</Text>
+            <Text style={styles.deleteModalTitle}>{t('profile.verifyPassword')}</Text>
+            <Text style={styles.deleteModalBody}>{t('profile.verifyPasswordBody')}</Text>
             <TextInput
               style={styles.deletePasswordInput}
               value={deletePassword}
               onChangeText={setDeletePassword}
-              placeholder="パスワード"
+              placeholder={t('profile.passwordPlaceholder')}
               placeholderTextColor={Colors.textTertiary}
               secureTextEntry
               autoCapitalize="none"
@@ -706,7 +787,7 @@ export default function ProfileScreen() {
                 style={styles.deleteModalCancel}
                 onPress={() => setShowDeletePasswordPrompt(false)}
               >
-                <Text style={styles.deleteModalCancelText}>キャンセル</Text>
+                <Text style={styles.deleteModalCancelText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.deleteModalConfirm, !deletePassword && styles.deleteModalConfirmDisabled]}
@@ -716,7 +797,7 @@ export default function ProfileScreen() {
                   void doDeleteWithPassword(deletePassword);
                 }}
               >
-                <Text style={styles.deleteModalConfirmText}>削除する</Text>
+                <Text style={styles.deleteModalConfirmText}>{t('profile.deleteAction')}</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -871,6 +952,75 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     textAlign: 'center',
     marginBottom: Spacing.lg,
+  },
+  marketModalOverlay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.xl,
+    backgroundColor: DarkColors.modalBackdrop,
+  },
+  marketModalCard: {
+    width: '100%',
+    maxWidth: 420,
+    padding: Spacing.xl,
+    borderRadius: BorderRadius.xl,
+    backgroundColor: Colors.surface,
+  },
+  marketModalTitle: {
+    color: Colors.textPrimary,
+    fontSize: Typography.fontSize.xl,
+    fontWeight: Typography.fontWeight.bold,
+    textAlign: 'center',
+  },
+  marketModalBody: {
+    marginTop: Spacing.sm,
+    color: Colors.textSecondary,
+    fontSize: Typography.fontSize.sm,
+    lineHeight: Typography.fontSize.sm * Typography.lineHeight.normal,
+    textAlign: 'center',
+  },
+  marketOptions: {
+    gap: Spacing.sm,
+    marginTop: Spacing.xl,
+  },
+  marketOption: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.background,
+  },
+  marketOptionSelected: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primaryLight,
+  },
+  marketOptionText: {
+    color: Colors.textPrimary,
+    fontSize: Typography.fontSize.md,
+    fontWeight: Typography.fontWeight.semibold,
+  },
+  marketOptionTextSelected: {
+    color: Colors.primaryDark,
+    fontWeight: Typography.fontWeight.bold,
+  },
+  marketModalCancel: {
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: Spacing.lg,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  marketModalCancelText: {
+    color: Colors.textPrimary,
+    fontSize: Typography.fontSize.md,
+    fontWeight: Typography.fontWeight.semibold,
   },
   deleteModalOverlay: {
     flex: 1,

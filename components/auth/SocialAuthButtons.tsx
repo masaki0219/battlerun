@@ -13,12 +13,14 @@ import {
 } from '../../lib/socialAuth';
 import { useAuthStore } from '../../stores/authStore';
 import { Colors, Spacing, Typography } from '../../design_tokens';
+import { useTranslation } from '../../lib/i18n';
 
 interface Props {
   mode: 'sign-in' | 'sign-up';
 }
 
 export function SocialAuthButtons({ mode }: Props) {
+  const { t } = useTranslation();
   const setSuggestedProfileName = useAuthStore((state) => state.setSuggestedProfileName);
   const [busyProvider, setBusyProvider] = useState<SocialProviderId | null>(null);
 
@@ -41,7 +43,7 @@ export function SocialAuthButtons({ mode }: Props) {
     } catch (error) {
       setSuggestedProfileName(null);
       const message = socialAuthErrorMessage(error);
-      if (message) Alert.alert('ログインできませんでした', message);
+      if (message) Alert.alert(t('auth.loginFailed'), message);
     } finally {
       setBusyProvider(null);
     }
@@ -50,7 +52,7 @@ export function SocialAuthButtons({ mode }: Props) {
   if ((Platform.OS !== 'ios' && Platform.OS !== 'android') || !isNativeAuthBuild()) {
     return (
       <Text style={styles.nativeBuildNote}>
-        Apple／Googleログインは開発ビルドまたはストア版で利用できます。
+        {t('auth.nativeBuildOnly')}
       </Text>
     );
   }
@@ -60,7 +62,7 @@ export function SocialAuthButtons({ mode }: Props) {
     <View style={styles.container}>
       <View style={styles.dividerRow} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
         <View style={styles.divider} />
-        <Text style={styles.dividerText}>または</Text>
+        <Text style={styles.dividerText}>{t('auth.or')}</Text>
         <View style={styles.divider} />
       </View>
       <AppleAuthButton

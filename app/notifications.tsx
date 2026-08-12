@@ -15,6 +15,9 @@ import { useAuthStore } from '../stores/authStore';
 import type { AppNotification, NotificationType } from '../types';
 import { Colors, BorderRadius } from '../design_tokens';
 import { EmptyState } from '../components/ui/EmptyState';
+import { useTranslation } from '../lib/i18n';
+import type { AppLanguage } from '../lib/language';
+import { translateIn } from '../lib/translate';
 
 function notificationIcon(type: NotificationType): { name: any; color: string } {
   switch (type) {
@@ -29,15 +32,16 @@ function notificationIcon(type: NotificationType): { name: any; color: string } 
   }
 }
 
-function agoLabel(iso: string) {
+function agoLabel(iso: string, language: AppLanguage) {
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-  if (diff < 1) return 'たった今';
-  if (diff < 60) return `${diff}分前`;
-  if (diff < 1440) return `${Math.floor(diff / 60)}時間前`;
-  return `${Math.floor(diff / 1440)}日前`;
+  if (diff < 1) return translateIn(language, 'notificationCenter.justNow');
+  if (diff < 60) return translateIn(language, 'notificationCenter.minutesAgo', { count: diff });
+  if (diff < 1440) return translateIn(language, 'notificationCenter.hoursAgo', { count: Math.floor(diff / 60) });
+  return translateIn(language, 'notificationCenter.daysAgo', { count: Math.floor(diff / 1440) });
 }
 
 export default function NotificationsScreen() {
+  const { language, t } = useTranslation();
   const { user } = useAuthStore();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -102,17 +106,17 @@ export default function NotificationsScreen() {
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           style={s.backBtn}
           accessibilityRole="button"
-          accessibilityLabel="戻る"
+          accessibilityLabel={t('common.back')}
         >
           <Ionicons name="chevron-back" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={s.headerTitle}>通知センター</Text>
+          <Text style={s.headerTitle}>{t('notificationCenter.title')}</Text>
         </View>
         {/* DB上は開いた時点で既読化済みのため、「未読」ではなく「新着」と表示して実態と揃える */}
         {unreadCount > 0 && (
           <View style={s.unreadBadge}>
-            <Text style={s.unreadBadgeText}>新着{unreadCount}件</Text>
+            <Text style={s.unreadBadgeText}>{t('notificationCenter.newCount', { count: unreadCount })}</Text>
           </View>
         )}
       </View>
@@ -124,8 +128,8 @@ export default function NotificationsScreen() {
       ) : notifications.length === 0 ? (
         <EmptyState
           icon="notifications-off-outline"
-          title="通知はありません"
-          hint="チャレンジに参加すると通知が届きます"
+          title={t('notificationCenter.empty')}
+          hint={t('notificationCenter.emptyHint')}
         />
       ) : (
         <FlatList
@@ -154,7 +158,7 @@ export default function NotificationsScreen() {
                     {!item.isRead && <View style={s.dot} />}
                   </View>
                   <Text style={s.itemText} numberOfLines={2}>{item.body}</Text>
-                  <Text style={s.itemTime}>{agoLabel(item.createdAt)}</Text>
+                  <Text style={s.itemTime}>{agoLabel(item.createdAt, language)}</Text>
                 </View>
                 {isLinkable && (
                   <Ionicons name="chevron-forward" size={14} color={Colors.textTertiary} />

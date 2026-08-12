@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, Animated, StyleSheet, useWindowDimensions, AccessibilityInfo } from 'react-native';
 import { Colors, DarkColors, Spacing, BorderRadius, Animation } from '../../design_tokens';
+import { useTranslation } from '../../lib/i18n';
 
 interface Side {
   label: string;
@@ -18,7 +19,7 @@ interface Props {
   size?: 'md' | 'lg';
   /** ダーク演出内で使う場合 */
   dark?: boolean;
-  unit?: 'km' | 'km/人';
+  unit?: string;
 }
 
 /**
@@ -27,6 +28,7 @@ interface Props {
  * 比率 = leftKm / (leftKm + rightKm)、両方0なら 0.5。
  */
 export function VersusGauge({ left, right, size = 'md', dark = false, unit = 'km' }: Props) {
+  const { t } = useTranslation();
   const { fontScale } = useWindowDimensions();
   const isLg = size === 'lg';
   const largeText = fontScale >= 1.6;
@@ -118,12 +120,12 @@ export function VersusGauge({ left, right, size = 'md', dark = false, unit = 'km
               key={index === 0 ? 'left' : 'right'}
               style={styles.largeLabelBlock}
               accessible
-              accessibilityLabel={`${side.label}、${side.km.toFixed(1)}${unit}${side.isMine ? '、あなたのチーム' : ''}`}
+              accessibilityLabel={`${side.label}, ${side.km.toFixed(1)}${unit}${side.isMine ? `, ${t('common.yourTeam')}` : ''}`}
             >
               <View style={[styles.teamMarker, { backgroundColor: side.color ?? (side === left ? leftColor : rightColor) }]} />
               <View style={styles.largeLabelCopy}>
                 <Text style={[styles.largeTeamLabel, { color: txtPrimary, fontWeight: side.isMine ? '800' : '600' }]}>
-                  {side.label}{side.isMine ? '（あなた）' : ''}
+                  {side.label}{side.isMine ? ` (${t('common.you')})` : ''}
                 </Text>
                 <Text style={[styles.largeKm, { color: txtPrimary }]}>
                   {side.km.toFixed(1)}<Text style={styles.largeUnit}>{unit}</Text>
@@ -197,10 +199,10 @@ export function VersusGauge({ left, right, size = 'md', dark = false, unit = 'km
           ]}
         >
           {total <= 0
-            ? 'まだ勝負は始まっていない'
+            ? t('common.notStarted')
             : leading
-            ? `+${diff.toFixed(1)}${unit} リード`
-            : `あと ${diff.toFixed(1)}${unit}`}
+            ? t('common.lead', { value: `${diff.toFixed(1)}${unit}` })
+            : t('common.gap', { value: `${diff.toFixed(1)}${unit}` })}
         </Text>
       </View>
     </View>

@@ -23,6 +23,14 @@ export function isActiveBattleAt(data: Record<string, unknown>, nowMs: number): 
     && nowMs <= endMs;
 }
 
+/** users.battleIds に残す必要がある、開催中または開催予定の参加情報。 */
+export function shouldRetainBattleMembership(data: Record<string, unknown>, nowMs: number): boolean {
+  const endMs = timestampMillis(data['endAt']);
+  return (data['status'] === 'active' || data['status'] === 'upcoming')
+    && endMs != null
+    && endMs >= nowMs;
+}
+
 export function canLeaveParticipant(data: Record<string, unknown>): boolean {
   const distance = data['totalDistanceKm'];
   const activityCount = data['activityCount'];
@@ -105,7 +113,9 @@ export const joinBattle = onCall({}, async (request) => {
     const battleIds = Array.isArray(userSnap.data()?.['battleIds'])
       ? [...new Set((userSnap.data()?.['battleIds'] as unknown[]).filter((id): id is string => typeof id === 'string'))]
       : [];
-    if (battleIds.length > 50) {
+    // 旧実装は終了済みIDも永久に保持し、51件目以降の参加を拒否していた。
+    // トランザクション上限に十分余裕を残しつつ、通常の履歴はここで自動的に間引く。
+    if (battleIds.length > 450) {
       throw new HttpsError('failed-precondition', '参加情報が多すぎます。サポートへお問い合わせください。');
     }
     const otherBattleSnaps = await Promise.all(
@@ -121,6 +131,10 @@ export const joinBattle = onCall({}, async (request) => {
       );
     }
 
+    const retainedBattleIds = otherBattleSnaps
+      .filter((snapshot) => snapshot.exists && shouldRetainBattleMembership(snapshot.data()!, Date.now()))
+      .map((snapshot) => snapshot.id);
+
     tx.set(participantRef, {
       userId: uid,
       categoryId,
@@ -128,7 +142,7 @@ export const joinBattle = onCall({}, async (request) => {
       activityCount: 0,
       joinedAt: FieldValue.serverTimestamp(),
     });
-    tx.update(userRef, { battleIds: FieldValue.arrayUnion(battleId) });
+    tx.update(userRef, { battleIds: [...retainedBattleIds, battleId] });
   });
 
   return { battleId, categoryId };

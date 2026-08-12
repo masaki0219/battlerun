@@ -11,19 +11,20 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { cachedPublicProfile } from './publicProfileCache';
+import { translate } from './translate';
 
 export type ReportTargetType = 'user' | 'battle' | 'declaration' | 'presence' | 'activity';
 export type ReportReason = 'harassment' | 'hate' | 'sexual' | 'violence' | 'spam' | 'impersonation' | 'other';
 export type ReportStatus = 'pending' | 'reviewing' | 'resolved' | 'dismissed';
 
-export const REPORT_REASONS: { value: ReportReason; label: string }[] = [
-  { value: 'harassment', label: '嫌がらせ・いじめ' },
-  { value: 'hate', label: '差別的な内容' },
-  { value: 'sexual', label: '性的・わいせつな内容' },
-  { value: 'violence', label: '暴力・脅迫' },
-  { value: 'spam', label: 'スパム・宣伝' },
-  { value: 'impersonation', label: 'なりすまし' },
-  { value: 'other', label: 'その他' },
+export const REPORT_REASONS: { value: ReportReason; translationKey: string }[] = [
+  { value: 'harassment', translationKey: 'safety.reasons.harassment' },
+  { value: 'hate', translationKey: 'safety.reasons.hate' },
+  { value: 'sexual', translationKey: 'safety.reasons.sexual' },
+  { value: 'violence', translationKey: 'safety.reasons.violence' },
+  { value: 'spam', translationKey: 'safety.reasons.spam' },
+  { value: 'impersonation', translationKey: 'safety.reasons.impersonation' },
+  { value: 'other', translationKey: 'safety.reasons.other' },
 ];
 
 export interface ReportTarget {
@@ -74,11 +75,11 @@ export async function blockUser(params: {
   blockedUid: string;
   displayName: string;
 }): Promise<void> {
-  if (params.blockerUid === params.blockedUid) throw new Error('自分自身はブロックできません');
+  if (params.blockerUid === params.blockedUid) throw new Error(translate('safety.selfBlock'));
   await setDoc(doc(db, 'users', params.blockerUid, 'blocks', params.blockedUid), {
     blockerUid: params.blockerUid,
     blockedUid: params.blockedUid,
-    displayName: params.displayName.trim().slice(0, 40) || 'ユーザー',
+    displayName: params.displayName.trim().slice(0, 40) || translate('common.user'),
     createdAt: serverTimestamp(),
   });
 }
@@ -99,7 +100,7 @@ export function subscribeBlockedUsers(
       const profile = await cachedPublicProfile(item.id).catch(() => null);
       return {
         blockedUid: item.id,
-        displayName: profile?.name ?? (item.data()['displayName'] as string | undefined) ?? 'ユーザー',
+        displayName: profile?.name ?? (item.data()['displayName'] as string | undefined) ?? translate('common.user'),
         avatarEmoji: profile?.avatarEmoji,
         createdAt: timestampIso(item.data()['createdAt']),
       };

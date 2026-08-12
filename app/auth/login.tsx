@@ -13,8 +13,10 @@ import { authErrorMessage } from '../../lib/authErrors';
 import { Button } from '../../components/ui/Button';
 import { SocialAuthButtons } from '../../components/auth/SocialAuthButtons';
 import { Colors, Typography, Spacing, BorderRadius } from '../../design_tokens';
+import { useTranslation } from '../../lib/i18n';
 
 export default function LoginScreen() {
+  const { t } = useTranslation();
   const { signIn, isLoading } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -22,26 +24,26 @@ export default function LoginScreen() {
 
   async function handleForgotPassword() {
     if (!email) {
-      Alert.alert('メールアドレスを入力してください');
+      Alert.alert(t('auth.emailRequired'));
       return;
     }
     try {
       await sendPasswordResetEmail(auth, email);
-      Alert.alert('送信しました', `${email} にパスワードリセット用のメールを送りました。`);
+      Alert.alert(t('auth.resetSentTitle'), t('auth.resetSentBody', { email }));
     } catch {
-      Alert.alert('エラー', '送信に失敗しました。メールアドレスを確認してください。');
+      Alert.alert(t('common.error'), t('auth.resetFailed'));
     }
   }
 
   async function handleLogin() {
     if (!email || !password) {
-      Alert.alert('エラー', 'メールアドレスとパスワードを入力してください');
+      Alert.alert(t('common.error'), t('auth.emailPasswordRequired'));
       return;
     }
     try {
       await signIn(email, password);
     } catch (e: unknown) {
-      Alert.alert('ログインできませんでした', authErrorMessage(e));
+      Alert.alert(t('auth.loginFailed'), authErrorMessage(e));
     }
   }
 
@@ -55,13 +57,13 @@ export default function LoginScreen() {
         >
           <View style={styles.header}>
             <Text style={styles.logo}>ZELIO</Text>
-            <Text style={styles.tagline}>走る距離が、絆になる。</Text>
+            <Text style={styles.tagline}>{t('auth.tagline')}</Text>
           </View>
 
           <View style={styles.form}>
           <TextInput
             style={styles.input}
-            placeholder="メールアドレス"
+            placeholder={t('auth.email')}
             placeholderTextColor={Colors.textTertiary}
             value={email}
             onChangeText={setEmail}
@@ -75,7 +77,7 @@ export default function LoginScreen() {
           <View>
             <TextInput
               style={[styles.input, styles.passwordInput]}
-              placeholder="パスワード"
+              placeholder={t('auth.password')}
               placeholderTextColor={Colors.textTertiary}
               value={password}
               onChangeText={setPassword}
@@ -91,29 +93,29 @@ export default function LoginScreen() {
               onPress={() => setShowPassword((v) => !v)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               accessibilityRole="button"
-              accessibilityLabel={showPassword ? 'パスワードを隠す' : 'パスワードを表示'}
+              accessibilityLabel={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
             >
               <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={Colors.textTertiary} />
             </TouchableOpacity>
           </View>
 
-          <Button label="ログイン" onPress={handleLogin} loading={isLoading} style={styles.btn} />
+          <Button label={t('auth.login')} onPress={handleLogin} loading={isLoading} style={styles.btn} />
 
             <TouchableOpacity onPress={handleForgotPassword} style={styles.forgotBtn}>
-              <Text style={styles.forgotText}>パスワードを忘れた方はこちら</Text>
+              <Text style={styles.forgotText}>{t('auth.forgotPassword')}</Text>
             </TouchableOpacity>
 
             <SocialAuthButtons mode="sign-in" />
 
-            <Text style={styles.or}>アカウントをお持ちでない方</Text>
-            <Button label="新規登録はこちら" onPress={() => router.push('/auth/signup')} variant="ghost" />
+            <Text style={styles.or}>{t('auth.noAccount')}</Text>
+            <Button label={t('auth.signUpLink')} onPress={() => router.push('/auth/signup')} variant="ghost" />
             <View style={styles.legalRow}>
               <TouchableOpacity onPress={() => router.push('/legal/terms')} accessibilityRole="link">
-                <Text style={styles.legalText}>利用規約</Text>
+                <Text style={styles.legalText}>{t('common.terms')}</Text>
               </TouchableOpacity>
               <Text style={styles.legalDivider}>・</Text>
               <TouchableOpacity onPress={() => router.push('/legal/privacy')} accessibilityRole="link">
-                <Text style={styles.legalText}>プライバシーポリシー</Text>
+                <Text style={styles.legalText}>{t('common.privacy')}</Text>
               </TouchableOpacity>
             </View>
           </View>

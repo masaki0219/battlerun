@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Animation, BorderRadius, Colors, Spacing, Typography } from '../../design_tokens';
 import { chartAxisLabel, niceChartMaximum } from '../../utils/chartScale';
+import { useTranslation } from '../../lib/i18n';
 
 export interface MonthlyBarChartItem {
   monthKey: string;
@@ -20,6 +21,7 @@ const MIN_BAR = 3;
 
 /** 直近12ヶ月を選択できる、依存ゼロの月間距離チャート。 */
 export function MonthlyBarChart({ months, selectedMonthKey, onSelect, height = 92 }: Props) {
+  const { t } = useTranslation();
   const peak = niceChartMaximum(Math.max(...months.map((month) => month.km), 0));
   const grow = useRef(new Animated.Value(0)).current;
 
@@ -63,7 +65,7 @@ export function MonthlyBarChart({ months, selectedMonthKey, onSelect, height = 9
                   activeOpacity={0.75}
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
-                  accessibilityLabel={`${month.label}、${month.km.toFixed(1)}キロメートル`}
+                  accessibilityLabel={t('charts.monthA11y', { month: month.label, value: month.km.toFixed(1) })}
                 >
                   <View style={[styles.track, { height }]}>
                     <Animated.View

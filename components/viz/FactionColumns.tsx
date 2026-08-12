@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { View, Text, Animated, StyleSheet, ScrollView } from 'react-native';
 import { Colors, DarkColors, Typography, Spacing, BorderRadius, Animation } from '../../design_tokens';
 import { factionBarRatio } from '../../utils/teamDisplay';
+import { useTranslation } from '../../lib/i18n';
 
 export interface FactionColumn {
   id: string;
@@ -33,6 +34,7 @@ const VALUE_LABEL_HEIGHT = 17;
  * 首位を100%とした実比率を使い、値が小さい場合だけ最低高を残す。
  */
 export function FactionColumns({ factions, height = 120, valueSuffix = 'km' }: Props) {
+  const { t } = useTranslation();
   const max = Math.max(...factions.map((f) => f.km), 0);
 
   // 各バーの上に実数値ラベルを置くため、その分だけバーの最大高さを詰める。
@@ -68,7 +70,7 @@ export function FactionColumns({ factions, height = 120, valueSuffix = 'km' }: P
               key={f.id}
               style={[styles.col, factions.length > 3 && styles.colWide]}
               accessible
-              accessibilityLabel={`${f.label}、${f.km.toFixed(1)}${valueSuffix}、${f.rank == null ? '順位なし' : `${f.rank}位`}${f.isMine ? '、あなたのチーム' : ''}`}
+              accessibilityLabel={`${f.label}, ${f.km.toFixed(1)}${valueSuffix}, ${f.rank == null ? t('common.noRank') : t('common.rank', { rank: f.rank })}${f.isMine ? `, ${t('common.yourTeam')}` : ''}`}
             >
               <Text
                 style={[styles.km, f.isMine && styles.kmMine]}
@@ -100,8 +102,8 @@ export function FactionColumns({ factions, height = 120, valueSuffix = 'km' }: P
             <Text style={[styles.legendLabel, f.isMine && styles.legendLabelMine]} numberOfLines={1}>
               {f.label}
             </Text>
-            {f.isMine && <Text style={styles.legendMine}>あなた</Text>}
-            <Text style={styles.legendRank}>{f.rank == null ? '順位なし' : `${f.rank}位`}</Text>
+            {f.isMine && <Text style={styles.legendMine}>{t('common.you')}</Text>}
+            <Text style={styles.legendRank}>{f.rank == null ? t('common.noRank') : t('common.rank', { rank: f.rank })}</Text>
           </View>
         ))}
       </View>
@@ -113,7 +115,7 @@ export function FactionColumns({ factions, height = 120, valueSuffix = 'km' }: P
       horizontal
       showsHorizontalScrollIndicator
       contentContainerStyle={styles.scrollContent}
-      accessibilityLabel="全チームの成績。横にスクロールできます"
+      accessibilityLabel={t('common.teamsChartA11y')}
     >
       {chart}
     </ScrollView>

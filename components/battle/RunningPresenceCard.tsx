@@ -5,7 +5,7 @@ import { Avatar } from '../ui/Avatar';
 import { BorderRadius, Colors, Shadow, Spacing, Typography } from '../../design_tokens';
 import type { RunningPresence } from '../../types';
 import type { ReportTarget } from '../../lib/moderation';
-import { decorLabel } from '../../lib/locale';
+import { useTranslation } from '../../lib/i18n';
 
 export function RunningPresenceCard({
   presences,
@@ -20,6 +20,7 @@ export function RunningPresenceCard({
   onCheer: (presence: RunningPresence) => Promise<void>;
   onOpenSafety: (target: ReportTarget, displayName: string) => void;
 }) {
+  const { t } = useTranslation();
   const [sendingKey, setSendingKey] = useState<string | null>(null);
   if (presences.length === 0) return null;
 
@@ -37,12 +38,12 @@ export function RunningPresenceCard({
     <View>
       <View style={styles.sectionHead}>
         <View>
-          <Text style={styles.sectionTitle}>いま走っている仲間</Text>
-          <Text style={styles.sectionSubtitle}>{presences.length}人が走っています</Text>
+          <Text style={styles.sectionTitle}>{t('battle.runningFriends')}</Text>
+          <Text style={styles.sectionSubtitle}>{t('battle.runningCount', { count: presences.length })}</Text>
         </View>
         <View style={styles.liveChip}>
           <View style={styles.liveDot} />
-          <Text style={styles.liveText}>{decorLabel('走行中', 'LIVE')}</Text>
+          <Text style={styles.liveText}>{t('locale.running')}</Text>
         </View>
       </View>
       <View style={styles.card}>
@@ -53,8 +54,8 @@ export function RunningPresenceCard({
             <View key={key} style={[styles.row, index > 0 && styles.divider]}>
               <Avatar name={presence.displayName} emoji={presence.avatarEmoji} size="sm" />
               <View style={styles.copy}>
-                <Text style={styles.name} numberOfLines={1}>{own ? 'あなた' : presence.displayName}</Text>
-                <Text style={styles.state}>ラン中</Text>
+                <Text style={styles.name} numberOfLines={1}>{own ? t('common.you') : presence.displayName}</Text>
+                <Text style={styles.state}>{t('battle.runningState')}</Text>
               </View>
               {!own && (
                 <View style={styles.rowActions}>
@@ -63,7 +64,7 @@ export function RunningPresenceCard({
                     onPress={() => void cheer(presence)}
                     disabled={presence.cheeredByMe || sendingKey === key}
                     accessibilityRole="button"
-                    accessibilityLabel={`${presence.displayName}さんへ応援を送る`}
+                    accessibilityLabel={t('battle.cheerRunnerA11y', { name: presence.displayName })}
                     accessibilityState={{ disabled: presence.cheeredByMe || sendingKey === key }}
                   >
                     {sendingKey === key
@@ -72,7 +73,7 @@ export function RunningPresenceCard({
                         <>
                           <Ionicons name="flame" size={14} color={presence.cheeredByMe ? Colors.textTertiary : Colors.accentText} />
                           <Text style={[styles.cheerText, presence.cheeredByMe && styles.cheeredText]}>
-                            {presence.cheeredByMe ? '応援済み' : '応援'}
+                            {presence.cheeredByMe ? t('battle.runningCheered') : t('battle.runningCheer')}
                           </Text>
                         </>
                       )}
@@ -84,7 +85,7 @@ export function RunningPresenceCard({
                       targetUid: presence.uid, battleId, contentSnapshot: presence.displayName,
                     }, presence.displayName)}
                     accessibilityRole="button"
-                    accessibilityLabel={`${presence.displayName}さんの安全メニュー`}
+                    accessibilityLabel={t('battle.safetyMenuA11y', { name: presence.displayName })}
                   >
                     <Ionicons name="ellipsis-horizontal" size={17} color={Colors.textTertiary} />
                   </TouchableOpacity>
@@ -95,7 +96,7 @@ export function RunningPresenceCard({
         })}
         <View style={styles.privacyRow}>
           <Ionicons name="shield-checkmark-outline" size={13} color={Colors.textTertiary} />
-          <Text style={styles.privacyText}>位置・距離・ペースは共有されません</Text>
+          <Text style={styles.privacyText}>{t('battle.runningPrivacy')}</Text>
         </View>
       </View>
     </View>

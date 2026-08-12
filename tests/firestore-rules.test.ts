@@ -78,6 +78,12 @@ async function seed() {
       categoryIds: ['teamA', 'teamB'], rankingType: 'total', startAt: Timestamp.now(),
       endAt: Timestamp.fromMillis(Date.now() + 86400000), inviteCode: null, seasonId: null,
     });
+    await setDoc(doc(db, 'battles/legacyBattle'), {
+      type: 'public', status: 'active', createdBy: 'adminUser', title: 'legacy public', description: '',
+      categories: [{ id: 'legacyA', label: 'A' }, { id: 'legacyB', label: 'B' }],
+      rankingType: 'total', startAt: Timestamp.now(),
+      endAt: Timestamp.fromMillis(Date.now() + 86400000), inviteCode: null, seasonId: null,
+    });
     await setDoc(doc(db, 'battles/battle1/category_stats/teamA'), {
       label: 'チームA',
       totalDistanceKm: 10,
@@ -330,6 +336,16 @@ async function run() {
     'fail',
   );
   await check(
+    'users/{uid}: 英語の明白な嫌がらせ表現を含むニックネームは拒否',
+    updateDoc(doc(aliceDb, 'users/alice'), { name: 'KILL YOURSELF' }),
+    'fail',
+  );
+  await check(
+    'users/{uid}: 英語禁止語の単語内部分一致は誤検知しない',
+    updateDoc(doc(aliceDb, 'users/alice'), { name: 'Grape Runners' }),
+    'succeed',
+  );
+  await check(
     'users/{uid}: アプリ内アバターアイコンは更新できる',
     updateDoc(doc(aliceDb, 'users/alice'), { avatarEmoji: '🏃' }),
     'succeed',
@@ -352,6 +368,11 @@ async function run() {
   await check(
     'publicProfiles: 明白な嫌がらせ表現を含む公開名は拒否',
     updateDoc(doc(aliceDb, 'publicProfiles/alice'), { name: '殺すぞ' }),
+    'fail',
+  );
+  await check(
+    'publicProfiles: 英語の明白な差別語を含む公開名は拒否',
+    updateDoc(doc(aliceDb, 'publicProfiles/alice'), { name: 'nigger' }),
     'fail',
   );
   await check(
@@ -378,11 +399,166 @@ async function run() {
     'battles: 不適切な説明の作成はサーバールールで拒否',
     setDoc(doc(adminDb, 'battles/unsafeBattle'), {
       type: 'public', seasonId: null, title: '安全なタイトル', description: '消えろ',
+      market: 'JP',
       categories: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }],
       categoryIds: ['a', 'b'], rankingType: 'total', startAt: Timestamp.now(),
       endAt: Timestamp.fromMillis(Date.now() + 86400000), status: 'active',
       createdBy: 'adminUser', inviteCode: null, createdAt: Timestamp.now(),
     }),
+    'fail',
+  );
+  await check(
+    'battles: 管理者は許可されたmarketを持つ公開チャレンジを作成できる',
+    setDoc(doc(adminDb, 'battles/marketBattle'), {
+      type: 'public', seasonId: null, title: 'Market challenge', description: '', market: 'US',
+      termIndex: 1, termCount: 3,
+      categories: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }],
+      categoryIds: ['a', 'b'], rankingType: 'total', startAt: Timestamp.now(),
+      endAt: Timestamp.fromMillis(Date.now() + 86400000), status: 'active',
+      createdBy: 'adminUser', inviteCode: null, createdAt: Timestamp.now(),
+    }),
+    'succeed',
+  );
+  await check(
+    'battles: termIndexだけの不完全なターム情報を拒否',
+    setDoc(doc(adminDb, 'battles/incompleteTermBattle'), {
+      type: 'public', seasonId: null, title: 'Incomplete term', description: '', market: 'JP',
+      termIndex: 1,
+      categories: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }],
+      categoryIds: ['a', 'b'], rankingType: 'total', startAt: Timestamp.now(),
+      endAt: Timestamp.fromMillis(Date.now() + 86400000), status: 'active',
+      createdBy: 'adminUser', inviteCode: null, createdAt: Timestamp.now(),
+    }),
+    'fail',
+  );
+  await check(
+    'battles: 範囲外のターム数を拒否',
+    setDoc(doc(adminDb, 'battles/tooManyTermsBattle'), {
+      type: 'public', seasonId: null, title: 'Too many terms', description: '', market: 'JP',
+      termIndex: 1, termCount: 13,
+      categories: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }],
+      categoryIds: ['a', 'b'], rankingType: 'total', startAt: Timestamp.now(),
+      endAt: Timestamp.fromMillis(Date.now() + 86400000), status: 'active',
+      createdBy: 'adminUser', inviteCode: null, createdAt: Timestamp.now(),
+    }),
+    'fail',
+  );
+  await check(
+    'battles: ターム番号の型破壊を拒否',
+    updateDoc(doc(adminDb, 'battles/marketBattle'), { termIndex: '2' }),
+    'fail',
+  );
+  await check(
+    'battles: 許可外marketの公開チャレンジ作成を拒否',
+    setDoc(doc(adminDb, 'battles/invalidMarketBattle'), {
+      type: 'public', seasonId: null, title: 'Invalid market', description: '', market: 'EU',
+      categories: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }],
+      categoryIds: ['a', 'b'], rankingType: 'total', startAt: Timestamp.now(),
+      endAt: Timestamp.fromMillis(Date.now() + 86400000), status: 'active',
+      createdBy: 'adminUser', inviteCode: null, createdAt: Timestamp.now(),
+    }),
+    'fail',
+  );
+  await check(
+    'battles: 管理者は旧データにmarketを追加できる',
+    updateDoc(doc(adminDb, 'battles/battle2'), { market: 'US' }),
+    'succeed',
+  );
+  await check(
+    'battles: 管理者でも許可外marketへの更新を拒否',
+    updateDoc(doc(adminDb, 'battles/battle2'), { market: 'EU' }),
+    'fail',
+  );
+  await check(
+    'battles: 管理者更新でも本文スキーマ破壊を拒否',
+    updateDoc(doc(adminDb, 'battles/battle2'), { title: 42 }),
+    'fail',
+  );
+  await check(
+    'battles: categoryIds欠落の旧Battleは本文を変更できない',
+    updateDoc(doc(adminDb, 'battles/legacyBattle'), {
+      title: 'changed legacy title',
+    }),
+    'fail',
+  );
+  await check(
+    'battles: 管理者はcategoryIds欠落の旧Battleでもlifecycleだけ更新できる',
+    updateDoc(doc(adminDb, 'battles/legacyBattle'), {
+      status: 'finished',
+      endAt: Timestamp.now(),
+    }),
+    'succeed',
+  );
+  await check(
+    'battles: 非管理者は旧Battleのlifecycleを更新できない',
+    updateDoc(doc(bobDb, 'battles/legacyBattle'), {
+      status: 'active',
+      endAt: Timestamp.fromMillis(Date.now() + 86400000),
+    }),
+    'fail',
+  );
+  await check(
+    'battles: 管理者はlifecycle更新と同時に旧BattleのcategoryIdsを補完できる',
+    updateDoc(doc(adminDb, 'battles/legacyBattle'), {
+      status: 'active',
+      endAt: Timestamp.fromMillis(Date.now() + 86400000),
+      categoryIds: ['legacyA', 'legacyB'],
+    }),
+    'succeed',
+  );
+  await check(
+    'battles: 非管理者は旧Battle補完を伴うlifecycle更新もできない',
+    updateDoc(doc(bobDb, 'battles/legacyBattle'), {
+      status: 'active',
+      endAt: Timestamp.fromMillis(Date.now() + 86400000),
+      categoryIds: ['legacyA', 'legacyB'],
+    }),
+    'fail',
+  );
+  await check(
+    'seasons: 管理者は検証済みテーマを作成できる',
+    setDoc(doc(adminDb, 'seasons/theme1'), {
+      title: '春のランニング月間',
+      startAt: Timestamp.now(),
+      endAt: Timestamp.fromMillis(Date.now() + 42 * 86400000),
+      status: 'active',
+      createdAt: Timestamp.now(),
+    }),
+    'succeed',
+  );
+  await check(
+    'seasons: 管理者はテーマをアーカイブできる',
+    updateDoc(doc(adminDb, 'seasons/theme1'), { status: 'archived' }),
+    'succeed',
+  );
+  await check(
+    'seasons: 非管理者はテーマを作成できない',
+    setDoc(doc(bobDb, 'seasons/attackerTheme'), {
+      title: 'Attacker',
+      startAt: Timestamp.now(),
+      endAt: Timestamp.fromMillis(Date.now() + 42 * 86400000),
+      status: 'active',
+    }),
+    'fail',
+  );
+  await check(
+    'seasons: 管理者でも終了日が開始日以前のテーマを作成できない',
+    setDoc(doc(adminDb, 'seasons/invalidPeriod'), {
+      title: 'Invalid period',
+      startAt: Timestamp.fromMillis(Date.now() + 86400000),
+      endAt: Timestamp.now(),
+      status: 'active',
+    }),
+    'fail',
+  );
+  await check(
+    'seasons: 未定義フィールドを持つテーマを拒否',
+    updateDoc(doc(adminDb, 'seasons/theme1'), { attackerControlled: true }),
+    'fail',
+  );
+  await check(
+    'seasons: アーカイブ時にテーマ本文を同時変更できない',
+    updateDoc(doc(adminDb, 'seasons/theme1'), { title: '書き換え' }),
     'fail',
   );
   await check(
@@ -426,6 +602,15 @@ async function run() {
       collection(bobDb, 'battles'),
       where('type', '==', 'public'),
       where('status', '==', 'active'),
+    )),
+    'succeed',
+  );
+  await check(
+    'battles list: 開催中と開催前を同じ公開一覧で取得できる',
+    getDocs(query(
+      collection(bobDb, 'battles'),
+      where('type', '==', 'public'),
+      where('status', 'in', ['active', 'upcoming']),
     )),
     'succeed',
   );
@@ -477,6 +662,14 @@ async function run() {
     setDoc(
       doc(aliceDb, 'battles/battle1/declarations/alice_20990104'),
       declarationPayload('alice', '20990104', 'teamA', '死ね'),
+    ),
+    'fail',
+  );
+  await check(
+    'declarations: 英語の不適切なひとことはサーバールールで拒否',
+    setDoc(
+      doc(aliceDb, 'battles/battle1/declarations/alice_20990107'),
+      declarationPayload('alice', '20990107', 'teamA', 'kill yourself'),
     ),
     'fail',
   );
@@ -1013,6 +1206,26 @@ async function run() {
   );
 
   // ── users/{uid} ──────────────────────────────────────────────────
+  await check(
+    'users/{uid}: 本人はmarketを許可値へ更新できる',
+    updateDoc(doc(aliceDb, 'users/alice'), { market: 'US' }),
+    'succeed',
+  );
+  await check(
+    'users/{uid}: 許可外marketへの更新を拒否',
+    updateDoc(doc(aliceDb, 'users/alice'), { market: 'EU' }),
+    'fail',
+  );
+  await check(
+    'users/{uid}: 本人は通知用UI言語を同期できる',
+    updateDoc(doc(aliceDb, 'users/alice'), { uiLanguage: 'en' }),
+    'succeed',
+  );
+  await check(
+    'users/{uid}: 未対応UI言語への更新を拒否',
+    updateDoc(doc(aliceDb, 'users/alice'), { uiLanguage: 'fr' }),
+    'fail',
+  );
   await check(
     'users/{uid}: titlesの自己更新は拒否（Cloud Functionsのみ付与可）',
     updateDoc(doc(aliceDb, 'users/alice'), {

@@ -2,6 +2,7 @@ import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 import { logger } from 'firebase-functions/v2';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { containsBannedWord } from './bannedWords';
+import { notificationCopy, userUiLanguage } from './i18n';
 
 const MAX_TITLE_LENGTH = 30;
 
@@ -53,12 +54,16 @@ export const validateBattleTitleOnCreate = onDocumentCreated(
     const createdBy = battle['createdBy'] as string | null | undefined;
     if (!createdBy) return;
 
-    await getFirestore()
+    const db = getFirestore();
+    const language = await userUiLanguage(db, createdBy);
+    const copy = notificationCopy.battleRejected(language, title);
+
+    await db
       .collection(`users/${createdBy}/notifications`)
       .add({
         type: 'battle_title_rejected',
-        title: 'チャレンジが無効化されました',
-        body: `「${title}」の名前・説明・チーム名に利用できない内容が含まれているため終了しました`,
+        title: copy.title,
+        body: copy.body,
         isRead: false,
         relatedBattleId: battleId,
         relatedActivityId: null,

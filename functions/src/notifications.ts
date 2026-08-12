@@ -2,6 +2,7 @@ import { onDocumentCreated, onDocumentUpdated, onDocumentWritten } from 'firebas
 import { logger } from 'firebase-functions/v2';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { sendPushToUser } from './push';
+import { notificationCopy, resolveUiLanguage, userUiLanguage } from './i18n';
 
 interface UserTitle {
   seasonId: string;
@@ -51,11 +52,12 @@ export const onReactionCreated = onDocumentCreated(
       return;
     }
 
-    const reactorSnap = await db.doc(`users/${reactorId}`).get();
-    const reactorName = (reactorSnap.data()?.['name'] as string) ?? 'メンバー';
-
-    const title = `${reactorName}さんがリアクションしました`;
-    const body = `あなたの記録に ${reactionType} がつきました`;
+    const [reactorSnap, language] = await Promise.all([
+      db.doc(`users/${reactorId}`).get(),
+      userUiLanguage(db, activityOwnerId),
+    ]);
+    const reactorName = (reactorSnap.data()?.['name'] as string) ?? notificationCopy.member(language);
+    const { title, body } = notificationCopy.reaction(language, reactorName, reactionType);
 
     await db.collection(`users/${activityOwnerId}/notifications`).add({
       type: 'reaction',
@@ -88,10 +90,12 @@ export const onDeclarationCheerCreated = onDocumentCreated(
       return;
     }
 
-    const profileSnap = await db.doc(`publicProfiles/${fromUid}`).get();
-    const senderName = (profileSnap.data()?.['name'] as string | undefined) ?? 'メンバー';
-    const title = '応援が届きました 🔥';
-    const body = `${senderName}さんが応援しています`;
+    const [profileSnap, language] = await Promise.all([
+      db.doc(`publicProfiles/${fromUid}`).get(),
+      userUiLanguage(db, ownerId),
+    ]);
+    const senderName = (profileSnap.data()?.['name'] as string | undefined) ?? notificationCopy.member(language);
+    const { title, body } = notificationCopy.declarationCheer(language, senderName);
     await db.collection(`users/${ownerId}/notifications`).add({
       type: 'declaration_cheer',
       title,
@@ -137,10 +141,12 @@ export const onPresenceCheerWritten = onDocumentWritten(
       || presenceSnap.data()?.['sessionId'] !== sessionId
       || presenceSnap.data()?.['visible'] !== true) return;
 
-    const profileSnap = await db.doc(`publicProfiles/${fromUid}`).get();
-    const senderName = (profileSnap.data()?.['name'] as string | undefined) ?? 'メンバー';
-    const title = 'ラン中に応援が届きました 🔥';
-    const body = `${senderName}さんが応援しています`;
+    const [profileSnap, language] = await Promise.all([
+      db.doc(`publicProfiles/${fromUid}`).get(),
+      userUiLanguage(db, runnerId),
+    ]);
+    const senderName = (profileSnap.data()?.['name'] as string | undefined) ?? notificationCopy.member(language);
+    const { title, body } = notificationCopy.presenceCheer(language, senderName);
     await db.collection(`users/${runnerId}/notifications`).add({
       type: 'presence_cheer',
       title,
@@ -177,13 +183,11 @@ export const onUserTitlesUpdated = onDocumentUpdated('users/{userId}', async (ev
 
   const { userId } = event.params;
   const db = getFirestore();
+  const language = resolveUiLanguage(change.after.data()?.['uiLanguage']);
 
   await Promise.all(
     newTitles.map(async (title) => {
-      const titleLabel = title.rank === 1 ? '優勝チームの一員' : '準優勝チームの一員';
-      const teamText = title.teamName ? `「${title.teamName}」として` : '';
-      const notifTitle = `称号「${titleLabel}」を獲得しました！`;
-      const notifBody = `「${title.battleTitle}」で${teamText}走った成果が認められました`;
+      const { title: notifTitle, body: notifBody } = notificationCopy.earnedTitle(language, title);
 
       await db.collection(`users/${userId}/notifications`).add({
         type: 'title_earned',

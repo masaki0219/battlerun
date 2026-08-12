@@ -10,6 +10,8 @@ import { declarationTimeLabel } from '../../utils/declarations';
 import { DECLARATION_NOTE_MAX_LENGTH, validateDeclarationNote } from '../../lib/validation/declaration';
 import type { RunDeclaration } from '../../types';
 import type { ReportTarget } from '../../lib/moderation';
+import { useTranslation } from '../../lib/i18n';
+import { translateIn, type TranslateOptions } from '../../lib/translate';
 
 // 旧development buildでも宣言一覧を開けるよう、ネイティブピッカーは遅延ロードする。
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -48,22 +50,26 @@ function timeLabel(date: Date): string {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
-export function buildTimeOptions(now: Date): TimeOption[] {
+export function buildTimeOptions(
+  now: Date,
+  t: (scope: string, options?: TranslateOptions) => string = (scope, options) => translateIn('ja', scope, options),
+): TimeOption[] {
   const endOfDay = endOfToday(now);
   const soon = new Date(Math.min(now.getTime() + 5 * 60_000, endOfDay.getTime()));
   const quarter = nextQuarterHour(now);
   const later = new Date(quarter.getTime() + 60 * 60_000);
   return [
-    { key: 'soon', label: 'まもなく', date: soon, disabled: soon <= now },
-    { key: 'quarter', label: `次の区切り ${timeLabel(quarter)}`, date: quarter, disabled: quarter > endOfDay },
-    { key: 'later', label: `1時間後 ${timeLabel(later)}`, date: later, disabled: later > endOfDay },
+    { key: 'soon', label: t('battle.timeSoon'), date: soon, disabled: soon <= now },
+    { key: 'quarter', label: t('battle.timeNextQuarter', { time: timeLabel(quarter) }), date: quarter, disabled: quarter > endOfDay },
+    { key: 'later', label: t('battle.timeOneHourLater', { time: timeLabel(later) }), date: later, disabled: later > endOfDay },
   ];
 }
 
 export function DeclarationCard({
   declaration, battleTitle, battleType, onDeclare, onUpdate, onCancel,
 }: OwnDeclarationProps) {
-  const options = buildTimeOptions(new Date());
+  const { language, t } = useTranslation();
+  const options = buildTimeOptions(new Date(), t);
   const [selectedKey, setSelectedKey] = useState('soon');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
@@ -75,7 +81,7 @@ export function DeclarationCard({
   const currentOption: TimeOption | null = declaration && editing
     ? {
         key: 'current',
-        label: `現在 ${declarationTimeLabel(declaration.plannedAt, declaration.timezone)}`,
+        label: t('battle.timeCurrent', { time: declarationTimeLabel(declaration.plannedAt, declaration.timezone, language) }),
         date: new Date(declaration.plannedAt),
         disabled: false,
       }
@@ -93,12 +99,12 @@ export function DeclarationCard({
 
   function confirmCancellation() {
     Alert.alert(
-      '今日のラン予定を取り消しますか？',
-      '取り消してもチームには通知されません。',
+      t('battle.cancelPlanTitle'),
+      t('battle.cancelPlanBody'),
       [
-        { text: 'やめる', style: 'cancel' },
+        { text: t('battle.keepPlan'), style: 'cancel' },
         {
-          text: '取り消す',
+          text: t('battle.cancelPlan'),
           style: 'destructive',
           onPress: () => {
             setCancelling(true);
@@ -117,15 +123,15 @@ export function DeclarationCard({
           <Ionicons name={done ? 'checkmark' : 'flag'} size={21} color={done ? Colors.textOnPrimary : Colors.accentText} />
         </View>
         <View style={styles.copy}>
-          <Text style={[styles.kicker, done && styles.doneKicker]}>{done ? '宣言達成！' : '今日のラン宣言'}</Text>
+          <Text style={[styles.kicker, done && styles.doneKicker]}>{done ? t('battle.planCompleted') : t('battle.todayPlan')}</Text>
           <Text style={styles.currentTitle}>
-            {done ? '自分で決めたランを完了しました' : declarationTimeLabel(declaration.plannedAt, declaration.timezone)}
+            {done ? t('battle.completedOwnPlan') : declarationTimeLabel(declaration.plannedAt, declaration.timezone, language)}
           </Text>
           {declaration.note && <Text style={styles.currentNote}>「{declaration.note}」</Text>}
           {declaration.cheerCount > 0 && (
-            <Text style={styles.currentCheers}>🔥 {declaration.cheerCount}人が応援</Text>
+            <Text style={styles.currentCheers}>{t('battle.supporters', { count: declaration.cheerCount })}</Text>
           )}
-          {!done && <Text style={styles.currentHint}>準備ができたタイミングで始めましょう</Text>}
+          {!done && <Text style={styles.currentHint}>{t('battle.startWhenReady')}</Text>}
           {!done && (
             <View style={styles.ownActions}>
               <TouchableOpacity
@@ -133,20 +139,20 @@ export function DeclarationCard({
                 onPress={beginEditing}
                 disabled={cancelling}
                 accessibilityRole="button"
-                accessibilityLabel="今日のラン宣言を変更"
+                accessibilityLabel={t('battle.editPlanA11y')}
               >
-                <Text style={styles.ownActionText}>変更</Text>
+                <Text style={styles.ownActionText}>{t('battle.edit')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.ownActionButton}
                 onPress={confirmCancellation}
                 disabled={cancelling}
                 accessibilityRole="button"
-                accessibilityLabel="今日のラン宣言を取り消す"
+                accessibilityLabel={t('battle.cancelPlanA11y')}
               >
                 {cancelling
                   ? <ActivityIndicator size="small" color={Colors.textSecondary} />
-                  : <Text style={styles.cancelActionText}>取り消す</Text>}
+                  : <Text style={styles.cancelActionText}>{t('battle.cancelPlan')}</Text>}
               </TouchableOpacity>
             </View>
           )}
@@ -185,11 +191,11 @@ export function DeclarationCard({
   async function submit() {
     const validation = validateDeclarationNote(note);
     if (!validation.ok) {
-      setValidationMessage(validation.reason ?? 'ひとことを確認してください');
+      setValidationMessage(language === 'ja' ? (validation.reason ?? t('battle.checkNote')) : t('battle.checkNote'));
       return;
     }
     if (!selected || selected.disabled || selected.date <= new Date()) {
-      setValidationMessage('これからの時刻を選んでください。');
+      setValidationMessage(t('battle.chooseFutureTime'));
       return;
     }
     setSaving(true);
@@ -215,8 +221,8 @@ export function DeclarationCard({
           <Ionicons name="flag-outline" size={20} color={Colors.accentText} />
         </View>
         <View style={styles.copy}>
-          <Text style={styles.kicker}>今日のラン宣言</Text>
-          <Text style={styles.formTitle}>{declaration ? '今日の予定を変更する' : '走り始める時間を自分で決める'}</Text>
+          <Text style={styles.kicker}>{t('battle.todayPlan')}</Text>
+          <Text style={styles.formTitle}>{t(declaration ? 'battle.editTodayPlan' : 'battle.chooseStartTime')}</Text>
           <Text style={styles.formBattle} numberOfLines={1}>{battleTitle}</Text>
         </View>
       </View>
@@ -247,10 +253,10 @@ export function DeclarationCard({
           }}
           disabled={saving}
           accessibilityRole="button"
-          accessibilityLabel="宣言する時間を選ぶ"
+          accessibilityLabel={t('battle.choosePlanTimeA11y')}
         >
           <Text style={[styles.timeText, selectedKey === 'custom' && styles.timeTextActive]}>
-            {selectedKey === 'custom' ? `選択中 ${timeLabel(customDate)}` : '時間を選ぶ'}
+            {selectedKey === 'custom' ? t('battle.selectedTime', { time: timeLabel(customDate) }) : t('battle.chooseTime')}
           </Text>
         </TouchableOpacity>
       </View>
@@ -261,7 +267,7 @@ export function DeclarationCard({
             value={customDate}
             mode="time"
             display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            locale="ja"
+            locale={language}
             is24Hour
             minuteInterval={15}
             minimumDate={new Date(Date.now() + 60_000)}
@@ -271,23 +277,23 @@ export function DeclarationCard({
           />
           {Platform.OS === 'ios' && (
             <TouchableOpacity style={styles.pickerDone} onPress={() => setShowTimePicker(false)}>
-              <Text style={styles.pickerDoneText}>この時刻にする</Text>
+              <Text style={styles.pickerDoneText}>{t('battle.useThisTime')}</Text>
             </TouchableOpacity>
           )}
         </View>
       )}
       {showTimePicker && !NativeDateTimePicker && (
-        <Text style={styles.validation}>このビルドでは時間選択を利用できません。アプリを更新してください。</Text>
+        <Text style={styles.validation}>{t('battle.pickerUnavailable')}</Text>
       )}
 
       {(selectedKey === 'custom' || selectedKey === 'current') && (
         <View style={styles.adjustRow}>
           <TouchableOpacity style={styles.adjustChip} onPress={() => adjustCustomDate(-15)} disabled={saving}>
-            <Text style={styles.adjustText}>−15分</Text>
+            <Text style={styles.adjustText}>{t('battle.minusFifteen')}</Text>
           </TouchableOpacity>
           <Text style={styles.selectedTime}>{timeLabel(selected.date)}</Text>
           <TouchableOpacity style={styles.adjustChip} onPress={() => adjustCustomDate(15)} disabled={saving}>
-            <Text style={styles.adjustText}>＋15分</Text>
+            <Text style={styles.adjustText}>{t('battle.plusFifteen')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -296,7 +302,7 @@ export function DeclarationCard({
         <TextInput
           value={note}
           onChangeText={(value) => { setNote(value); setValidationMessage(''); }}
-          placeholder={battleType === 'public' ? '場所は書かず、ひとこと（任意）' : 'ひとこと（任意）'}
+          placeholder={t(battleType === 'public' ? 'battle.publicNotePlaceholder' : 'battle.notePlaceholder')}
           placeholderTextColor={Colors.textTertiary}
           maxLength={DECLARATION_NOTE_MAX_LENGTH}
           style={styles.noteInput}
@@ -312,7 +318,7 @@ export function DeclarationCard({
         ) : (
           <>
             <Ionicons name="flag" size={17} color={Colors.textOnAccent} />
-            <Text style={styles.declareText}>{declaration ? '変更を保存' : 'この時間に走ると宣言'}</Text>
+            <Text style={styles.declareText}>{t(declaration ? 'battle.savePlan' : 'battle.declareAtTime')}</Text>
           </>
         )}
       </TouchableOpacity>
@@ -323,14 +329,14 @@ export function DeclarationCard({
           disabled={saving}
           accessibilityRole="button"
         >
-          <Text style={styles.stopEditingText}>編集をやめる</Text>
+          <Text style={styles.stopEditingText}>{t('battle.stopEditing')}</Text>
         </TouchableOpacity>
       )}
       {battleType === 'public' && (
-        <Text style={styles.safetyHint}>場所・集合先・普段のコースなど、居場所が分かる内容は書かないでください。</Text>
+        <Text style={styles.safetyHint}>{t('battle.locationSafety')}</Text>
       )}
-      <Text style={styles.scopeHint}>公開範囲：このチャレンジの同じチーム</Text>
-      <Text style={styles.reminderHint}>15分以内の予定は通知せず、それより先は1回だけリマインドします。</Text>
+      <Text style={styles.scopeHint}>{t('battle.visibilityScope')}</Text>
+      <Text style={styles.reminderHint}>{t('battle.reminderInfo')}</Text>
     </View>
   );
 }
@@ -343,6 +349,7 @@ export function DeclarationList({
   onCheer: (declarationId: string) => Promise<void>;
   onOpenSafety: (target: ReportTarget, displayName: string) => void;
 }) {
+  const { language, t } = useTranslation();
   const [sendingId, setSendingId] = useState<string | null>(null);
   if (declarations.length === 0) return null;
 
@@ -357,7 +364,7 @@ export function DeclarationList({
 
   return (
     <View>
-      <Text style={styles.listSectionTitle}>今日の宣言</Text>
+      <Text style={styles.listSectionTitle}>{t('battle.todayDeclarations')}</Text>
       <View style={styles.listCard}>
         {declarations.map((item, index) => {
           const own = item.uid === currentUserId;
@@ -366,9 +373,9 @@ export function DeclarationList({
             <View key={item.id} style={[styles.listRow, index > 0 && styles.listDivider]}>
               <Avatar name={item.displayName} emoji={item.avatarEmoji} size="sm" />
               <View style={styles.copy}>
-                <Text style={styles.memberName} numberOfLines={1}>{own ? 'あなた' : item.displayName}</Text>
+                <Text style={styles.memberName} numberOfLines={1}>{own ? t('common.you') : item.displayName}</Text>
                 <Text style={[styles.memberPlan, done && styles.memberDone]}>
-                  {done ? 'ラン完了' : declarationTimeLabel(item.plannedAt, item.timezone)}
+                  {done ? t('battle.runComplete') : declarationTimeLabel(item.plannedAt, item.timezone, language)}
                   {item.note ? `・${item.note}` : ''}
                 </Text>
               </View>
@@ -379,17 +386,17 @@ export function DeclarationList({
                     onPress={() => void cheer(item.id)}
                     disabled={item.cheeredByMe || sendingId === item.id}
                     accessibilityRole="button"
-                    accessibilityLabel={`${item.displayName}さんを応援`}
+                    accessibilityLabel={t('battle.cheerPersonA11y', { name: item.displayName })}
                   >
                     {sendingId === item.id
                       ? <ActivityIndicator size="small" color={Colors.accentText} />
                       : (
                         <Text style={styles.cheerText}>
                           {item.cheeredByMe
-                            ? `🔥 応援済み${item.cheerCount > 1 ? ` · ${item.cheerCount}人` : ''}`
+                            ? item.cheerCount > 1 ? t('battle.cheeredWithCount', { count: item.cheerCount }) : t('battle.cheered')
                             : item.cheerCount > 0
-                              ? `🔥 ${item.cheerCount}人が応援`
-                              : '応援する'}
+                              ? t('battle.cheerCount', { count: item.cheerCount })
+                              : t('battle.cheer')}
                         </Text>
                       )}
                   </TouchableOpacity>
@@ -403,7 +410,7 @@ export function DeclarationList({
                       contentSnapshot: [item.displayName, item.note].filter(Boolean).join(' / '),
                     }, item.displayName)}
                     accessibilityRole="button"
-                    accessibilityLabel={`${item.displayName}さんの安全メニュー`}
+                    accessibilityLabel={t('battle.safetyMenuA11y', { name: item.displayName })}
                   >
                     <Ionicons name="ellipsis-horizontal" size={17} color={Colors.textTertiary} />
                   </TouchableOpacity>

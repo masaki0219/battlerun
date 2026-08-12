@@ -23,7 +23,7 @@ import {
   tokyoMonthKey,
 } from '../../utils/monthlyStats';
 import type { MeasurementType } from '../../types';
-import { decorLabel } from '../../lib/locale';
+import { useTranslation } from '../../lib/i18n';
 import { flushPendingActivities, useRecordStore } from '../../stores/recordStore';
 
 type ActivityFilter = 'all' | 'gps' | 'steps';
@@ -45,6 +45,7 @@ const TRAINING_LOAD_SEEN_KEY = '@battlerun_training_load_seen_v1';
 
 /** 記録の振り返り画面。月次はサーバー集計、それ以外は生涯値または直近50件を使う。 */
 export default function StatsScreen() {
+  const { language, t } = useTranslation();
   const { fontScale } = useWindowDimensions();
   const largeText = fontScale >= 1.6;
   const { activities, loading } = useRecentActivities(50);
@@ -65,15 +66,15 @@ export default function StatsScreen() {
       const result = await flushPendingActivities();
       const remaining = useRecordStore.getState().pendingActivityCount;
       if (remaining > 0 && result.sent === 0 && result.discarded === 0) {
-        Alert.alert('まだ送信できません', '通信状態を確認してください。記録は端末に保存したまま、30秒ごとに再送します。');
+        Alert.alert(t('stats.pendingRetryTitle'), t('stats.pendingRetryBody'));
         return;
       }
       if (remaining === 0 && before > 0 && result.sent > 0 && result.discarded === 0) {
-        Alert.alert('再送しました', '未送信の記録をサーバーへ送信しました。');
+        Alert.alert(t('stats.resentTitle'), t('stats.resentBody'));
       }
     } catch (error) {
       console.warn('[StatsScreen] pending activity retry failed:', error);
-      Alert.alert('再送を開始できませんでした', '記録は端末に保存したままです。アプリを開いた状態で、時間をおいてもう一度お試しください。');
+      Alert.alert(t('stats.retryStartFailed'), t('stats.retryStartFailedBody'));
     }
   };
 
@@ -90,8 +91,8 @@ export default function StatsScreen() {
   );
   const personalRecords = user?.personalRecords;
   const longestRecordKm = personalRecords?.longestRunKm ?? longestRun;
-  const rollingBuckets = rollingWeekBuckets(activities, now);
-  const calendarWeekBuckets = weeklyBuckets(activities, now);
+  const rollingBuckets = rollingWeekBuckets(activities, now, language);
+  const calendarWeekBuckets = weeklyBuckets(activities, now, language);
   const weekTotal = rollingBuckets.reduce((sum, day) => sum + day.km, 0);
   const rollingStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6).getTime();
   const weekCount = activities.filter((activity) => {
@@ -112,7 +113,7 @@ export default function StatsScreen() {
   );
   const monthlyChart = recentMonthKeys.map((monthKey) => ({
     monthKey,
-    label: monthKey.endsWith('-01') ? '1月' : String(Number(monthKey.slice(5, 7))),
+    label: monthKey.endsWith('-01') ? monthLabel(monthKey, language) : String(Number(monthKey.slice(5, 7))),
     km: monthlyStatsMap.get(monthKey)?.km ?? 0,
   }));
   const selectedMonthlyStat = monthlyStatsMap.get(selectedMonthKey) ?? {
@@ -131,8 +132,8 @@ export default function StatsScreen() {
   const lifetimeNeedsReview = serverLifetimeKm != null
     && (recentKm > serverLifetimeKm + 0.001 || reconciledMonthlyKm > serverLifetimeKm + 0.001);
   const lifetimeNote = lifetimeNeedsReview
-    ? '集計確認中'
-    : serverLifetimeKm != null ? '生涯累計' : '取得済み記録';
+    ? t('stats.reviewing')
+    : serverLifetimeKm != null ? t('stats.lifetime') : t('stats.fetchedRecords');
 
   useEffect(() => {
     if (loading || !user || !highTrainingLoad) return;
@@ -155,7 +156,7 @@ export default function StatsScreen() {
     <SafeAreaView style={styles.root} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.eyebrow}>ZELIO</Text>
-        <Text style={styles.headerTitle}>記録</Text>
+        <Text style={styles.headerTitle}>{t('stats.title')}</Text>
       </View>
 
       {loading ? (
@@ -168,38 +169,38 @@ export default function StatsScreen() {
                 <Ionicons name="cloud-upload-outline" size={20} color={Colors.accentText} />
               </View>
               <View style={styles.pendingCopy}>
-                <Text style={styles.pendingTitle}>未送信の記録が{pendingActivityCount}件あります</Text>
-                <Text style={styles.pendingText}>端末に安全に保存しています。オンラインになると自動で再送します。</Text>
+                <Text style={styles.pendingTitle}>{t('stats.pendingCount', { count: pendingActivityCount })}</Text>
+                <Text style={styles.pendingText}>{t('stats.pendingSafe')}</Text>
               </View>
               <TouchableOpacity
                 style={[styles.pendingButton, largeText && styles.pendingButtonLargeText]}
                 onPress={() => void retryPendingActivities()}
                 disabled={pendingQueueSending}
                 accessibilityRole="button"
-                accessibilityLabel={`${pendingActivityCount}件の未送信記録を再送`}
+                accessibilityLabel={t('stats.retryPendingA11y', { count: pendingActivityCount })}
                 accessibilityState={{ disabled: pendingQueueSending }}
               >
                 {pendingQueueSending
                   ? <ActivityIndicator size="small" color={Colors.accentText} />
-                  : <Text style={styles.pendingButtonText}>再送する</Text>}
+                  : <Text style={styles.pendingButtonText}>{t('stats.retry')}</Text>}
               </TouchableOpacity>
             </View>
           )}
           <View>
             <View style={styles.sectionHead}>
-              <Text style={styles.sectionTitle}>直近7日</Text>
+              <Text style={styles.sectionTitle}>{t('battle.lastSevenDays')}</Text>
               <StreakChip days={streak} />
             </View>
             <View style={styles.weekCard}>
-              <WeeklyBarChart days={rollingBuckets} height={84} showTotal={false} periodLabel="直近7日" />
+              <WeeklyBarChart days={rollingBuckets} height={84} showTotal={false} periodLabel={t('battle.lastSevenDays')} />
               <View style={styles.weekTotals}>
                 <View style={styles.weekTotalCell}>
-                  <Text style={styles.statLabel}>合計</Text>
+                  <Text style={styles.statLabel}>{t('stats.total')}</Text>
                   <Text style={styles.weekNumber}>{weekTotal.toFixed(1)}<Text style={styles.unit}>km</Text></Text>
                 </View>
                 <View style={styles.weekTotalCell}>
-                  <Text style={styles.statLabel}>記録回数</Text>
-                  <Text style={styles.weekNumber}>{weekCount}<Text style={styles.unit}>回</Text></Text>
+                  <Text style={styles.statLabel}>{t('stats.recordCount')}</Text>
+                  <Text style={styles.weekNumber}>{weekCount}<Text style={styles.unit}>{t('profile.times')}</Text></Text>
                 </View>
               </View>
             </View>
@@ -216,14 +217,14 @@ export default function StatsScreen() {
                   <Ionicons name="leaf-outline" size={19} color={Colors.primaryDark} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.trainingLoadTitle}>この1週間はよく走っています</Text>
-                  <Text style={styles.trainingLoadText}>休息も練習のうち。体の調子に合わせて過ごしましょう。</Text>
+                  <Text style={styles.trainingLoadTitle}>{t('stats.trainingLoadTitle')}</Text>
+                  <Text style={styles.trainingLoadText}>{t('stats.trainingLoadBody')}</Text>
                 </View>
                 <TouchableOpacity
                   onPress={() => setShowTrainingLoad(false)}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   accessibilityRole="button"
-                  accessibilityLabel="お知らせを閉じる"
+                  accessibilityLabel={t('stats.closeNoticeA11y')}
                 >
                   <Ionicons name="close" size={17} color={Colors.textTertiary} />
                 </TouchableOpacity>
@@ -233,16 +234,16 @@ export default function StatsScreen() {
 
           <View>
             <View style={styles.sectionHead}>
-              <Text style={styles.sectionTitle}>月間・年間</Text>
+              <Text style={styles.sectionTitle}>{t('stats.monthlyAnnual')}</Text>
               <View style={styles.periodLabels}>
-                <Text style={styles.rangeLabel}>直近12か月</Text>
-                <Text style={styles.yearTotalLabel}>{currentYear}年累計</Text>
+                <Text style={styles.rangeLabel}>{t('stats.lastTwelveMonths')}</Text>
+                <Text style={styles.yearTotalLabel}>{t('stats.annualToDate', { year: currentYear })}</Text>
               </View>
             </View>
             <View style={styles.monthlyCard}>
               <View style={styles.annualRow}>
                 <View>
-                  <Text style={styles.statLabel}>年間累計</Text>
+                  <Text style={styles.statLabel}>{t('stats.annualTotal')}</Text>
                   <Text style={styles.annualNumber}>
                     {annualKm.toFixed(1)}<Text style={styles.unit}>km</Text>
                   </Text>
@@ -255,62 +256,62 @@ export default function StatsScreen() {
                 onSelect={setSelectedMonthKey}
               />
               <View style={styles.monthDetailHeader}>
-                <Text style={styles.monthDetailTitle}>{monthLabel(selectedMonthKey)}の内訳</Text>
-                <Text style={styles.monthDetailYear}>{selectedMonthKey.slice(0, 4)}年</Text>
+                <Text style={styles.monthDetailTitle}>{t('stats.monthBreakdown', { month: monthLabel(selectedMonthKey, language) })}</Text>
+                <Text style={styles.monthDetailYear}>{t('stats.year', { year: selectedMonthKey.slice(0, 4) })}</Text>
               </View>
               <View style={styles.monthDetailGrid}>
-                <MonthDetailCell label="距離" value={`${selectedMonthlyStat.km.toFixed(1)} km`} />
-                <MonthDetailCell label="記録回数" value={`${selectedMonthlyStat.count} 回`} />
-                <MonthDetailCell label="時間" value={formatTime(selectedMonthlyStat.durationSec)} />
+                <MonthDetailCell label={t('stats.distance')} value={`${selectedMonthlyStat.km.toFixed(1)} km`} />
+                <MonthDetailCell label={t('stats.recordCount')} value={t('stats.recordsUnit', { count: selectedMonthlyStat.count })} />
+                <MonthDetailCell label={t('stats.time')} value={formatTime(selectedMonthlyStat.durationSec)} />
               </View>
-              <Text style={styles.monthlyNote}>保存済みのGPS・歩数記録を東京時間の月ごとに集計しています。</Text>
+              <Text style={styles.monthlyNote}>{t('stats.tokyoAggregation')}</Text>
             </View>
           </View>
 
           <View style={styles.grid}>
-            <SummaryCard label="距離" value={lifetimeKm.toFixed(1)} unit="km" note={lifetimeNote} />
+            <SummaryCard label={t('stats.distance')} value={lifetimeKm.toFixed(1)} unit="km" note={lifetimeNote} />
             <SummaryCard
-              label="最長ラン"
+              label={t('stats.longestRun')}
               value={formatRunDistanceKm(longestRecordKm)}
               unit="km"
-              note="自己ベスト"
+              note={t('stats.personalBest')}
               icon="trophy-outline"
               accent
             />
             <SummaryCard
-              label="今月"
+              label={t('stats.thisMonth')}
               value={monthKm.toFixed(1)}
               unit="km"
-              note={`${Number(currentMonthKey.slice(5, 7))}月の合計`}
+              note={t('stats.monthTotal', { month: monthLabel(currentMonthKey, language) })}
               valuePrimary
             />
-            <SummaryCard label="連続日数" value={String(streak)} unit="日" note="現在の記録" />
+            <SummaryCard label={t('profile.streak')} value={String(streak)} unit={t('profile.dayUnit')} note={t('stats.currentRecord')} />
           </View>
 
           <View>
-            <Text style={[styles.sectionTitle, { marginBottom: Spacing.md }]}>自己ベスト</Text>
+            <Text style={[styles.sectionTitle, { marginBottom: Spacing.md }]}>{t('stats.personalRecords')}</Text>
             <View style={styles.personalRecordsCard}>
               <View style={styles.personalRecordsRow}>
-                <PersonalRecordCell label="最速 1km" value={recordTime(personalRecords?.fastest1kSec)} />
-                <PersonalRecordCell label="最速 5km" value={recordTime(personalRecords?.fastest5kSec)} />
-                <PersonalRecordCell label="最速 10km" value={recordTime(personalRecords?.fastest10kSec)} />
+                <PersonalRecordCell label={t('stats.fastest1k')} value={recordTime(personalRecords?.fastest1kSec)} />
+                <PersonalRecordCell label={t('stats.fastest5k')} value={recordTime(personalRecords?.fastest5kSec)} />
+                <PersonalRecordCell label={t('stats.fastest10k')} value={recordTime(personalRecords?.fastest10kSec)} />
               </View>
               <View style={styles.personalRecordsDivider} />
               <View style={styles.personalRecordsRow}>
-                <PersonalRecordCell label="最長距離" value={longestRecordKm > 0 ? `${formatRunDistanceKm(longestRecordKm)} km` : '—'} />
-                <PersonalRecordCell label="最高月間" value={bestMonthRecordKm > 0 ? `${bestMonthRecordKm.toFixed(1)} km` : '—'} />
+                <PersonalRecordCell label={t('stats.longestDistance')} value={longestRecordKm > 0 ? `${formatRunDistanceKm(longestRecordKm)} km` : '—'} />
+                <PersonalRecordCell label={t('stats.bestMonth')} value={bestMonthRecordKm > 0 ? `${bestMonthRecordKm.toFixed(1)} km` : '—'} />
               </View>
             </View>
           </View>
 
           <View>
             <View style={styles.sectionHead}>
-              <Text style={styles.sectionTitle}>履歴</Text>
+              <Text style={styles.sectionTitle}>{t('stats.history')}</Text>
               <View style={styles.filterBar}>
                 {([
-                  { value: 'all', label: 'すべて' },
+                  { value: 'all', label: t('stats.all') },
                   { value: 'gps', label: 'GPS' },
-                  { value: 'steps', label: '歩数' },
+                  { value: 'steps', label: t('stats.steps') },
                 ] as const).map((item) => {
                   const active = filter === item.value;
                   return (
@@ -328,9 +329,9 @@ export default function StatsScreen() {
             </View>
 
             {activities.length === 0 ? (
-              <EmptyState icon="walk-outline" title="まだラン履歴がありません" hint="「ラン」タブから記録を開始してください" />
+              <EmptyState icon="walk-outline" title={t('stats.noHistory')} hint={t('stats.noHistoryHint')} />
             ) : filteredActivities.length === 0 ? (
-              <EmptyState icon="filter-outline" title="該当する記録はありません" hint="別の記録種類を選んでください" />
+              <EmptyState icon="filter-outline" title={t('stats.noFiltered')} hint={t('stats.noFilteredHint')} />
             ) : (
               <View style={styles.historyCard}>
                 {filteredActivities.map((activity, index) => {
@@ -355,14 +356,14 @@ export default function StatsScreen() {
                         <View style={styles.rowMain}>
                           <View style={styles.distanceLine}>
                             <Text style={styles.rowDistance}>{formatRunDistanceKm(activity.distanceKm)} km</Text>
-                            {isBest && <Text style={styles.bestBadge}>{decorLabel('最長', 'BEST')}</Text>}
+                            {isBest && <Text style={styles.bestBadge}>{t('locale.best')}</Text>}
                           </View>
                           <Text style={styles.rowDetail}>
-                            {formatTime(activity.durationSeconds)} ・ {isSteps ? `${(activity.steps ?? 0).toLocaleString()}歩` : 'GPS'}
+                            {formatTime(activity.durationSeconds)} · {isSteps ? t('stats.stepCount', { value: (activity.steps ?? 0).toLocaleString(language) }) : 'GPS'}
                           </Text>
                         </View>
                         <View style={styles.rowEnd}>
-                          <Text style={styles.rowDate}>{relativeDay(activity.startedAt, now)}</Text>
+                          <Text style={styles.rowDate}>{relativeDay(activity.startedAt, now, language)}</Text>
                           <Ionicons name="chevron-forward" size={15} color={Colors.textTertiary} />
                         </View>
                       </TouchableOpacity>
@@ -371,7 +372,7 @@ export default function StatsScreen() {
                 })}
               </View>
             )}
-            {activities.length > 0 && <Text style={styles.historyNote}>直近50件のラン記録を表示しています</Text>}
+            {activities.length > 0 && <Text style={styles.historyNote}>{t('stats.recentFifty')}</Text>}
           </View>
         </ScrollView>
       )}
@@ -382,7 +383,7 @@ export default function StatsScreen() {
           try {
             await setWeeklyGoal(goal);
           } catch {
-            Alert.alert('保存できませんでした', '通信状態を確認して、もう一度お試しください。');
+            Alert.alert(t('stats.saveFailed'), t('connection.tryAgain'));
             throw new Error('weekly goal save failed');
           }
         }}
@@ -390,7 +391,7 @@ export default function StatsScreen() {
           try {
             await setWeeklyGoal(null);
           } catch {
-            Alert.alert('解除できませんでした', '通信状態を確認して、もう一度お試しください。');
+            Alert.alert(t('stats.clearFailed'), t('connection.tryAgain'));
             throw new Error('weekly goal clear failed');
           }
         }}

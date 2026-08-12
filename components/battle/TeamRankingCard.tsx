@@ -6,6 +6,7 @@ import { Avatar } from '../ui/Avatar';
 import { Colors, Typography, Spacing, BorderRadius } from '../../design_tokens';
 import type { TeamRanking } from '../../hooks/useTeamRanking';
 import type { ProcessContribution } from '../../utils/processContributions';
+import { useTranslation } from '../../lib/i18n';
 
 interface Props {
   ranking: TeamRanking;
@@ -23,18 +24,19 @@ interface Props {
  * 自分が上位に入っている場合は、その行をハイライトして重複表示しない。
  */
 export function TeamRankingCard({ ranking, contributions = {}, currentUserId, onPressMore, blockedUserIds, teamColor }: Props) {
+  const { t } = useTranslation();
   if (ranking.error) {
     return (
       <Card style={styles.card} padding={Spacing.md}>
         <View style={styles.errorRow} accessibilityRole="alert">
           <Ionicons name="cloud-offline-outline" size={18} color={Colors.error} />
-          <Text style={styles.errorText}>チーム内ランキングを取得できませんでした</Text>
+          <Text style={styles.errorText}>{t('battle.rankingLoadFailed')}</Text>
           <TouchableOpacity
             onPress={ranking.retry}
             accessibilityRole="button"
-            accessibilityLabel="チーム内ランキングを再読み込み"
+            accessibilityLabel={t('battle.retryRankingA11y')}
           >
-            <Text style={styles.errorRetry}>再試行</Text>
+            <Text style={styles.errorRetry}>{t('common.retry')}</Text>
           </TouchableOpacity>
         </View>
       </Card>
@@ -62,13 +64,13 @@ export function TeamRankingCard({ ranking, contributions = {}, currentUserId, on
         {declarationsDone > 0 && (
           <View style={[styles.processBadge, styles.declarationBadge]}>
             <Text style={styles.processEmoji}>🔥</Text>
-            <Text style={[styles.processText, styles.declarationText]}>宣言 {declarationsDone}</Text>
+            <Text style={[styles.processText, styles.declarationText]}>{t('battle.completedDeclarations', { count: declarationsDone })}</Text>
           </View>
         )}
         {activeDays > 0 && (
           <View style={[styles.processBadge, styles.activeDaysBadge]}>
             <Ionicons name="calendar-clear-outline" size={10} color={Colors.primary} />
-            <Text style={[styles.processText, styles.activeDaysText]}>今週 {activeDays}日</Text>
+            <Text style={[styles.processText, styles.activeDaysText]}>{t('battle.activeDaysThisWeek', { count: activeDays })}</Text>
           </View>
         )}
       </View>
@@ -86,7 +88,7 @@ export function TeamRankingCard({ ranking, contributions = {}, currentUserId, on
           <Avatar name={m.displayName} emoji={m.avatarEmoji} size="xs" />
           <View style={styles.nameColumn}>
             <Text style={[styles.name, m.isMe && styles.textMe]} numberOfLines={1}>
-              {m.isMe ? 'あなた' : m.displayName}
+              {m.isMe ? t('common.you') : m.displayName}
             </Text>
             {processBadges(m.userId)}
           </View>
@@ -100,9 +102,9 @@ export function TeamRankingCard({ ranking, contributions = {}, currentUserId, on
           <View style={styles.divider} />
           <View style={[styles.row, styles.rowMe]}>
             <Text style={[styles.rank, styles.textMe]}>{myRank}</Text>
-            <Avatar name="あなた" emoji={ranking.myAvatarEmoji} size="xs" />
+            <Avatar name={t('common.you')} emoji={ranking.myAvatarEmoji} size="xs" />
             <View style={styles.nameColumn}>
-              <Text style={[styles.name, styles.textMe]}>あなた</Text>
+              <Text style={[styles.name, styles.textMe]}>{t('common.you')}</Text>
               {currentUserId ? processBadges(currentUserId) : null}
             </View>
             <Text style={[styles.km, styles.textMe]}>{myKm.toFixed(1)} km</Text>
@@ -111,7 +113,7 @@ export function TeamRankingCard({ ranking, contributions = {}, currentUserId, on
       )}
 
       {hasVisibleContribution && (
-        <Text style={styles.processNote}>宣言と参加日数は称賛表示です。距離順位には影響しません</Text>
+        <Text style={styles.processNote}>{t('battle.contributionNote')}</Text>
       )}
 
       {onPressMore && (
@@ -120,10 +122,10 @@ export function TeamRankingCard({ ranking, contributions = {}, currentUserId, on
           onPress={onPressMore}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityRole="button"
-          accessibilityLabel={`チーム${teamSize}人のランキングを見る`}
+          accessibilityLabel={t('battle.teamRankingA11y', { count: teamSize })}
         >
           <Text style={styles.moreText}>
-            チーム {teamSize}人 のランキングを見る
+            {t('battle.viewTeamRanking', { count: teamSize })}
           </Text>
           <Ionicons name="chevron-forward" size={14} color={Colors.primary} />
         </TouchableOpacity>

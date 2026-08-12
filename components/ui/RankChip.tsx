@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Colors, BorderRadius, Spacing } from '../../design_tokens';
+import { useTranslation } from '../../lib/i18n';
 
 interface Props {
   rank: number;
@@ -15,10 +16,11 @@ interface Props {
  * 1–3位は rank1–3 の淡色背景、それ以外は surfaceGray。
  */
 export function RankChip({ rank, total, totalUnit }: Props) {
+  const { t } = useTranslation();
   const { bg, fg } = palette(rank);
   return (
     <View style={[styles.chip, { backgroundColor: bg }]}>
-      <Text style={[styles.rank, { color: fg }]}>{rank}位</Text>
+      <Text style={[styles.rank, { color: fg }]}>{t('common.rank', { rank })}</Text>
       {total != null ? (
         <Text style={[styles.total, { color: fg }]}>
           {' '}/ {total}{totalUnit ?? ''}

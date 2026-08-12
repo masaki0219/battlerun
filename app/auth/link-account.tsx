@@ -32,12 +32,14 @@ import {
 } from '../../lib/socialAuth';
 import { useAuthStore } from '../../stores/authStore';
 import { BorderRadius, Colors, Spacing, Typography } from '../../design_tokens';
+import { useTranslation } from '../../lib/i18n';
 
 function normalizeEmail(value: string | null | undefined): string {
   return (value ?? '').trim().toLowerCase();
 }
 
 export default function LinkAccountScreen() {
+  const { t } = useTranslation();
   const initialPending = getPendingAccountLink();
   const setAccountLinkingInProgress = useAuthStore((state) => state.setAccountLinkingInProgress);
   const setSuggestedProfileName = useAuthStore((state) => state.setSuggestedProfileName);
@@ -49,7 +51,7 @@ export default function LinkAccountScreen() {
     if (busy) return;
     const pending = getPendingAccountLink();
     if (!pending) {
-      Alert.alert('認証の有効期限が切れました', '最初からもう一度ログインしてください。');
+      Alert.alert(t('auth.expiredTitle'), t('auth.expiredBody'));
       router.replace('/auth/login');
       return;
     }
@@ -63,7 +65,7 @@ export default function LinkAccountScreen() {
       if (pendingEmail && existingEmail && pendingEmail !== existingEmail) {
         throw new SocialAuthError(
           'social/account-email-mismatch',
-          '同じメールアドレスのアカウントを選んでください。',
+          t('auth.emailMismatch'),
         );
       }
       await linkWithCredential(existing.user, pending.credential);
@@ -74,9 +76,9 @@ export default function LinkAccountScreen() {
       if (auth.currentUser) await firebaseSignOut(auth).catch(() => {});
       const message = authErrorMessage(
         error,
-        socialAuthErrorMessage(error) ?? '時間をおいて、もう一度お試しください。',
+        socialAuthErrorMessage(error) ?? t('authErrors.fallback'),
       );
-      Alert.alert('アカウントを連携できませんでした', message);
+      Alert.alert(t('auth.linkFailed'), message);
       setAccountLinkingInProgress(false);
     } finally {
       setBusy(false);
@@ -87,7 +89,7 @@ export default function LinkAccountScreen() {
     const pending = getPendingAccountLink();
     const signInEmail = pending?.email ?? email.trim();
     if (!signInEmail || !password) {
-      Alert.alert('入力を確認してください', 'メールアドレスとパスワードを入力してください。');
+      Alert.alert(t('auth.checkInput'), t('auth.emailPasswordRequired'));
       return;
     }
     await linkAfterExistingSignIn(
@@ -105,7 +107,7 @@ export default function LinkAccountScreen() {
       await linkAfterExistingSignIn(() => signInWithCredential(auth, bundle.credential));
     } catch (error) {
       const message = socialAuthErrorMessage(error);
-      if (message) Alert.alert('本人確認できませんでした', message);
+      if (message) Alert.alert(t('auth.verifyFailed'), message);
       setBusy(false);
     }
   }
@@ -122,9 +124,9 @@ export default function LinkAccountScreen() {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.missingContainer}>
-          <Text style={styles.title}>認証の有効期限が切れました</Text>
-          <Text style={styles.body}>最初からもう一度ログインしてください。</Text>
-          <Button label="ログインへ戻る" onPress={() => { void handleCancel(); }} />
+          <Text style={styles.title}>{t('auth.expiredTitle')}</Text>
+          <Text style={styles.body}>{t('auth.expiredBody')}</Text>
+          <Button label={t('auth.backToLoginButton')} onPress={() => { void handleCancel(); }} />
         </View>
       </SafeAreaView>
     );
@@ -141,19 +143,19 @@ export default function LinkAccountScreen() {
         >
           <View style={styles.card}>
             <Text style={styles.eyebrow}>ACCOUNT LINK</Text>
-            <Text style={styles.title}>既存アカウントを確認</Text>
+            <Text style={styles.title}>{t('auth.linkExisting')}</Text>
             <Text style={styles.body}>
-              このメールアドレスは別のログイン方法で登録済みです。既存の方法で本人確認すると、データを失わずに{pendingLabel}ログインを同じZELIOアカウントへ追加します。
+              {t('auth.linkExplanation', { provider: pendingLabel })}
             </Text>
             {initialPending.email ? (
               <View style={styles.emailCard}>
-                <Text style={styles.emailLabel}>対象メールアドレス</Text>
+                <Text style={styles.emailLabel}>{t('auth.targetEmail')}</Text>
                 <Text style={styles.emailValue} numberOfLines={2}>{initialPending.email}</Text>
               </View>
             ) : (
               <TextInput
                 style={styles.input}
-                placeholder="登録済みのメールアドレス"
+                placeholder={t('auth.registeredEmail')}
                 placeholderTextColor={Colors.textTertiary}
                 value={email}
                 onChangeText={setEmail}
@@ -166,7 +168,7 @@ export default function LinkAccountScreen() {
             )}
             <TextInput
               style={styles.input}
-              placeholder="既存アカウントのパスワード"
+              placeholder={t('auth.existingPassword')}
               placeholderTextColor={Colors.textTertiary}
               value={password}
               onChangeText={setPassword}
@@ -178,14 +180,14 @@ export default function LinkAccountScreen() {
               onSubmitEditing={() => { void handlePasswordLink(); }}
             />
             <Button
-              label="パスワードで本人確認して連携"
+              label={t('auth.verifyAndLink')}
               onPress={() => { void handlePasswordLink(); }}
               loading={busy}
             />
 
             <View style={styles.dividerRow} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
               <View style={styles.divider} />
-              <Text style={styles.dividerText}>以前使ったログイン方法</Text>
+              <Text style={styles.dividerText}>{t('auth.previousMethod')}</Text>
               <View style={styles.divider} />
             </View>
 
@@ -205,14 +207,14 @@ export default function LinkAccountScreen() {
               />
             )}
             {Platform.OS === 'android' && initialPending.providerId === 'google.com' && (
-              <Text style={styles.platformNote}>Appleで作成したアカウントの確認は、iPhone／iPad版から行ってください。</Text>
+              <Text style={styles.platformNote}>{t('auth.appleDeviceNote')}</Text>
             )}
 
             <Text style={styles.consent}>
-              「本人確認して連携」を行うことで、2つの認証方法を同じZELIOアカウントへ関連付けることに同意します。
+              {t('auth.linkConsent')}
             </Text>
             <Button
-              label="連携せずログインへ戻る"
+              label={t('auth.cancelLink')}
               onPress={() => { void handleCancel(); }}
               variant="ghost"
               disabled={busy}

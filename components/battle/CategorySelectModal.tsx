@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Modal, Pressable, FlatList } 
 import { Button } from '../ui/Button';
 import { Colors, Spacing, BorderRadius, Typography, teamColorMap } from '../../design_tokens';
 import type { Battle, CategoryStats } from '../../types';
+import { useTranslation } from '../../lib/i18n';
 
 interface Props {
   visible: boolean;
@@ -21,6 +22,7 @@ interface Props {
  * ニュアンス表示だけを判断材料にする。
  */
 export function CategorySelectModal({ visible, battle, stats, onJoin, onClose, loading }: Props) {
+  const { t } = useTranslation();
   const [selected, setSelected] = useState<string | null>(null);
 
   useEffect(() => {
@@ -47,7 +49,7 @@ export function CategorySelectModal({ visible, battle, stats, onJoin, onClose, l
         <Pressable style={modal.sheet} onPress={() => {}}>
           <View style={modal.handle} />
           <Text style={modal.title}>{battle.title}</Text>
-          <Text style={modal.subtitle}>参加するチームを選んでください</Text>
+          <Text style={modal.subtitle}>{t('battle.chooseTeamPrompt')}</Text>
 
           <FlatList
             data={battle.categories}
@@ -63,7 +65,7 @@ export function CategorySelectModal({ visible, battle, stats, onJoin, onClose, l
                   activeOpacity={0.7}
                   accessibilityRole="radio"
                   accessibilityState={{ selected: isSelected }}
-                  accessibilityLabel={count != null ? `${item.label}、${count}人が参加中` : item.label}
+                  accessibilityLabel={count != null ? t('battle.teamParticipantA11y', { team: item.label, count }) : item.label}
                 >
                   <View style={[modal.colorDot, { backgroundColor: colorsByCategory[item.id] }]} />
                   <View style={modal.catBody}>
@@ -72,8 +74,8 @@ export function CategorySelectModal({ visible, battle, stats, onJoin, onClose, l
                     </Text>
                     {count != null && (
                       <Text style={modal.catSub}>
-                        {count}人が参加中
-                        {isShortage && <Text style={modal.catHint}>・いま入ると貢献が大きい</Text>}
+                        {t('battle.teamParticipantCount', { count })}
+                        {isShortage && <Text style={modal.catHint}>{t('battle.teamNeedsHelp')}</Text>}
                       </Text>
                     )}
                   </View>
@@ -85,13 +87,13 @@ export function CategorySelectModal({ visible, battle, stats, onJoin, onClose, l
           />
 
           <Button
-            label="参加する"
+            label={t('battle.join')}
             onPress={() => { if (selected) onJoin(selected); }}
             loading={loading}
             disabled={!selected}
             style={{ opacity: selected ? 1 : 0.4 }}
           />
-          <Button label="キャンセル" onPress={onClose} variant="ghost" style={{ marginTop: Spacing.sm }} />
+          <Button label={t('common.cancel')} onPress={onClose} variant="ghost" style={{ marginTop: Spacing.sm }} />
         </Pressable>
       </Pressable>
     </Modal>

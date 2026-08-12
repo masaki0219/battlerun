@@ -4,7 +4,7 @@ import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { finishBattle } from './finishBattle';
 
 /**
- * 60分ごとにバトルのステータスを自動遷移させる。
+ * 5分ごとにバトルのステータスを自動遷移させる。
  * - upcoming → active: startAt <= now
  * - active → finished: endAt <= now（finishBattle が終了通知・称号付与を行う）
  *
@@ -13,7 +13,7 @@ import { finishBattle } from './finishBattle';
  *
  * 緊急時の手動切替（app/admin/index.tsx）は引き続き利用可能。
  */
-export const battleStatusScheduler = onSchedule('every 60 minutes', async () => {
+export const battleStatusScheduler = onSchedule('every 5 minutes', async () => {
   const db = getFirestore();
   const now = Timestamp.now();
 

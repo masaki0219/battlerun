@@ -19,6 +19,7 @@ import { db } from './firebase';
 import type { Battle } from '../types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isQuietHours } from '../utils/notificationTiming';
+import { translate } from './translate';
 
 const DECLARATION_REMINDERS_KEY = '@battlerun_declaration_reminders_v1';
 export const DECLARATION_REMINDER_MIN_LEAD_MS = 15 * 60_000;
@@ -94,8 +95,8 @@ export async function scheduleBattleEndNotification(battle: Battle): Promise<str
   try {
     const id = await Notifications.scheduleNotificationAsync({
       content: {
-        title: 'チャレンジ終了まで24時間',
-        body: `「${battle.title}」は明日終了します。参加できるタイミングがあれば、いつものペースでどうぞ。`,
+        title: translate('push.battle24Title'),
+        body: translate('push.battle24Body', { title: battle.title }),
         data: { relatedBattleId: battle.id },
       },
       trigger: {
@@ -120,8 +121,8 @@ export async function scheduleBattleEnd1hNotification(battle: Battle): Promise<s
   try {
     return await Notifications.scheduleNotificationAsync({
       content: {
-        title: 'チャレンジ終了まで1時間',
-        body: `「${battle.title}」はまもなく終了します。これまでのランが記録されています。`,
+        title: translate('push.battle1hTitle'),
+        body: translate('push.battle1hBody', { title: battle.title }),
         data: { relatedBattleId: battle.id },
       },
       trigger: {
@@ -166,8 +167,8 @@ export async function scheduleDeclarationReminder(params: {
   try {
     const id = await Notifications.scheduleNotificationAsync({
       content: {
-        title: '宣言した時間になりました',
-        body: '準備ができたらスタート！',
+        title: translate('push.declarationTitle'),
+        body: translate('push.declarationBody'),
         data: {
           type: 'declaration_reminder',
           openRecord: true,

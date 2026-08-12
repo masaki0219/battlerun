@@ -1,3 +1,5 @@
+import { translate } from './translate';
+
 export const PENDING_INVITE_CODE_KEY = '@zelio_pending_invite_code_v1';
 export const INVITE_WEB_BASE_URL = 'https://zelio-run.web.app/invite';
 
@@ -8,12 +10,12 @@ export function normalizeInviteCode(value: unknown): string | null {
 
 export function inviteWebUrl(code: string): string {
   const normalized = normalizeInviteCode(code);
-  if (!normalized) throw new Error('招待コードの形式が不正です。');
+  if (!normalized) throw new Error(translate('inviteErrors.invalid'));
   return `${INVITE_WEB_BASE_URL}?code=${encodeURIComponent(normalized)}`;
 }
 
 export function inviteAppUrl(code: string): string {
   const normalized = normalizeInviteCode(code);
-  if (!normalized) throw new Error('招待コードの形式が不正です。');
+  if (!normalized) throw new Error(translate('inviteErrors.invalid'));
   return `zelio://invite?code=${encodeURIComponent(normalized)}`;
 }

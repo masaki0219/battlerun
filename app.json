@@ -20,9 +20,10 @@
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "CFBundleDisplayName": "ZELIO",
-        "NSLocationWhenInUseUsageDescription": "ランニング・ウォーキングの走行距離を計測し、参加中のチャレンジへ反映するために位置情報を使用します。",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "記録中にアプリがバックグラウンドへ移動しても走行距離の計測を続けるために使用します。",
-        "NSMotionUsageDescription": "歩数モードで歩数と推定距離を計測するためにモーションデータを使用します。",
+        "CFBundleAllowMixedLocalizations": true,
+        "NSLocationWhenInUseUsageDescription": "ZELIO uses your location to measure running and walking distance and add it to your active challenges.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "ZELIO uses your location to keep measuring distance while a recording continues in the background.",
+        "NSMotionUsageDescription": "ZELIO uses motion data to count steps and estimate distance in step mode.",
         "ITSAppUsesNonExemptEncryption": false,
         "UIBackgroundModes": [
           "location"
@@ -51,8 +52,21 @@
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
     },
+    "locales": {
+      "ja": "./languages/ja.json",
+      "en": "./languages/en.json"
+    },
     "plugins": [
       "expo-router",
+      [
+        "expo-localization",
+        {
+          "supportedLocales": {
+            "ios": ["ja", "en"],
+            "android": ["ja", "en"]
+          }
+        }
+      ],
       "expo-apple-authentication",
       "./plugins/with-rnfirebase-static",
       "@react-native-firebase/app",
@@ -90,7 +104,7 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "記録中にアプリがバックグラウンドへ移動しても走行距離の計測を続けるために使用します。",
+          "locationAlwaysAndWhenInUsePermission": "ZELIO uses your location to keep measuring distance while a recording continues in the background.",
           "isIosBackgroundLocationEnabled": true,
           "isAndroidBackgroundLocationEnabled": true
         }

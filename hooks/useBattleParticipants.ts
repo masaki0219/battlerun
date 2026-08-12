@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { collection, onSnapshot, query, orderBy, limit as firestoreLimit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { cachedPublicProfile } from '../lib/publicProfileCache';
+import { useTranslation } from '../lib/i18n';
 
 /** battles/{id}/participants/{uid} を表示用に整形した1件 */
 export interface BattleParticipant {
@@ -22,6 +23,7 @@ export function useBattleParticipants(
   battleId: string | undefined,
   { enabled = true, limit = 20 }: { enabled?: boolean; limit?: number } = {},
 ) {
+  const { t } = useTranslation();
   const [participants, setParticipants] = useState<BattleParticipant[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -45,7 +47,7 @@ export function useBattleParticipants(
             const km = (d.data()['totalDistanceKm'] as number) ?? 0;
             const activityCount = (d.data()['activityCount'] as number | undefined) ?? null;
             const profile = await cachedPublicProfile(uid).catch(() => null);
-            const name = profile?.name ?? 'メンバー';
+            const name = profile?.name ?? t('common.member');
             return { userId: uid, displayName: name, totalDistanceKm: km, activityCount };
           }),
         );
@@ -58,7 +60,7 @@ export function useBattleParticipants(
       }
     }, () => { setParticipants([]); setLoading(false); });
     return unsubscribe;
-  }, [battleId, enabled, limit]);
+  }, [battleId, enabled, limit, t]);
 
   return { participants, loading };
 }

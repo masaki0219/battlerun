@@ -28,10 +28,13 @@ import { useBattleStore } from '../../stores/battleStore';
 import { parseLocalDate } from '../../utils/dateInput';
 import { BorderRadius, Colors, Shadow, Spacing, TeamColorOptions, Typography } from '../../design_tokens';
 import type { Battle, Category, TeamColorId } from '../../types';
+import { useTranslation } from '../../lib/i18n';
+import { userFacingError } from '../../lib/userError';
 
 type PrivateView = 'list' | 'create' | 'join_code' | 'join_select';
 
 export default function FriendsScreen() {
+  const { t } = useTranslation();
   const params = useLocalSearchParams<{ inviteCode?: string; open?: string }>();
   const { user, proEntitlement } = useAuthStore();
   const userIsPro = user?.plan === 'pro' || proEntitlement;
@@ -108,8 +111,8 @@ export default function FriendsScreen() {
     if (params.open !== 'create' || !user) return;
     if (!userIsPro) {
       Alert.alert(
-        'Proプランが必要です',
-        '友達チャレンジの作成にはProプランが必要です。\nプロフィール画面からアップグレードできます。',
+        t('friends.proRequiredTitle'),
+        t('friends.proRequiredBody'),
       );
       router.setParams({ open: '' });
       return;
@@ -151,7 +154,7 @@ export default function FriendsScreen() {
       setFoundBattle(battle);
       setPrivateView('join_select');
     } catch (error: any) {
-      Alert.alert('エラー', error.message ?? '招待コードが見つかりません');
+      Alert.alert(t('common.error'), userFacingError(error, t('friends.inviteNotFound')));
     } finally {
       setSearching(false);
     }
@@ -160,7 +163,7 @@ export default function FriendsScreen() {
   async function handleJoin(battle: Battle, categoryId: string) {
     if (!user) return;
     if (activeMembershipCount >= 2 && !membershipIds.has(battle.id)) {
-      Alert.alert('参加上限です', '同時に参加できるチャレンジは2件までです。');
+      Alert.alert(t('battle.participationLimitTitle'), t('battle.participationLimitBody'));
       return;
     }
     setJoiningBattleId(battle.id);
@@ -174,15 +177,15 @@ export default function FriendsScreen() {
       setFoundBattle(null);
       setInviteCode('');
       Alert.alert(
-        '参加完了',
-        `「${battle.categories.find((category) => category.id === categoryId)?.label}」として参加しました。`,
+        t('battle.joinComplete'),
+        t('friends.joinedAs', { team: battle.categories.find((category) => category.id === categoryId)?.label ?? '' }),
         [
-          { text: '一覧を見る', style: 'cancel' },
-          { text: 'ランを始める', onPress: () => router.push('/(tabs)/record' as any) },
+          { text: t('friends.viewList'), style: 'cancel' },
+          { text: t('battle.startRun'), onPress: () => router.push('/(tabs)/record' as any) },
         ],
       );
     } catch (error: any) {
-      Alert.alert('エラー', error.message ?? '参加に失敗しました');
+      Alert.alert(t('common.error'), userFacingError(error, t('battle.joinFailed')));
     } finally {
       setJoiningBattleId(null);
     }
@@ -203,26 +206,26 @@ export default function FriendsScreen() {
   async function handleCreateBattle() {
     if (!user) return;
     if (!createTitle.trim()) {
-      Alert.alert('入力エラー', 'チャレンジ名を入力してください');
+      Alert.alert(t('friends.inputError'), t('friends.titleRequired'));
       return;
     }
     const validCategories = createCategories.filter((category) => category.label.trim());
     if (validCategories.length < 2) {
-      Alert.alert('入力エラー', 'チームを2つ以上入力してください');
+      Alert.alert(t('friends.inputError'), t('friends.twoTeamsRequired'));
       return;
     }
     if (!createStartAt || !createEndAt) {
-      Alert.alert('入力エラー', '開始日と終了日を入力してください（YYYY-MM-DD）');
+      Alert.alert(t('friends.inputError'), t('friends.periodRequired'));
       return;
     }
     const startDate = parseLocalDate(createStartAt);
     const endDate = parseLocalDate(createEndAt, true);
     if (!startDate || !endDate) {
-      Alert.alert('入力エラー', '日付の形式が正しくありません（例: 2026-06-01）');
+      Alert.alert(t('friends.inputError'), t('friends.invalidDate'));
       return;
     }
     if (endDate <= startDate) {
-      Alert.alert('入力エラー', '終了日は開始日より後にしてください');
+      Alert.alert(t('friends.inputError'), t('friends.endAfterStart'));
       return;
     }
 
@@ -245,9 +248,9 @@ export default function FriendsScreen() {
       await Promise.all([fetchMyMemberships(user.id), fetchMyPrivateBattles(user.id)]);
       resetCreateForm();
       setPrivateView('list');
-      Alert.alert('作成完了', 'チャレンジを作成しました。招待コードを友達へ送れます。');
+      Alert.alert(t('friends.createdTitle'), t('friends.createdBody'));
     } catch (error: any) {
-      Alert.alert('エラー', error.message ?? '作成に失敗しました');
+      Alert.alert(t('common.error'), userFacingError(error, t('friends.createFailed')));
     } finally {
       setCreating(false);
     }
@@ -273,19 +276,23 @@ export default function FriendsScreen() {
 
   function copyInvite(code: string) {
     void Clipboard.setStringAsync(code);
-    Alert.alert('コピーしました', `招待コード: ${code}`);
+    Alert.alert(t('friends.copied'), t('friends.inviteCodeValue', { code }));
   }
 
   async function shareInvite(battle: Battle) {
     if (!battle.inviteCode) return;
     try {
       await Share.share({
-        title: `${battle.title}に招待`,
-        message: `ZELIOの「${battle.title}」に参加しよう！\n${inviteWebUrl(battle.inviteCode)}\n招待コード: ${battle.inviteCode}`,
+        title: t('friends.shareTitle', { title: battle.title }),
+        message: t('friends.shareMessage', {
+          title: battle.title,
+          url: inviteWebUrl(battle.inviteCode),
+          code: battle.inviteCode,
+        }),
       });
     } catch (error) {
       console.warn('[FriendsScreen] invite share failed:', error);
-      Alert.alert('共有できませんでした', '時間をおいてもう一度お試しください。');
+      Alert.alert(t('friends.shareFailedTitle'), t('friends.shareFailedBody'));
     }
   }
 
@@ -333,15 +340,15 @@ export default function FriendsScreen() {
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
         <Text style={styles.headerEyebrow}>ZELIO</Text>
-        <Text style={styles.headerTitle}>フレンド</Text>
+        <Text style={styles.headerTitle}>{t('friends.title')}</Text>
       </View>
 
       {loadFailed && (
         <View style={styles.loadErrorBanner} accessibilityRole="alert">
           <Ionicons name="cloud-offline-outline" size={16} color={Colors.error} />
-          <Text style={styles.loadErrorText}>友達チャレンジを読み込めませんでした</Text>
+          <Text style={styles.loadErrorText}>{t('friends.loadFailed')}</Text>
           <TouchableOpacity onPress={() => setReloadKey((key) => key + 1)} accessibilityRole="button">
-            <Text style={styles.loadErrorRetry}>再試行</Text>
+            <Text style={styles.loadErrorRetry}>{t('common.retry')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -361,21 +368,21 @@ export default function FriendsScreen() {
                   <Ionicons name="key-outline" size={22} color={Colors.primaryDark} />
                 </View>
                 <View style={styles.introCopy}>
-                  <Text style={styles.introTitle}>招待コードをお持ちですか？</Text>
-                  <Text style={styles.introBody}>参加は無料です。6桁のコードからチームを選べます。</Text>
+                  <Text style={styles.introTitle}>{t('friends.haveCode')}</Text>
+                  <Text style={styles.introBody}>{t('friends.codeIntro')}</Text>
                 </View>
-                <Button label="参加する" onPress={() => setPrivateView('join_code')} style={styles.introButton} />
+                <Button label={t('battle.join')} onPress={() => setPrivateView('join_code')} style={styles.introButton} />
               </View>
 
               <View>
-                <Text style={styles.sectionTitle}>友達チャレンジ</Text>
-                <Text style={styles.sectionHint}>参加中または自分で作成したチャレンジ</Text>
+                <Text style={styles.sectionTitle}>{t('friends.friendChallenges')}</Text>
+                <Text style={styles.sectionHint}>{t('friends.joinedOrCreated')}</Text>
               </View>
               {visiblePrivateBattles.length === 0 ? (
                 <EmptyState
                   icon="people-outline"
-                  title="友達チャレンジはまだありません"
-                  hint="招待コードで参加するか、Proなら新しく作成できます"
+                  title={t('friends.emptyTitle')}
+                  hint={t('friends.emptyHint')}
                 />
               ) : visiblePrivateBattles.map((battle) => (
                 <PrivateBattleCard
@@ -394,19 +401,19 @@ export default function FriendsScreen() {
               <View style={styles.createSection}>
                 <View style={styles.createHeader}>
                   <View>
-                    <Text style={styles.sectionTitle}>新しく作る</Text>
-                    <Text style={styles.sectionHint}>期間・チーム・集計方法を決めて友達を招待</Text>
+                    <Text style={styles.sectionTitle}>{t('friends.createNew')}</Text>
+                    <Text style={styles.sectionHint}>{t('friends.createHint')}</Text>
                   </View>
                   {!userIsPro && <Text style={styles.proBadge}>PRO</Text>}
                 </View>
                 <Button
-                  label={userIsPro ? '友達チャレンジを作る' : '友達チャレンジを作る（Pro）'}
+                  label={t(userIsPro ? 'friends.create' : 'friends.createPro')}
                   variant="secondary"
                   onPress={() => {
                     if (!userIsPro) {
                       Alert.alert(
-                        'Proプランが必要です',
-                        '友達チャレンジの作成にはProプランが必要です。\nプロフィール画面からアップグレードできます。',
+                        t('friends.proRequiredTitle'),
+                        t('friends.proRequiredBody'),
                       );
                       return;
                     }

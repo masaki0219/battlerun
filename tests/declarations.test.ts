@@ -22,7 +22,7 @@ assert.equal(dateKeyAtTimeZone(new Date('2026-07-20T14:30:00.000Z'), 'Asia/Tokyo
 assert.equal(dateKeyAtTimeZone(new Date('2026-07-20T15:30:00.000Z'), 'Asia/Tokyo'), '20260721');
 assert.equal(serverDeclarationDateKey(new Date('2026-07-20T15:30:00.000Z'), 'Asia/Tokyo'), '20260721');
 assert.equal(normalizedTimeZone('not/a timezone'), 'UTC');
-assert.equal(declarationTimeLabel('2026-07-20T11:00:00.000Z', 'Asia/Tokyo'), '20:00ごろ');
+assert.equal(declarationTimeLabel('2026-07-20T11:00:00.000Z', 'Asia/Tokyo', 'ja'), '20:00ごろ');
 
 // 宣言時刻そのものは達成条件ではない。同じ宣言日なら前後どちらも達成する。
 assert.equal(shouldCompleteDeclaration({

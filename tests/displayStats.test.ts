@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
-import { calendarWeekKey, daysLeft, hasHighTrainingLoad, rollingWeekBuckets, streakDays, weekOverWeek, weekStartLabel, weeklyBuckets } from '../utils/displayStats';
+import { adjacentRankRival, calendarWeekKey, daysLeft, hasHighTrainingLoad, rollingWeekBuckets, streakDays, weekOverWeek, weekStartLabel, weeklyBuckets } from '../utils/displayStats';
 import { emptyAutoPauseDetector, evaluateAutoPause } from '../utils/autoPause';
 import { buildVoiceCoachAnnouncement, DEFAULT_VOICE_COACH_SETTINGS, spokenPace } from '../utils/voiceCoach';
 import { isQuietHours } from '../utils/notificationTiming';
 import { declarationDocumentId, declarationTimeLabel, localDateKey } from '../utils/declarations';
 import { validateDeclarationNote } from '../lib/validation/declaration';
 import { chartAxisLabel, niceChartMaximum } from '../utils/chartScale';
-import type { Activity } from '../types';
+import type { Activity, CategoryStats } from '../types';
 
 function activity(startedAt: string, distanceKm: number): Activity {
   return {
@@ -27,7 +27,7 @@ const items = [
   activity('2026-07-05T07:00:00+09:00', 4),
 ];
 
-assert.equal(weeklyBuckets(items, now).reduce((sum, day) => sum + day.km, 0), 5);
+assert.equal(weeklyBuckets(items, now, 'ja').reduce((sum, day) => sum + day.km, 0), 5);
 assert.equal(streakDays(items, now), 2);
 assert.deepEqual(weekOverWeek(items, now), { thisWeekKm: 5, lastWeekKm: 4, changeRatio: 0.25 });
 
@@ -38,24 +38,45 @@ const boundaryItems = [
   activity('2026-07-06T07:00:00+09:00', 2), // 月曜 → 今週
 ];
 assert.deepEqual(weekOverWeek(boundaryItems, tuesday), { thisWeekKm: 2, lastWeekKm: 4, changeRatio: -0.5 });
-assert.equal(weeklyBuckets(boundaryItems, tuesday).reduce((sum, day) => sum + day.km, 0), 2);
-assert.equal(weeklyBuckets(boundaryItems, tuesday)[0].label, '月'); // 月曜始まり固定
-assert.equal(weeklyBuckets(boundaryItems, tuesday)[1].isToday, true); // 火曜=今日
+assert.equal(weeklyBuckets(boundaryItems, tuesday, 'ja').reduce((sum, day) => sum + day.km, 0), 2);
+assert.equal(weeklyBuckets(boundaryItems, tuesday, 'ja')[0].label, '月'); // 月曜始まり固定
+assert.equal(weeklyBuckets(boundaryItems, tuesday, 'ja')[1].isToday, true); // 火曜=今日
 const rolling = rollingWeekBuckets([
   activity('2026-06-30T07:00:00+09:00', 9),
   activity('2026-07-02T07:00:00+09:00', 1),
   activity('2026-07-07T07:00:00+09:00', 2),
-], tuesday);
+], tuesday, 'ja');
 assert.deepEqual(rolling.map((day) => day.label), ['水', '木', '金', '土', '日', '月', '火']);
 assert.equal(rolling.reduce((sum, day) => sum + day.km, 0), 3);
 assert.equal(rolling[6].isToday, true);
-assert.equal(weekStartLabel(now), '7月6日〜'); // 日曜時点でも週の起点は月曜
+assert.equal(weekStartLabel(now, 'ja'), '7月6日〜'); // 日曜時点でも週の起点は月曜
 assert.equal(niceChartMaximum(3.87), 4);
 assert.equal(niceChartMaximum(8.2), 10);
 assert.equal(niceChartMaximum(0), 1);
 assert.equal(chartAxisLabel(2.5), '2.5');
 assert.equal(daysLeft('invalid', now), null);
 assert.equal(daysLeft('2026-07-14T12:00:00+09:00', now), 2);
+
+const rankedTeams: CategoryStats[] = [
+  { categoryId: 'first', label: '1', totalDistanceKm: 100, avgDistanceKm: 10, participantCount: 10 },
+  { categoryId: 'second', label: '2', totalDistanceKm: 80, avgDistanceKm: 8, participantCount: 10 },
+  { categoryId: 'third', label: '3', totalDistanceKm: 60, avgDistanceKm: 6, participantCount: 10 },
+  { categoryId: 'fourth', label: '4', totalDistanceKm: 20, avgDistanceKm: 2, participantCount: 10 },
+];
+assert.deepEqual(
+  adjacentRankRival(rankedTeams, 'fourth', 'total'),
+  { stat: rankedTeams[2], rank: 3, direction: 'ahead' },
+  '4位の比較対象は首位ではなく直上の3位',
+);
+assert.deepEqual(
+  adjacentRankRival(rankedTeams, 'first', 'average'),
+  { stat: rankedTeams[1], rank: 2, direction: 'behind' },
+  '首位の比較対象は次の別スコア',
+);
+assert.equal(adjacentRankRival([
+  rankedTeams[0],
+  { ...rankedTeams[1], avgDistanceKm: 10 },
+], 'second', 'average'), null, '全チーム同点なら比較対象を作らない');
 assert.equal(calendarWeekKey(new Date(2026, 6, 12, 12)), '2026-07-06');
 assert.equal(hasHighTrainingLoad([
   activity('2026-07-12T07:00:00+09:00', 16),
@@ -67,7 +88,7 @@ assert.equal(isQuietHours(new Date(2026, 6, 20, 22, 0)), true);
 const declarationDate = new Date(2026, 6, 20, 19, 0);
 assert.equal(localDateKey(declarationDate), '20260720');
 assert.equal(declarationDocumentId('alice', declarationDate), 'alice_20260720');
-assert.equal(declarationTimeLabel(declarationDate.toISOString()), '19:00ごろ');
+assert.equal(declarationTimeLabel(declarationDate.toISOString(), undefined, 'ja'), '19:00ごろ');
 assert.equal(validateDeclarationNote('ゆっくり走る').ok, true);
 assert.equal(validateDeclarationNote('123456789012345678901').ok, false);
 assert.equal(validateDeclarationNote('iPhone').ok, false);
@@ -129,7 +150,7 @@ for (let second = 1; second <= 4; second++) {
 decision = evaluateAutoPause(detector, point(1, 5_000), false);
 assert.equal(decision.type, 'append');
 
-assert.equal(spokenPace(372), 'キロ 6分12秒');
+assert.equal(spokenPace(372, 'ja'), 'キロ 6分12秒');
 assert.equal(DEFAULT_VOICE_COACH_SETTINGS.enabled, false, '音声コーチは明示操作まで読み上げない');
 assert.equal(
   buildVoiceCoachAnnouncement(DEFAULT_VOICE_COACH_SETTINGS, {
@@ -137,7 +158,7 @@ assert.equal(
     distanceKm: 1,
     lapElapsedSeconds: 372,
     lapDistanceKm: 1,
-  }),
+  }, 'ja'),
   '距離、1.00キロメートル。平均ペース、キロ 6分12秒',
 );
 

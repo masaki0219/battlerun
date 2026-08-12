@@ -22,6 +22,7 @@ import {
 import { validateDeclarationNote } from './validation/declaration';
 import { cachedPublicProfile } from './publicProfileCache';
 import type { RunDeclaration } from '../types';
+import { translate } from './translate';
 
 function timestampIso(value: unknown): string {
   const timestamp = value as { toDate?: () => Date } | undefined;
@@ -142,7 +143,7 @@ export async function updateDeclaration(params: {
   if (!validation.ok) throw new Error(validation.reason);
   const declarationTimezone = params.declaration.timezone ?? deviceTimeZone();
   if (dateKeyAtTimeZone(params.plannedAt, declarationTimezone) !== params.declaration.dateKey) {
-    throw new Error('宣言時刻は今日の範囲で選んでください。');
+    throw new Error(translate('battle.planMustBeToday'));
   }
   const trimmedNote = params.note.trim();
   await updateDoc(doc(db, 'battles', params.battleId, 'declarations', params.declaration.id), {

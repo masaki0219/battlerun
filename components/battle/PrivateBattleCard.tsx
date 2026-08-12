@@ -6,6 +6,7 @@ import { BattleRankRows } from './BattleRankRows';
 import { Colors, Typography, Spacing, BorderRadius } from '../../design_tokens';
 import { sortedStats } from '../../utils/displayStats';
 import type { Battle, CategoryStats } from '../../types';
+import { useTranslation } from '../../lib/i18n';
 
 interface Props {
   battle: Battle;
@@ -24,6 +25,7 @@ interface Props {
 export function PrivateBattleCard({
   battle, stats, myCategoryId, expanded, onToggleExpand, onPress, onCopyInvite, onShareInvite,
 }: Props) {
+  const { t } = useTranslation();
   const sorted = sortedStats(stats, battle.rankingType);
   const myRank = sorted.findIndex((s) => s.categoryId === myCategoryId) + 1;
 
@@ -44,9 +46,9 @@ export function PrivateBattleCard({
                   activeOpacity={0.7}
                   hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
                   accessibilityRole="button"
-                  accessibilityLabel={`招待コード ${battle.inviteCode} をコピー`}
+                  accessibilityLabel={t('friends.copyCodeA11y', { code: battle.inviteCode })}
                 >
-                  <Text style={styles.inviteLabel}>招待コード: </Text>
+                  <Text style={styles.inviteLabel}>{t('friends.inviteCode')}</Text>
                   <Text style={styles.inviteCode}>{battle.inviteCode}</Text>
                   <Ionicons name="copy-outline" size={14} color={Colors.primary} />
                 </TouchableOpacity>
@@ -57,17 +59,17 @@ export function PrivateBattleCard({
                     onShareInvite(battle);
                   }}
                   accessibilityRole="button"
-                  accessibilityLabel="チャレンジの招待リンクを共有"
+                  accessibilityLabel={t('friends.shareInviteA11y')}
                 >
                   <Ionicons name="share-outline" size={14} color={Colors.primaryDark} />
-                  <Text style={styles.shareText}>招待</Text>
+                  <Text style={styles.shareText}>{t('friends.invite')}</Text>
                 </TouchableOpacity>
               </View>
             )}
           </View>
           {myRank > 0 && (
             <View style={styles.rankBadge}>
-              <Text style={styles.rankBadgeText}>{myRank === 1 ? '👑 1位' : `${myRank}位`}</Text>
+              <Text style={styles.rankBadgeText}>{myRank === 1 ? `👑 ${t('common.rank', { rank: 1 })}` : t('common.rank', { rank: myRank })}</Text>
             </View>
           )}
         </View>

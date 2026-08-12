@@ -5,6 +5,7 @@ import { ProgressBar } from '../ui/ProgressBar';
 import { Colors, Typography, Spacing, teamColor, teamColorMap } from '../../design_tokens';
 import { statValue, statLabel, maxStat } from '../../utils/displayStats';
 import type { Battle, CategoryStats } from '../../types';
+import { useTranslation } from '../../lib/i18n';
 
 interface Props {
   battle: Battle;
@@ -20,6 +21,7 @@ interface Props {
  * 展開状態は親が保持し expanded / onToggleExpand で受け渡す。
  */
 export function BattleRankRows({ battle, sorted, myCatId, expanded, onToggleExpand }: Props) {
+  const { language, t } = useTranslation();
   if (sorted.length === 0) return null;
   const rt = battle.rankingType;
   const maxVal = maxStat(sorted, rt);
@@ -43,7 +45,7 @@ export function BattleRankRows({ battle, sorted, myCatId, expanded, onToggleExpa
         <View style={styles.rankBarArea}>
           <ProgressBar value={maxVal > 0 ? statValue(s, rt) / maxVal : 0} color={barColor} height={8} />
         </View>
-        <Text style={[styles.rankValue, isMine && styles.rankValueMine]}>{statLabel(s, rt)}</Text>
+        <Text style={[styles.rankValue, isMine && styles.rankValueMine]}>{statLabel(s, rt, language)}</Text>
       </View>
     );
   };
@@ -63,7 +65,7 @@ export function BattleRankRows({ battle, sorted, myCatId, expanded, onToggleExpa
           style={styles.collapseBtn}
           hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
         >
-          <Text style={styles.collapseText}>{expanded ? '閉じる' : `他 ${hiddenCount} チーム`}</Text>
+          <Text style={styles.collapseText}>{expanded ? t('common.close') : t('battle.otherTeams', { count: hiddenCount })}</Text>
           <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color={Colors.textTertiary} />
         </TouchableOpacity>
       )}

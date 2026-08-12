@@ -4,6 +4,7 @@ import {
   MAX_ACTIVE_BATTLE_COUNT,
   canLeaveParticipant,
   isActiveBattleAt,
+  shouldRetainBattleMembership,
 } from '../functions/src/battleParticipation';
 
 assert.equal(MAX_ACTIVE_BATTLE_COUNT, 2);
@@ -23,5 +24,17 @@ assert.equal(isActiveBattleAt({
   startAt: Timestamp.fromMillis(now - 1),
   endAt: Timestamp.fromMillis(now + 1),
 }, now), false);
+assert.equal(shouldRetainBattleMembership({
+  status: 'upcoming',
+  endAt: Timestamp.fromMillis(now + 86400000),
+}, now), true);
+assert.equal(shouldRetainBattleMembership({
+  status: 'finished',
+  endAt: Timestamp.fromMillis(now - 1),
+}, now), false, '終了済みIDは次回参加時にbattleIdsから間引く');
+assert.equal(shouldRetainBattleMembership({
+  status: 'active',
+  endAt: Timestamp.fromMillis(now - 1),
+}, now), false, 'スケジューラ反映待ちでも期間終了済みなら間引く');
 
 console.log('battle participation tests passed');

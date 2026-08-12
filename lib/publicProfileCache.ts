@@ -1,5 +1,6 @@
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
+import { translate } from './translate';
 
 export interface CachedPublicProfile {
   name: string;
@@ -32,7 +33,7 @@ export async function cachedPublicProfile(uid: string): Promise<CachedPublicProf
 
   const request = getDoc(doc(db, 'publicProfiles', uid)).then((snapshot) => {
     const profile = {
-      name: (snapshot.data()?.['name'] as string | undefined) ?? 'メンバー',
+      name: (snapshot.data()?.['name'] as string | undefined) ?? translate('common.member'),
       avatarEmoji: (snapshot.data()?.['avatarEmoji'] as string | undefined) ?? undefined,
     };
     const resolvedAtMs = Date.now();

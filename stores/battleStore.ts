@@ -19,7 +19,10 @@ import {
   updateDeclaration as updateRunDeclaration,
 } from '../lib/declarations';
 import { cheerCountAfterCreate } from '../utils/declarations';
-import type { Battle, CategoryStats, Season, Category, BattleParticipation, RunDeclaration } from '../types';
+import type { Battle, CategoryStats, Season, Category, BattleParticipation, RunDeclaration, Market } from '../types';
+import { isBattleVisibleInMarket, isMarket, resolveBattleMarket } from '../lib/market';
+import { inferMarket } from '../lib/deviceLocale';
+import { translate } from '../lib/i18n';
 
 interface CreateBattleParams {
   title: string;
@@ -31,6 +34,32 @@ interface CreateBattleParams {
   userId: string;
   isPublic?: boolean;
   seasonId?: string | null;
+  market?: Market;
+  termIndex?: number;
+  termCount?: number;
+}
+
+interface PublicBattleSeriesDraft {
+  title: string;
+  startAt: Date;
+  endAt: Date;
+  termIndex?: number;
+  termCount?: number;
+}
+
+interface CreatePublicBattleSeriesParams {
+  battles: PublicBattleSeriesDraft[];
+  description: string;
+  categories: Category[];
+  rankingType: 'average' | 'total';
+  userId: string;
+  market: Market;
+  seasonId?: string | null;
+  newSeason?: {
+    title: string;
+    startAt: Date;
+    endAt: Date;
+  };
 }
 
 interface BattleStore {
@@ -41,7 +70,7 @@ interface BattleStore {
   isLoading: boolean;
   declarationsByBattle: Record<string, RunDeclaration[]>;
 
-  fetchPublicBattles: () => Promise<void>;
+  fetchPublicBattles: (market?: Market) => Promise<void>;
   fetchMyMemberships: (userId: string) => Promise<void>;
   fetchMyPrivateBattles: (userId: string) => Promise<void>;
   fetchSeason: (seasonId: string) => Promise<void>;
@@ -53,6 +82,10 @@ interface BattleStore {
   ) => Promise<void>;
   leaveBattle: (battleId: string, userId: string) => Promise<void>;
   createBattle: (params: CreateBattleParams) => Promise<string>;
+  createPublicBattleSeries: (params: CreatePublicBattleSeriesParams) => Promise<{
+    battleIds: string[];
+    seasonId: string | null;
+  }>;
   findBattleByInviteCode: (inviteCode: string) => Promise<Battle>;
   getActiveBattleIds: () => string[];
   subscribeDeclarations: (battleId: string, userId: string, categoryId: string) => () => void;
@@ -86,6 +119,32 @@ function resolveCategoryIds(categories: Pick<Category, 'label' | 'colorId'>[]): 
   });
 }
 
+function validateBattleContent(title: string, description: string, categories: Category[]): void {
+  const titleValidation = validateBattleTitle(title);
+  if (!titleValidation.ok) {
+    throw new Error(titleValidation.reason ?? translate('battle.invalidTitle'));
+  }
+  const descriptionValidation = validateBattleDescription(description);
+  if (!descriptionValidation.ok) {
+    throw new Error(descriptionValidation.reason ?? translate('battle.invalidDescription'));
+  }
+  for (const category of categories) {
+    const categoryValidation = validateBattleCategory(category.label);
+    if (!categoryValidation.ok) {
+      throw new Error(categoryValidation.reason ?? translate('battle.invalidTeam'));
+    }
+  }
+}
+
+function validTermMetadata(termIndex?: number, termCount?: number): boolean {
+  if (termIndex == null && termCount == null) return true;
+  return Number.isInteger(termIndex)
+    && Number.isInteger(termCount)
+    && termIndex! >= 1
+    && termCount! >= termIndex!
+    && termCount! <= 12;
+}
+
 // 個人戦バトル（mode: 'individual'）は1.0で廃止。
 // 既存Firestoreに残っていてもクラッシュさせず一覧から除外するためnullを返す。
 function mapDocToBattle(id: string, data: Record<string, any>): Battle | null {
@@ -103,6 +162,11 @@ function mapDocToBattle(id: string, data: Record<string, any>): Battle | null {
     status: (data['status'] as 'upcoming' | 'active' | 'finished') ?? 'active',
     createdBy: (data['createdBy'] as string | null) ?? null,
     inviteCode: (data['inviteCode'] as string | null) ?? null,
+    ...(Number.isInteger(data['termIndex']) && Number.isInteger(data['termCount']) ? {
+      termIndex: data['termIndex'] as number,
+      termCount: data['termCount'] as number,
+    } : {}),
+    ...(data['type'] === 'public' ? { market: resolveBattleMarket(data['market']) } : {}),
   };
 }
 
@@ -114,18 +178,24 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
   isLoading: false,
   declarationsByBattle: {},
 
-  fetchPublicBattles: async () => {
+  fetchPublicBattles: async (market) => {
     set({ isLoading: true });
     try {
       const q = query(
         collection(db, 'battles'),
         where('type', '==', 'public'),
-        where('status', '==', 'active'),
+        where('status', 'in', ['active', 'upcoming']),
       );
       const snap = await getDocs(q);
+      const userMarket = market ?? useAuthStore.getState().user?.market ?? inferMarket();
       const battles: Battle[] = snap.docs
         .map((d) => mapDocToBattle(d.id, d.data()))
-        .filter((b): b is Battle => b !== null);
+        .filter((b): b is Battle => b !== null)
+        .filter((battle) => isBattleVisibleInMarket(battle.market, userMarket))
+        .sort((a, b) => {
+          if (a.status !== b.status) return a.status === 'active' ? -1 : 1;
+          return new Date(a.startAt).getTime() - new Date(b.startAt).getTime();
+        });
       set({ publicBattles: battles });
     } finally {
       set({ isLoading: false });
@@ -209,7 +279,7 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
   },
 
   joinBattle: async (battleId, categoryId, userId, inviteCode) => {
-    if (!categoryId) throw new Error('チームを選択してください。');
+    if (!categoryId) throw new Error(translate('battle.selectTeam'));
     const callable = httpsCallable(functions, 'joinBattle');
     await callable({ battleId, categoryId, ...(inviteCode ? { inviteCode } : {}) });
 
@@ -240,26 +310,15 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
     }));
   },
 
-  createBattle: async ({ title, description, categories, rankingType, startAt, endAt, userId, isPublic, seasonId }) => {
-    const titleValidation = validateBattleTitle(title);
-    if (!titleValidation.ok) {
-      throw new Error(titleValidation.reason ?? 'このチャレンジ名は利用できません');
-    }
-    const descriptionValidation = validateBattleDescription(description);
-    if (!descriptionValidation.ok) {
-      throw new Error(descriptionValidation.reason ?? 'この説明は利用できません');
-    }
-    for (const category of categories) {
-      const categoryValidation = validateBattleCategory(category.label);
-      if (!categoryValidation.ok) {
-        throw new Error(categoryValidation.reason ?? 'このチーム名は利用できません');
-      }
-    }
+  createBattle: async ({ title, description, categories, rankingType, startAt, endAt, userId, isPublic, seasonId, market, termIndex, termCount }) => {
+    validateBattleContent(title, description, categories);
+    if (endAt <= startAt) throw new Error(translate('battle.invalidPeriod'));
+    if (!validTermMetadata(termIndex, termCount)) throw new Error(translate('battle.invalidTermMetadata'));
 
     const plan = useAuthStore.getState().user?.plan ?? 'free';
 
     if (!isPublic && plan !== 'pro') {
-      throw new Error('PRO_REQUIRED: プライベートチャレンジの作成にはProプランが必要です。');
+      throw new Error(`PRO_REQUIRED: ${translate('battle.privateProRequired')}`);
     }
 
     // 区分IDを確定（ラベルから毎回生成し、重複ラベルには連番を付与）。
@@ -293,12 +352,14 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
     }
 
     // 開始日が未来なら upcoming で作成し、スケジューラの upcoming→active に委ねる。
+    if (!isMarket(market)) throw new Error(translate('battle.marketRequired'));
     const status = startAt.getTime() <= Date.now() ? 'active' : 'upcoming';
     const battleRef = doc(collection(db, 'battles'));
     const batch = writeBatch(db);
     batch.set(battleRef, {
       type: isPublic ? 'public' : 'private',
       seasonId: seasonId ?? null,
+      market,
       title,
       description,
       categories: resolvedCategories,
@@ -310,6 +371,7 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
       createdBy: userId,
       inviteCode: null,
       createdAt: Timestamp.now(),
+      ...(termIndex != null && termCount != null ? { termIndex, termCount } : {}),
     });
 
     // category_stats の初期ドキュメントを作成
@@ -323,6 +385,80 @@ export const useBattleStore = create<BattleStore>((set, get) => ({
     await batch.commit();
 
     return battleRef.id;
+  },
+
+  createPublicBattleSeries: async ({
+    battles, description, categories, rankingType, userId, market, seasonId, newSeason,
+  }) => {
+    if (battles.length < 1 || battles.length > 12) {
+      throw new Error(translate('battle.invalidTermMetadata'));
+    }
+    if (!isMarket(market)) throw new Error(translate('battle.marketRequired'));
+    if (newSeason && seasonId) throw new Error(translate('battle.invalidSeasonSelection'));
+    validateBattleContent(battles[0]?.title ?? '', description, categories);
+
+    const resolvedCategories = resolveCategoryIds(categories);
+    const batch = writeBatch(db);
+    let resolvedSeasonId = seasonId ?? null;
+
+    if (newSeason) {
+      const seasonTitleValidation = validateBattleTitle(newSeason.title);
+      if (!seasonTitleValidation.ok) {
+        throw new Error(seasonTitleValidation.reason ?? translate('battle.invalidSeason'));
+      }
+      if (newSeason.endAt <= newSeason.startAt) throw new Error(translate('battle.invalidPeriod'));
+      const seasonRef = doc(collection(db, 'seasons'));
+      resolvedSeasonId = seasonRef.id;
+      batch.set(seasonRef, {
+        title: newSeason.title.trim(),
+        startAt: Timestamp.fromDate(newSeason.startAt),
+        endAt: Timestamp.fromDate(newSeason.endAt),
+        status: 'active',
+        createdAt: Timestamp.now(),
+      });
+    }
+
+    const battleIds: string[] = [];
+    for (const draft of battles) {
+      validateBattleContent(draft.title, description, categories);
+      if (draft.endAt <= draft.startAt) throw new Error(translate('battle.invalidPeriod'));
+      if (!validTermMetadata(draft.termIndex, draft.termCount)) {
+        throw new Error(translate('battle.invalidTermMetadata'));
+      }
+
+      const battleRef = doc(collection(db, 'battles'));
+      battleIds.push(battleRef.id);
+      batch.set(battleRef, {
+        type: 'public',
+        seasonId: resolvedSeasonId,
+        market,
+        title: draft.title.trim(),
+        description: description.trim(),
+        categories: resolvedCategories,
+        categoryIds: resolvedCategories.map((category) => category.id),
+        rankingType,
+        startAt: Timestamp.fromDate(draft.startAt),
+        endAt: Timestamp.fromDate(draft.endAt),
+        status: draft.startAt.getTime() <= Date.now() ? 'active' : 'upcoming',
+        createdBy: userId,
+        inviteCode: null,
+        createdAt: Timestamp.now(),
+        ...(draft.termIndex != null && draft.termCount != null ? {
+          termIndex: draft.termIndex,
+          termCount: draft.termCount,
+        } : {}),
+      });
+      resolvedCategories.forEach((category) => {
+        batch.set(doc(db, 'battles', battleRef.id, 'category_stats', category.id), {
+          totalDistanceKm: 0,
+          avgDistanceKm: 0,
+          participantCount: 0,
+        });
+      });
+    }
+
+    await batch.commit();
+    return { battleIds, seasonId: resolvedSeasonId };
   },
 
   findBattleByInviteCode: async (inviteCode: string) => {

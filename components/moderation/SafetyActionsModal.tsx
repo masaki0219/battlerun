@@ -19,6 +19,7 @@ import {
   type ReportReason,
   type ReportTarget,
 } from '../../lib/moderation';
+import { useTranslation } from '../../lib/i18n';
 
 interface Props {
   visible: boolean;
@@ -33,10 +34,12 @@ export function SafetyActionsModal({
   visible,
   currentUserId,
   target,
-  targetDisplayName = 'このユーザー',
+  targetDisplayName,
   onClose,
   onBlocked,
 }: Props) {
+  const { t } = useTranslation();
+  const displayName = targetDisplayName ?? t('safety.defaultUser');
   const [showReasons, setShowReasons] = useState(false);
   const [reason, setReason] = useState<ReportReason | null>(null);
   const [details, setDetails] = useState('');
@@ -61,9 +64,9 @@ export function SafetyActionsModal({
     try {
       await submitContentReport({ reporterUid: currentUserId, target: resolvedTarget, reason, details });
       onClose();
-      Alert.alert('通報を受け付けました', '運営が内容を確認し、必要な対応を行います。');
+      Alert.alert(t('safety.reportAccepted'), t('safety.reportAcceptedBody'));
     } catch {
-      Alert.alert('通報できませんでした', '通信状態を確認して、もう一度お試しください。');
+      Alert.alert(t('safety.reportFailed'), t('safety.retry'));
       setSaving(false);
     }
   }
@@ -71,12 +74,12 @@ export function SafetyActionsModal({
   function confirmBlock() {
     if (!resolvedTarget.targetUid) return;
     Alert.alert(
-      `${targetDisplayName}をブロックしますか？`,
-      '相手の宣言・走行中表示・ランキング・公開記録を表示せず、相互の応援やリアクションも停止します。相手には通知されません。',
+      t('safety.blockConfirm', { name: displayName }),
+      t('safety.blockBody'),
       [
-        { text: 'キャンセル', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'ブロックする',
+          text: t('safety.block'),
           style: 'destructive',
           onPress: async () => {
             setSaving(true);
@@ -84,13 +87,13 @@ export function SafetyActionsModal({
               await blockUser({
                 blockerUid: currentUserId,
                 blockedUid: resolvedTarget.targetUid!,
-                displayName: targetDisplayName,
+                displayName,
               });
               onBlocked?.(resolvedTarget.targetUid!);
               onClose();
-              Alert.alert('ブロックしました', 'プロフィールの「ブロック中のユーザー」から解除できます。');
+              Alert.alert(t('safety.blocked'), t('safety.blockedBody'));
             } catch {
-              Alert.alert('ブロックできませんでした', '通信状態を確認して、もう一度お試しください。');
+              Alert.alert(t('safety.blockFailed'), t('safety.retry'));
               setSaving(false);
             }
           },
@@ -109,8 +112,8 @@ export function SafetyActionsModal({
               <Ionicons name="shield-checkmark-outline" size={20} color={Colors.primaryDark} />
             </View>
             <View style={styles.titleCopy}>
-              <Text style={styles.title}>{showReasons ? '通報する理由' : '安全メニュー'}</Text>
-              <Text style={styles.subtitle}>通報者やブロックしたことは相手に表示されません</Text>
+              <Text style={styles.title}>{showReasons ? t('safety.reasonTitle') : t('safety.menuTitle')}</Text>
+              <Text style={styles.subtitle}>{t('safety.privateAction')}</Text>
             </View>
           </View>
 
@@ -124,7 +127,7 @@ export function SafetyActionsModal({
                     onPress={() => setReason(item.value)}
                     disabled={saving}
                   >
-                    <Text style={[styles.reasonText, reason === item.value && styles.reasonTextActive]}>{item.label}</Text>
+                    <Text style={[styles.reasonText, reason === item.value && styles.reasonTextActive]}>{t(item.translationKey)}</Text>
                     {reason === item.value && <Ionicons name="checkmark-circle" size={18} color={Colors.primary} />}
                   </TouchableOpacity>
                 ))}
@@ -133,7 +136,7 @@ export function SafetyActionsModal({
                 style={styles.detailsInput}
                 value={details}
                 onChangeText={setDetails}
-                placeholder="補足（任意・300文字まで）"
+                placeholder={t('safety.details')}
                 placeholderTextColor={Colors.textTertiary}
                 multiline
                 maxLength={300}
@@ -147,10 +150,10 @@ export function SafetyActionsModal({
               >
                 {saving
                   ? <ActivityIndicator color={Colors.textOnPrimary} />
-                  : <Text style={styles.submitText}>運営へ送信</Text>}
+                  : <Text style={styles.submitText}>{t('safety.submit')}</Text>}
               </TouchableOpacity>
               <TouchableOpacity style={styles.cancelButton} onPress={() => setShowReasons(false)} disabled={saving}>
-                <Text style={styles.cancelText}>戻る</Text>
+                <Text style={styles.cancelText}>{t('common.back')}</Text>
               </TouchableOpacity>
             </>
           ) : (
@@ -160,8 +163,8 @@ export function SafetyActionsModal({
                   <Ionicons name="flag-outline" size={20} color={Colors.error} />
                 </View>
                 <View style={styles.actionCopy}>
-                  <Text style={styles.actionTitle}>この内容を通報</Text>
-                  <Text style={styles.actionDetail}>運営が確認し、規約に基づいて対応します</Text>
+                  <Text style={styles.actionTitle}>{t('safety.reportContent')}</Text>
+                  <Text style={styles.actionDetail}>{t('safety.reportDetail')}</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
               </TouchableOpacity>
@@ -171,14 +174,14 @@ export function SafetyActionsModal({
                     <Ionicons name="person-remove-outline" size={20} color={Colors.textPrimary} />
                   </View>
                   <View style={styles.actionCopy}>
-                    <Text style={styles.actionTitle}>{targetDisplayName}をブロック</Text>
-                    <Text style={styles.actionDetail}>相手の投稿を非表示にし、相互の反応を止めます</Text>
+                    <Text style={styles.actionTitle}>{t('safety.blockName', { name: displayName })}</Text>
+                    <Text style={styles.actionDetail}>{t('safety.blockDetail')}</Text>
                   </View>
                   <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
                 </TouchableOpacity>
               )}
               <TouchableOpacity style={styles.cancelButton} onPress={onClose} disabled={saving}>
-                <Text style={styles.cancelText}>キャンセル</Text>
+                <Text style={styles.cancelText}>{t('common.cancel')}</Text>
               </TouchableOpacity>
             </View>
           )}

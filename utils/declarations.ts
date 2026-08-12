@@ -1,3 +1,5 @@
+import type { AppLanguage } from '../lib/language';
+
 function localCalendarDateKey(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -103,22 +105,30 @@ export function isVisibleTodayDeclarationStatus(status: string): boolean {
   return status === 'planned' || status === 'done';
 }
 
-export function declarationTimeLabel(iso: string, timezone?: string): string {
+export function declarationTimeLabel(
+  iso: string,
+  timezone: string | undefined,
+  language: AppLanguage,
+): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '';
   if (timezone && isValidTimeZone(timezone)) {
     try {
-      const parts = new Intl.DateTimeFormat('ja-JP', {
+      const parts = new Intl.DateTimeFormat(language === 'ja' ? 'ja-JP' : 'en-US', {
         timeZone: timezone,
         hour: 'numeric',
         minute: '2-digit',
         hourCycle: 'h23',
       }).formatToParts(date);
       const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-      if (values['hour'] && values['minute']) return `${values['hour']}:${values['minute']}ごろ`;
+      if (values['hour'] && values['minute']) {
+        const value = `${values['hour']}:${values['minute']}`;
+        return language === 'ja' ? `${value}ごろ` : `around ${value}`;
+      }
     } catch {
       // 旧データと同じ端末ローカル表示へフォールバックする。
     }
   }
-  return `${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}ごろ`;
+  const value = `${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+  return language === 'ja' ? `${value}ごろ` : `around ${value}`;
 }

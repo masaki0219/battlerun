@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { View, Text, Animated, StyleSheet } from 'react-native';
 import { Colors, Spacing, BorderRadius, Animation } from '../../design_tokens';
 import { chartAxisLabel, niceChartMaximum } from '../../utils/chartScale';
+import { useTranslation } from '../../lib/i18n';
 
 export interface WeeklyBarChartDay {
   label: string;
@@ -32,8 +33,10 @@ const MIN_BAR = 3;
  * 各バーは下地トラック（レーン）の中で伸びる。今日のバーだけ accent。
  */
 export function WeeklyBarChart({
-  days, maxKm, height = 64, compact = false, showTotal, periodLabel = '今週',
+  days, maxKm, height = 64, compact = false, showTotal, periodLabel,
 }: Props) {
+  const { t } = useTranslation();
+  const resolvedPeriodLabel = periodLabel ?? t('goal.weekly');
   const rawPeak = maxKm ?? Math.max(...days.map((d) => d.km), 0);
   const peak = niceChartMaximum(rawPeak);
   const totalKm = days.reduce((sum, d) => sum + d.km, 0);
@@ -55,7 +58,7 @@ export function WeeklyBarChart({
       {withTotal ? (
         <View style={styles.headerRow}>
           <Text style={styles.totalText}>
-            {periodLabel}合計 <Text style={styles.totalNum}>{totalKm.toFixed(1)}</Text>km
+            {t('charts.weeklyTotal', { period: resolvedPeriodLabel, value: totalKm.toFixed(1) })}
           </Text>
         </View>
       ) : null}
@@ -94,7 +97,11 @@ export function WeeklyBarChart({
                   key={i}
                   style={styles.barSlot}
                   accessible
-                  accessibilityLabel={`${d.label}${d.isToday ? '、今日' : ''}、${d.km.toFixed(1)}キロメートル`}
+                  accessibilityLabel={t('charts.dayA11y', {
+                    day: d.label,
+                    today: d.isToday ? t('charts.todaySuffix') : '',
+                    value: d.km.toFixed(1),
+                  })}
                 >
                   <View style={[styles.track, { height }]}>
                     <Animated.View
@@ -108,7 +115,7 @@ export function WeeklyBarChart({
 
           {allZero ? (
             <View style={styles.emptyOverlay} pointerEvents="none">
-              <Text style={styles.emptyText}>{periodLabel}の最初のランを記録しよう</Text>
+              <Text style={styles.emptyText}>{t('charts.firstRun', { period: resolvedPeriodLabel })}</Text>
             </View>
           ) : null}
         </View>

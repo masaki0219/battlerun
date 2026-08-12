@@ -1,6 +1,7 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions/v2';
 import { sendPushToUser } from './push';
+import { notificationCopy, userUiLanguage } from './i18n';
 
 export interface UserTitle {
   seasonId: string;
@@ -125,10 +126,10 @@ export async function finishBattle(battleId: string): Promise<void> {
 
   // ── 終了通知（確定した実行のみ送る）──
   const participantsSnap = await battleRef.collection('participants').get();
-  const notifyTitle = `「${battleTitle}」が終了しました`;
-  const notifyBody = '結果を確認しよう';
   await Promise.all(
     participantsSnap.docs.map(async (p) => {
+      const language = await userUiLanguage(db, p.id);
+      const { title: notifyTitle, body: notifyBody } = notificationCopy.battleEnded(language, battleTitle);
       await db.collection(`users/${p.id}/notifications`).add({
         type: 'battle_ended',
         title: notifyTitle,

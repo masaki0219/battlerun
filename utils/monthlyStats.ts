@@ -1,4 +1,5 @@
 import type { MonthlyStat } from '../types';
+import type { AppLanguage } from '../lib/language';
 
 const TOKYO_OFFSET_MS = 9 * 60 * 60 * 1000;
 
@@ -29,9 +30,12 @@ export function recentTokyoMonthKeys(now: Date, count = 12): string[] {
   });
 }
 
-export function monthLabel(monthKey: string): string {
+export function monthLabel(monthKey: string, language: AppLanguage): string {
   const month = Number(monthKey.slice(5, 7));
-  return Number.isInteger(month) && month >= 1 && month <= 12 ? `${month}月` : monthKey;
+  if (!Number.isInteger(month) || month < 1 || month > 12) return monthKey;
+  return language === 'ja'
+    ? `${month}月`
+    : new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(2026, month - 1, 1)));
 }
 
 /**

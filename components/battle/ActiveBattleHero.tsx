@@ -4,9 +4,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { StatBlock } from '../ui/StatBlock';
 import { FactionColumns } from '../viz/FactionColumns';
 import { DarkColors, Typography, Spacing, BorderRadius, Shadow, teamColor, teamColorMap } from '../../design_tokens';
-import { comebackTarget, sortedStats, statValue, remainingLabel } from '../../utils/displayStats';
+import { adjacentRankRival, comebackTarget, sortedStats, statValue, remainingLabel } from '../../utils/displayStats';
 import type { Battle, CategoryStats } from '../../types';
 import { prioritizeTeams } from '../../utils/teamDisplay';
+import { useTranslation } from '../../lib/i18n';
 
 /** 自分の陣営内での立ち位置（useTeamRanking の結果を表示用に絞ったもの） */
 export interface HeroTeamRank {
@@ -35,6 +36,7 @@ interface Props {
 export function ActiveBattleHero({
   battle, stats, myCategoryId, myDist, teamRank, activeBattleCount, onPress,
 }: Props) {
+  const { language, t } = useTranslation();
   const { fontScale } = useWindowDimensions();
   const largeText = fontScale >= 1.6;
   const rt = battle.rankingType;
@@ -42,25 +44,24 @@ export function ActiveBattleHero({
   const myIndex = sorted.findIndex((s) => s.categoryId === myCategoryId);
   const allZero = sorted.every((item) => statValue(item, rt) <= 0);
   const totalTeams = sorted.length;
-  const remaining = remainingLabel(battle.endAt);
+  const remaining = remainingLabel(battle.endAt, new Date(), language);
 
   const myStat = myIndex >= 0 ? sorted[myIndex] : undefined;
   const myKm = myStat ? statValue(myStat, rt) : 0;
   const myRank = myStat && !allZero
     ? 1 + sorted.filter((item) => statValue(item, rt) > myKm).length
     : 0;
-  const leader = sorted[0];
-  const runnerUp = sorted.find((item) => statValue(item, rt) < myKm);
   const hasFactions = !!myStat && totalTeams > 1;
-  const leading = myRank === 1;
+  const rivalTarget = adjacentRankRival(sorted, myCategoryId, rt);
+  const leading = rivalTarget?.direction === 'behind';
 
-  // 首位（自分が首位なら2位）との差
-  const rivalStat = leading ? runnerUp : leader;
+  // 後方なら直上、首位（同率首位を含む）なら次の別スコアとの差。
+  const rivalStat = rivalTarget?.stat;
   const rivalKm = rivalStat ? statValue(rivalStat, rt) : 0;
   const diffKm = Math.abs(rivalKm - myKm);
   const bothZero = hasFactions && myKm <= 0 && rivalKm <= 0;
 
-  const gapToOvertakeKm = !leading && myStat && rivalStat
+  const gapToOvertakeKm = rivalTarget?.direction === 'ahead' && myStat && rivalStat
     ? (rt === 'average'
       ? Math.max(0, rivalStat.avgDistanceKm * Math.max(myStat.participantCount, 1) - myStat.totalDistanceKm)
       : Math.max(0, rivalKm - myKm))
@@ -86,11 +87,16 @@ export function ActiveBattleHero({
           <View style={[styles.body, largeText && styles.bodyLargeText]}>
             <View style={[styles.topRow, largeText && styles.topRowLargeText]}>
               <View style={[styles.topLeft, largeText && styles.topLeftLargeText]}>
+                {battle.termIndex != null && battle.termCount != null && (
+                  <Text style={styles.termLabel}>
+                    {t('battle.termLabel', { index: battle.termIndex, count: battle.termCount })}
+                  </Text>
+                )}
                 <Text style={styles.title} numberOfLines={largeText ? undefined : 2}>{battle.title}</Text>
               </View>
               {remaining !== null && (
                 <View style={[styles.daysPill, largeText && styles.daysPillLargeText]}>
-                  <Text style={styles.daysPillLabel}>残り</Text>
+                  <Text style={styles.daysPillLabel}>{t('battle.remaining', { value: '' }).trim()}</Text>
                   <Text style={styles.daysPillValue}>{remaining}</Text>
                 </View>
               )}
@@ -103,37 +109,47 @@ export function ActiveBattleHero({
                     <Text style={styles.teamLabel} numberOfLines={1}>{myStat!.label}</Text>
                     <View style={styles.rankLine}>
                       <Text style={styles.rankNum}>{myRank || '—'}</Text>
-                      <Text style={styles.rankUnit}>{myRank ? `位 / ${totalTeams}` : '順位なし'}</Text>
+                      <Text style={styles.rankUnit}>{myRank ? t('common.rankOf', { rank: '', total: totalTeams }).trim() : t('battle.noRank')}</Text>
                     </View>
                   </View>
                   <View style={[styles.standingRight, largeText && styles.standingRightLargeText]}>
-                    <Text style={styles.teamKm}>{myKm.toFixed(1)} {rt === 'average' ? 'km/人' : 'km'}</Text>
+                    <Text style={styles.teamKm}>{myKm.toFixed(1)} {rt === 'average' ? t('common.perPersonKm') : 'km'}</Text>
                     <Text style={styles.gapText}>
                       {bothZero
-                        ? 'まだ勝負は始まっていない'
+                        ? t('battle.notStarted')
                         : leading
-                        ? `2位に +${diffKm.toFixed(1)} km`
-                        : `首位まで ${diffKm.toFixed(1)} km`}
+                        ? t('battle.leadOverNext', {
+                            value: diffKm.toFixed(1),
+                            unit: rt === 'average' ? t('common.perPersonKm') : 'km',
+                          })
+                        : rivalTarget
+                        ? t('battle.teamGapToRank', {
+                            rank: rivalTarget.rank,
+                            value: diffKm.toFixed(1),
+                            unit: rt === 'average' ? t('common.perPersonKm') : 'km',
+                          })
+                        : null}
                     </Text>
                   </View>
                 </View>
 
-                <FactionColumns factions={columns} valueSuffix={rt === 'average' ? 'km/人' : 'km'} />
+                <FactionColumns factions={columns} valueSuffix={rt === 'average' ? t('common.perPersonKm') : 'km'} />
 
                 {comeback != null && !bothZero && (
                   <View style={[styles.insight, largeText && styles.insightLargeText]}>
                     <Ionicons name="speedometer-outline" size={15} color={DarkColors.accent} />
-                    <Text style={styles.insightText}>
-                      相手が伸びなければ、チーム全体であと {comeback.totalKm.toFixed(1)}km。{' '}
-                      <Text style={styles.insightStrong}>1日 {comeback.kmPerDay.toFixed(1)}km</Text> が逆転の目安
-                    </Text>
+                    <Text style={styles.insightText}>{t('battle.comebackGuide', {
+                      rank: rivalTarget?.rank ?? Math.max(1, myRank - 1),
+                      total: comeback.totalKm.toFixed(1),
+                      daily: comeback.kmPerDay.toFixed(1),
+                    })}</Text>
                   </View>
                 )}
               </>
             ) : (
               /* 陣営データが不足（1陣営のみ等）: 自分の合計距離にフォールバック */
               <View style={styles.fallback}>
-                <StatBlock dark label="自分の合計距離" value={myDist.toFixed(1)} unit="km" hero />
+                <StatBlock dark label={t('battle.myTotalDistance')} value={myDist.toFixed(1)} unit="km" hero />
               </View>
             )}
 
@@ -141,7 +157,7 @@ export function ActiveBattleHero({
               <View style={styles.multiInfo}>
                 <Ionicons name="information-circle-outline" size={14} color={DarkColors.textSecondary} />
                 <Text style={styles.multiText} maxFontSizeMultiplier={1.3}>
-                  ランの距離は参加中の{activeBattleCount}件すべてに反映されます
+                  {t('battle.multiRunInfo', { count: activeBattleCount })}
                 </Text>
               </View>
             )}
@@ -151,31 +167,31 @@ export function ActiveBattleHero({
           <View style={styles.footer}>
             <View style={[styles.footerCols, largeText && styles.footerColsLargeText]}>
               <View style={[styles.footerCol, largeText && styles.footerColLargeText]}>
-                <Text style={styles.footerLabel}>あなた</Text>
+                <Text style={styles.footerLabel}>{t('common.you')}</Text>
                 <Text style={styles.footerValue}>{myDist.toFixed(1)} km</Text>
               </View>
 
               {teamRank && teamRank.myRank > 0 && (
                 <View style={[styles.footerCol, largeText && styles.footerColLargeText]}>
-                  <Text style={styles.footerLabel}>チーム内</Text>
+                  <Text style={styles.footerLabel}>{t('battle.withinTeam')}</Text>
                   <Text style={styles.footerValue}>
-                    {teamRank.myRank}位 / {teamRank.teamSize}人
+                    {t('common.rankOf', { rank: teamRank.myRank, total: t('common.people', { count: teamRank.teamSize }) })}
                   </Text>
                 </View>
               )}
 
               {teamRank && teamRank.gapToNextKm != null && (
                 <View style={[styles.footerCol, largeText && styles.footerColLargeText]}>
-                  <Text style={styles.footerLabel}>{teamRank.myRank - 1}位まで</Text>
+                  <Text style={styles.footerLabel}>{t('battle.gapToRank', { rank: teamRank.myRank - 1 })}</Text>
                   <Text style={[styles.footerValue, styles.footerValueAccent]}>
-                    あと {teamRank.gapToNextKm.toFixed(1)} km
+                    {t('battle.distanceRemaining', { value: teamRank.gapToNextKm.toFixed(1) })}
                   </Text>
                 </View>
               )}
             </View>
 
             <View style={styles.footerLink}>
-              <Text style={styles.footerLinkText} maxFontSizeMultiplier={1.3}>詳細を見る</Text>
+              <Text style={styles.footerLinkText} maxFontSizeMultiplier={1.3}>{t('battle.viewDetails')}</Text>
               <Ionicons name="chevron-forward" size={14} color={DarkColors.primary} />
             </View>
           </View>
@@ -206,6 +222,12 @@ const styles = StyleSheet.create({
   topRowLargeText: { flexDirection: 'column', alignItems: 'stretch' },
   topLeft: { flex: 1 },
   topLeftLargeText: { flex: 0 },
+  termLabel: {
+    marginBottom: Spacing.xs,
+    fontSize: Typography.fontSize.xs,
+    fontWeight: Typography.fontWeight.bold,
+    color: DarkColors.primary,
+  },
   title: {
     fontSize: Typography.fontSize.xl,
     fontWeight: Typography.fontWeight.bold,

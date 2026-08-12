@@ -1,5 +1,7 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import type { AppLanguage } from './language';
+import { translateIn } from './translate';
 
 // 全アプリ共通のSupabase受信箱（feedbacksテーブル）へ評価・ご要望をinsertする。
 // anonキーはINSERTのみ許可のRLS前提。読み取りは運営がダッシュボードから行う。
@@ -15,13 +17,13 @@ export function isFeedbackConfigured(): boolean {
   return SUPABASE_URL.length > 0 && SUPABASE_ANON_KEY.length > 0;
 }
 
-export async function submitFeedback(params: { rating: number; message: string }): Promise<void> {
+export async function submitFeedback(params: { rating: number; message: string }, language: AppLanguage): Promise<void> {
   if (!isFeedbackConfigured()) {
-    throw new Error('フィードバックの送信先が設定されていません。');
+    throw new Error(translateIn(language, 'feedback.notConfigured'));
   }
   const rating = Math.trunc(params.rating);
   if (rating < 1 || rating > 5) {
-    throw new Error('評価は1〜5で選択してください。');
+    throw new Error(translateIn(language, 'feedback.invalidRating'));
   }
   const message = params.message.trim().slice(0, FEEDBACK_MESSAGE_MAX);
 
@@ -49,11 +51,11 @@ export async function submitFeedback(params: { rating: number; message: string }
       signal: controller.signal,
     });
   } catch (e) {
-    throw new Error('送信できませんでした。通信環境を確認して、もう一度お試しください。');
+    throw new Error(translateIn(language, 'feedback.networkFailed'));
   } finally {
     clearTimeout(timer);
   }
   if (!res.ok) {
-    throw new Error(`送信に失敗しました（${res.status}）。時間をおいて、もう一度お試しください。`);
+    throw new Error(translateIn(language, 'feedback.statusFailed', { status: res.status }));
   }
 }

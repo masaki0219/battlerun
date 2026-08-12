@@ -19,6 +19,7 @@ import { useStepCounter } from '../../hooks/useStepCounter';
 import { useRunPresence } from '../../hooks/useRunPresence';
 import { useBattleStore } from '../../stores/battleStore';
 import { Colors, Shadow } from '../../design_tokens';
+import { useTranslation } from '../../lib/i18n';
 
 const KEEP_AWAKE_TAG = 'zelio-recording';
 
@@ -30,19 +31,20 @@ type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
 const TAB_ITEMS: {
   name: string;
-  label: string;
+  labelKey: string;
   icon: IconName;
   iconFocused?: IconName;
   primary?: boolean;
 }[] = [
-  { name: 'battle',  label: 'チャレンジ',   icon: 'trophy-outline',    iconFocused: 'trophy' },
-  { name: 'friends', label: 'フレンド',     icon: 'people-outline',    iconFocused: 'people' },
-  { name: 'record',  label: 'ラン',         icon: 'walk-outline',      primary: true },
-  { name: 'stats',   label: '記録',         icon: 'bar-chart-outline', iconFocused: 'bar-chart' },
-  { name: 'profile', label: 'プロフィール', icon: 'person-outline',    iconFocused: 'person' },
+  { name: 'battle',  labelKey: 'tabs.challenges', icon: 'trophy-outline',    iconFocused: 'trophy' },
+  { name: 'friends', labelKey: 'tabs.friends',    icon: 'people-outline',    iconFocused: 'people' },
+  { name: 'record',  labelKey: 'tabs.run',        icon: 'walk-outline',      primary: true },
+  { name: 'stats',   labelKey: 'tabs.records',    icon: 'bar-chart-outline', iconFocused: 'bar-chart' },
+  { name: 'profile', labelKey: 'tabs.profile',    icon: 'person-outline',    iconFocused: 'person' },
 ];
 
 function CustomTabBar({ state, navigation }: BottomTabBarProps) {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { fontScale } = useWindowDimensions();
   const largeText = fontScale >= 1.3;
@@ -52,6 +54,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
       {state.routes.map((route, index) => {
         const item = TAB_ITEMS.find((t) => t.name === route.name);
         if (!item) return null;
+        const label = t(item.labelKey);
         const focused = state.index === index;
 
         const onPress = () => {
@@ -73,7 +76,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
                 onPress={onPress}
                 activeOpacity={0.8}
                 accessibilityRole="tab"
-                accessibilityLabel={item.label}
+                accessibilityLabel={label}
                 accessibilityState={{ selected: focused }}
               >
                 <Ionicons name="walk" size={24} color={focused ? Colors.textOnPrimary : Colors.textSecondary} />
@@ -83,7 +86,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
                 maxFontSizeMultiplier={1.6}
                 style={[tb.label, { color: focused ? Colors.primaryDark : INK3, fontWeight: focused ? '700' : '500' }]}
               >
-                {item.label}
+                {label}
               </Text>
             </View>
           );
@@ -99,7 +102,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
             onPress={onPress}
             activeOpacity={0.7}
             accessibilityRole="tab"
-            accessibilityLabel={item.label}
+            accessibilityLabel={label}
             accessibilityState={{ selected: focused }}
           >
             <Ionicons name={iconName} size={22} color={color} />
@@ -108,7 +111,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
               maxFontSizeMultiplier={1.6}
               style={[tb.label, { color, fontWeight: focused ? '700' : '500' }]}
             >
-              {item.label}
+              {label}
             </Text>
           </TouchableOpacity>
         );
@@ -182,6 +185,7 @@ const tb = StyleSheet.create({
 });
 
 export default function TabLayout() {
+  const { t } = useTranslation();
   const { user, isLoading } = useAuthStore();
   const isRecording = useRecordStore((s) => s.isRecording);
   const isPaused = useRecordStore((s) => s.isPaused);
@@ -210,10 +214,10 @@ export default function TabLayout() {
 
   useEffect(() => subscribePendingActivityDiscards((count) => {
     Alert.alert(
-      '未送信の記録を確認しました',
-      `サーバーの検証条件を満たさなかった記録${count}件を、再送対象から削除しました。`,
+      t('stats.discardedPendingTitle'),
+      t('stats.discardedPendingBody', { count }),
     );
-  }), []);
+  }), [t]);
 
   useEffect(() => {
     void hydrateRecordingSession();

@@ -26,6 +26,7 @@ assert.equal(ZELIO_DISCOVERY_URL, 'https://masaki0219.github.io/app-support/zeli
     pace: "5'04\"",
     dateLabel: '7月31日',
     impactLabel: '「朝ラン対決」に5.26km貢献',
+    language: 'ja',
   });
   assert.match(message, /7月31日のラン: 5\.26km/);
   assert.match(message, /タイム 26:40 ・ 平均ペース 5'04"\/km/);
@@ -39,6 +40,7 @@ assert.equal(ZELIO_DISCOVERY_URL, 'https://masaki0219.github.io/app-support/zeli
     distanceKm: Number.NaN,
     durationSeconds: -1,
     pace: "--'--\"",
+    language: 'ja',
   });
   assert.match(message, /^今日のラン: 0\.00km\nタイム 00:00\n/);
   assert.doesNotMatch(message, /平均ペース/);

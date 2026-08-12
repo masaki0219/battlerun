@@ -5,6 +5,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ActionColors, Colors, DarkColors, Spacing, BorderRadius, Shadow } from '../../design_tokens';
 import type { WeeklyGoal } from '../../types';
+import { useTranslation } from '../../lib/i18n';
 
 interface Props {
   visible: boolean;
@@ -18,6 +19,7 @@ const DISTANCE_OPTIONS = [5, 10, 20, 30] as const;
 const DAYS_OPTIONS = [2, 3, 4, 5] as const;
 
 export function WeeklyGoalSettingsModal({ visible, currentGoal, onSave, onClear, onClose }: Props) {
+  const { t } = useTranslation();
   const [type, setType] = useState<WeeklyGoal['type']>('distance');
   const [value, setValue] = useState(10);
   const [saving, setSaving] = useState(false);
@@ -53,8 +55,8 @@ export function WeeklyGoalSettingsModal({ visible, currentGoal, onSave, onClear,
         <Pressable style={styles.backdrop} onPress={saving ? undefined : onClose} />
         <SafeAreaView style={styles.sheet} edges={['bottom']}>
           <View style={styles.handle} />
-          <Text style={styles.title}>週間目標</Text>
-          <Text style={styles.intro}>無理のない目安を決めて、自分のペースで続けましょう。</Text>
+          <Text style={styles.title}>{t('goal.weekly')}</Text>
+          <Text style={styles.intro}>{t('goal.intro')}</Text>
 
           <View style={styles.segment}>
             {(['distance', 'days'] as const).map((item) => (
@@ -65,13 +67,13 @@ export function WeeklyGoalSettingsModal({ visible, currentGoal, onSave, onClear,
                 disabled={saving}
               >
                 <Text style={[styles.segmentText, type === item && styles.segmentTextActive]}>
-                  {item === 'distance' ? '距離' : '走る日数'}
+                  {t(item === 'distance' ? 'goal.distance' : 'goal.runningDays')}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
 
-          <Text style={styles.label}>{type === 'distance' ? '1週間の距離' : '1週間に走る日数'}</Text>
+          <Text style={styles.label}>{t(type === 'distance' ? 'goal.weeklyDistance' : 'goal.weeklyDays')}</Text>
           <View style={styles.options}>
             {options.map((option) => {
               const active = value === option;
@@ -84,22 +86,22 @@ export function WeeklyGoalSettingsModal({ visible, currentGoal, onSave, onClear,
                   disabled={saving}
                 >
                   <Text style={[styles.optionValue, active && styles.optionValueActive]}>
-                    {option}<Text style={[styles.optionUnit, active && styles.optionValueActive]}>{type === 'distance' ? 'km' : '日'}</Text>
+                    {option}<Text style={[styles.optionUnit, active && styles.optionValueActive]}>{type === 'distance' ? 'km' : t('profile.dayUnit')}</Text>
                   </Text>
-                  {recommended && <Text style={[styles.recommended, active && styles.recommendedActive]}>おすすめ</Text>}
+                  {recommended && <Text style={[styles.recommended, active && styles.recommendedActive]}>{t('goal.recommended')}</Text>}
                 </TouchableOpacity>
               );
             })}
           </View>
 
-          <Text style={styles.restHint}>日数目標は休息日を取りながら続けられる「週3日」がおすすめです。</Text>
+          <Text style={styles.restHint}>{t('goal.restHint')}</Text>
 
           <TouchableOpacity
             style={styles.saveButton}
             onPress={() => void run(() => onSave({ type, value }))}
             disabled={saving}
           >
-            {saving ? <ActivityIndicator color={Colors.textOnPrimary} /> : <Text style={styles.saveText}>目標を保存</Text>}
+            {saving ? <ActivityIndicator color={Colors.textOnPrimary} /> : <Text style={styles.saveText}>{t('goal.save')}</Text>}
           </TouchableOpacity>
           {currentGoal && (
             <TouchableOpacity
@@ -107,7 +109,7 @@ export function WeeklyGoalSettingsModal({ visible, currentGoal, onSave, onClear,
               onPress={() => void run(onClear)}
               disabled={saving}
             >
-              <Text style={styles.clearText}>目標を解除</Text>
+              <Text style={styles.clearText}>{t('goal.clear')}</Text>
             </TouchableOpacity>
           )}
         </SafeAreaView>

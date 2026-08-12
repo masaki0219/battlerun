@@ -1,4 +1,5 @@
 import { validateUserContent } from './bannedWords';
+import { translate } from '../translate';
 
 export const DISPLAY_NAME_MIN_LENGTH = 1;
 export const DISPLAY_NAME_MAX_LENGTH = 12;
@@ -9,6 +10,6 @@ export const DISPLAY_NAME_MAX_LENGTH = 12;
  */
 export function validateDisplayName(name: string): { ok: boolean; reason?: string } {
   return validateUserContent(name, {
-    label: 'ニックネーム', maxLength: DISPLAY_NAME_MAX_LENGTH, required: true,
+    label: translate('validation.nickname'), maxLength: DISPLAY_NAME_MAX_LENGTH, required: true,
   });
 }

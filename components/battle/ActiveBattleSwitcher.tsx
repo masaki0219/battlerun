@@ -10,6 +10,9 @@ import {
 import { Colors, Typography, Spacing, BorderRadius, Shadow } from '../../design_tokens';
 import { remainingLabel, sortedStats, statValue } from '../../utils/displayStats';
 import type { Battle, CategoryStats } from '../../types';
+import { useTranslation } from '../../lib/i18n';
+import type { AppLanguage } from '../../lib/language';
+import type { TranslateOptions } from '../../lib/translate';
 
 export interface ActiveBattleSwitcherItem {
   battle: Battle;
@@ -23,9 +26,13 @@ interface Props {
   onSelect: (battleId: string) => void;
 }
 
-function battleMeta(item: ActiveBattleSwitcherItem): string {
+function battleMeta(
+  item: ActiveBattleSwitcherItem,
+  language: AppLanguage,
+  t: (scope: string, options?: TranslateOptions) => string,
+): string {
   const { battle, stats, myCategoryId } = item;
-  const remaining = remainingLabel(battle.endAt);
+  const remaining = remainingLabel(battle.endAt, new Date(), language);
   const ranked = sortedStats(stats, battle.rankingType);
   const mine = ranked.find((stat) => stat.categoryId === myCategoryId);
   const hasDistance = ranked.some((stat) => statValue(stat, battle.rankingType) > 0);
@@ -36,13 +43,14 @@ function battleMeta(item: ActiveBattleSwitcherItem): string {
     : null;
 
   const parts: string[] = [];
-  if (remaining) parts.push(remaining === '終了' ? remaining : `残り${remaining}`);
-  parts.push(myRank ? `${myRank}位` : mine ? '順位なし' : '順位集計中');
+  if (remaining) parts.push(remaining === t('common.ended') ? remaining : t('battle.remaining', { value: remaining }));
+  parts.push(myRank ? t('common.rank', { rank: myRank }) : mine ? t('battle.noRank') : t('battle.rankingPending'));
   return parts.join('・');
 }
 
 /** 複数参加時に、閲覧中のチャレンジを切り替えるコンパクトカード列。 */
 export function ActiveBattleSwitcher({ items, selectedBattleId, onSelect }: Props) {
+  const { language, t } = useTranslation();
   const { width, fontScale } = useWindowDimensions();
   const largeText = fontScale >= 1.6;
   const availableWidth = width - Spacing.lg * 2;
@@ -53,8 +61,8 @@ export function ActiveBattleSwitcher({ items, selectedBattleId, onSelect }: Prop
   return (
     <View style={styles.container}>
       <View style={[styles.header, largeText && styles.headerLargeText]}>
-        <Text style={styles.heading}>参加中のチャレンジ</Text>
-        <Text style={styles.count}>{items.length}件</Text>
+        <Text style={styles.heading}>{t('battle.activeChallenges')}</Text>
+        <Text style={styles.count}>{t('common.items', { count: items.length })}</Text>
       </View>
 
       <ScrollView
@@ -66,7 +74,7 @@ export function ActiveBattleSwitcher({ items, selectedBattleId, onSelect }: Prop
         {items.map((item, index) => {
           const { battle } = item;
           const selected = battle.id === selectedBattleId;
-          const meta = battleMeta(item);
+          const meta = battleMeta(item, language, t);
           return (
             <TouchableOpacity
               key={battle.id}
@@ -81,14 +89,18 @@ export function ActiveBattleSwitcher({ items, selectedBattleId, onSelect }: Prop
               onPress={() => onSelect(battle.id)}
               accessibilityRole="button"
               accessibilityState={{ selected }}
-              accessibilityLabel={`${battle.title}、${meta}${selected ? '、表示中' : ''}`}
-              accessibilityHint="このチャレンジの状況に切り替えます"
+              accessibilityLabel={t('battle.switchA11y', {
+                title: battle.title,
+                meta,
+                selected: selected ? `, ${t('battle.selected')}` : '',
+              })}
+              accessibilityHint={t('battle.switchHint')}
             >
               <View style={styles.cardTop}>
                 <Text style={styles.title} numberOfLines={2} maxFontSizeMultiplier={1.6}>{battle.title}</Text>
                 {selected && (
                   <View style={styles.selectedBadge}>
-                    <Text style={styles.selectedBadgeText}>表示中</Text>
+                    <Text style={styles.selectedBadgeText}>{t('battle.selected')}</Text>
                   </View>
                 )}
               </View>
