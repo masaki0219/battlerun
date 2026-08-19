@@ -198,7 +198,6 @@ export default function RecordScreen() {
   const [gpsReadiness, setGpsReadiness] = useState<GpsReadiness | null>(null);
   const [gpsWarmupRestartKey, setGpsWarmupRestartKey] = useState(0);
   const [backgroundPermissionGranted, setBackgroundPermissionGranted] = useState<boolean | null>(null);
-  const [foregroundOnlyApproved, setForegroundOnlyApproved] = useState(false);
   const [showStopSheet, setShowStopSheet] = useState(false);
   const [hudCheerName, setHudCheerName] = useState<string | null>(null);
   const spokenIntervalRef = useRef(0);
@@ -470,11 +469,7 @@ export default function RecordScreen() {
     let cancelled = false;
     const refresh = async () => {
       const permission = await Location.getBackgroundPermissionsAsync().catch(() => null);
-      if (!cancelled) {
-        const granted = permission?.granted === true;
-        setBackgroundPermissionGranted(granted);
-        if (granted) setForegroundOnlyApproved(false);
-      }
+      if (!cancelled) setBackgroundPermissionGranted(permission?.granted === true);
     };
     void refresh();
     const subscription = AppState.addEventListener('change', (state) => {
@@ -615,7 +610,6 @@ export default function RecordScreen() {
       background = await Location.getBackgroundPermissionsAsync().catch(() => null);
       setBackgroundPermissionGranted(background?.granted === true);
       if (background?.granted) {
-        setForegroundOnlyApproved(false);
         Alert.alert(
           t('run.backgroundConfigured'),
           t('run.backgroundConfiguredBody'),
@@ -645,7 +639,6 @@ export default function RecordScreen() {
       }
     } else {
       if (!(await ensureForegroundLocationPermission())) return;
-      if (backgroundPermissionGranted !== true && !foregroundOnlyApproved) return;
       const warmupPoint = lastWarmupPointRef.current;
       const warmupAgeMs = warmupPoint ? Date.now() - warmupPoint.timestamp : Infinity;
       if (
@@ -800,15 +793,12 @@ export default function RecordScreen() {
   const lastPoint = displayRoute[displayRoute.length - 1];
   const liveDisplaySegments = displayRouteSegments(displayRoute);
   const gpsQualityReady = gpsReadiness === 'ready' || gpsReadiness === 'acceptable';
-  const gpsBackgroundChoiceReady = backgroundPermissionGranted === true || foregroundOnlyApproved;
-  const startDisabled = selectedMode === 'gps' && (!gpsQualityReady || !gpsBackgroundChoiceReady);
+  const startDisabled = selectedMode === 'gps' && !gpsQualityReady;
   const startHint = selectedMode !== 'gps'
     ? t('run.tapToStart')
-    : !gpsBackgroundChoiceReady
-      ? t('run.chooseBackground')
-      : !gpsQualityReady
-        ? t('run.waitForGps')
-        : t('run.tapToStart');
+    : !gpsQualityReady
+      ? t('run.waitForGps')
+      : t('run.tapToStart');
 
   async function handleGpsStatusPress() {
     if (gpsReadiness === 'no-permission') {
@@ -996,7 +986,7 @@ export default function RecordScreen() {
                     ? 'checkmark-circle'
                     : backgroundPermissionGranted === null
                       ? 'time-outline'
-                      : 'lock-closed-outline'}
+                      : 'walk-outline'}
                   size={20}
                   color={backgroundPermissionGranted === true ? Colors.primary : Colors.textSecondary}
                 />
@@ -1006,30 +996,20 @@ export default function RecordScreen() {
                       ? t('run.backgroundChecking')
                       : backgroundPermissionGranted
                         ? t('run.backgroundAllowed')
-                        : foregroundOnlyApproved
-                          ? t('run.foregroundRecording')
-                          : t('run.backgroundUnset')}
+                        : t('run.backgroundUnset')}
                   </Text>
                   <Text style={s.backgroundStatusHint}>
                     {backgroundPermissionGranted === null
                       ? t('run.permissionChecking')
                       : backgroundPermissionGranted
                         ? t('run.statusShownAfterStart')
-                        : foregroundOnlyApproved
-                          ? t('run.foregroundHint')
-                          : t('run.chooseRecordingMode')}
+                        : t('run.foregroundHint')}
                   </Text>
                 </View>
+                {/* 「使用中のみ」でも画面OFF・他アプリ利用中の計測は続く。
+                    「常に許可」はアプリ終了後も続けたい人だけの任意設定なので、STARTは止めない。 */}
                 {backgroundPermissionGranted === false && (
                   <View style={s.backgroundActions}>
-                    <TouchableOpacity
-                      style={s.backgroundSecondaryButton}
-                      onPress={() => setForegroundOnlyApproved(true)}
-                      accessibilityRole="button"
-                      accessibilityLabel={t('run.foregroundA11y')}
-                    >
-                      <Text style={s.backgroundSecondaryButtonText}>{t('run.foregroundButton')}</Text>
-                    </TouchableOpacity>
                     <TouchableOpacity
                       style={s.backgroundSettingsButton}
                       onPress={() => { void configureBackgroundLocation(); }}
@@ -1699,8 +1679,6 @@ const s = StyleSheet.create({
   },
   backgroundSettingsButtonText: { fontSize: 11, fontWeight: '800' as const, color: Colors.textOnPrimary },
   backgroundActions: { width: '100%', flexDirection: 'row', gap: Spacing.sm, marginTop: 2 },
-  backgroundSecondaryButton: { flex: 1, minHeight: 38, paddingHorizontal: 8, borderRadius: BorderRadius.full, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center' },
-  backgroundSecondaryButtonText: { fontSize: 10, fontWeight: '800', color: Colors.textSecondary, textAlign: 'center' },
 
   countdownOverlay: {
     ...StyleSheet.absoluteFillObject,

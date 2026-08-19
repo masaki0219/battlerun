@@ -20,12 +20,13 @@ const WATCHDOG_CHECK_INTERVAL_MS = 5000;
  *
  * ■ バックグラウンド追跡（EASカスタムビルドのみ）
  *   - `expo-task-manager` と `UIBackgroundModes: ["location"]` が必要
- *   - bg権限が許可され、startLocationUpdatesAsync が成功した場合に使用
+ *   - 前景権限があれば「使用中のみ」でも使用する。画面OFF・他アプリ利用中も計測が続く
+ *   - bg権限（常に許可）は、アプリ終了後もOSに計測を再開させたい場合にだけ効く
  *
  * ■ フォアグラウンド監視（フォールバック・Expo Go で動作）
- *   - bg権限が無い、または startLocationUpdatesAsync が失敗した場合に自動フォールバック
- *     （Expo Go では bg権限の取得自体は成功するが startLocationUpdatesAsync が
- *     LocationTaskManagerError を投げるため、これを捕捉してフォールバックする）
+ *   - startLocationUpdatesAsync が失敗した場合に自動フォールバック
+ *     （Expo Go では startLocationUpdatesAsync が LocationTaskManagerError を
+ *     投げるため、これを捕捉してフォールバックする）
  *   - アプリをバックグラウンドに移動すると追跡が止まる可能性がある
  *     （記録画面の警告バナーで明示する）
  *
@@ -151,47 +152,40 @@ export function useLocation({ enabled }: { enabled: boolean }) {
         return;
       }
 
-      // バックグラウンド権限は「確認」のみ行う。
-      // 要求はラン開始前（record.tsx の ensureLocationPermission）で説明つきに済ませており、
-      // ここで要求するとカウントダウン後にダイアログが出て、計測だけが先に進んでしまう。
-      // ※ Expo Go では許可済みでも startLocationUpdatesAsync は失敗する
-      // ※ EASビルド + UIBackgroundModes: ["location"] が必要
-      const { status: bgStatus } = await Location.getBackgroundPermissionsAsync().catch(() => ({ status: 'denied' as const }));
-      if (cancelled) return;
-
-      if (bgStatus === 'granted') {
-        // バックグラウンド追跡を試行。失敗時はフォアグラウンド監視へフォールバックする
-        try {
-          const isRegistered = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => false);
-          if (!isRegistered) {
-            await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
-              accuracy: Location.Accuracy.BestForNavigation,
-              // timeInterval は Android のみ。iOSではCore Locationの更新頻度に依存する。
-              ...(Platform.OS === 'android' ? { timeInterval: GPS_ANDROID_TIME_INTERVAL_MS } : {}),
-              distanceInterval: GPS_DISTANCE_INTERVAL_M,
-              activityType: Location.ActivityType.Fitness,
-              pausesUpdatesAutomatically: false,
-              showsBackgroundLocationIndicator: true,
-              foregroundService: {
-                notificationTitle: translate('run.foregroundServiceTitle'),
-                notificationBody: translate('run.foregroundServiceBody'),
-              },
-            });
-          }
-          if (cancelled) return;
-          useRecordStore.setState({ locationMode: 'background' });
-          startWatchdog();
-        } catch (e) {
-          console.warn('[useLocation] startLocationUpdatesAsync failed, falling back to foreground watch:', e);
-          if (cancelled) return;
-          await startForegroundWatch(true);
+      // 「常に許可」が無くてもバックグラウンド追跡を試す。
+      // expo-location は前景権限だけで startLocationUpdatesAsync を許可する:
+      //   iOS   … UIBackgroundModes: ["location"] があればタスク側が
+      //           allowsBackgroundLocationUpdates を立てる（画面OFF・他アプリ利用中も継続する）
+      //   Android … foregroundService 付きで起動すれば ACCESS_BACKGROUND_LOCATION は不要
+      // 「常に許可」が効くのはアプリ終了後もOSに計測を再開させたい場合だけなので、
+      // ここで権限を見て経路を分けると「使用中のみ」の利用者だけ他アプリ切替で計測が切れてしまう。
+      // ※ Expo Go では startLocationUpdatesAsync が失敗するため、下のフォールバックで前景監視に落ちる
+      try {
+        const isRegistered = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => false);
+        if (!isRegistered) {
+          await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
+            accuracy: Location.Accuracy.BestForNavigation,
+            // timeInterval は Android のみ。iOSではCore Locationの更新頻度に依存する。
+            ...(Platform.OS === 'android' ? { timeInterval: GPS_ANDROID_TIME_INTERVAL_MS } : {}),
+            distanceInterval: GPS_DISTANCE_INTERVAL_M,
+            activityType: Location.ActivityType.Fitness,
+            pausesUpdatesAutomatically: false,
+            showsBackgroundLocationIndicator: true,
+            foregroundService: {
+              notificationTitle: translate('run.foregroundServiceTitle'),
+              notificationBody: translate('run.foregroundServiceBody'),
+            },
+          });
         }
-      } else {
-        // bg権限なし: フォアグラウンド監視のみ
-        await startForegroundWatch(false);
+        if (cancelled) return;
+        useRecordStore.setState({ locationMode: 'background' });
+        startWatchdog();
+      } catch (e) {
+        console.warn('[useLocation] startLocationUpdatesAsync failed, falling back to foreground watch:', e);
+        if (cancelled) return;
+        await startForegroundWatch(true);
       }
     };
-
     start();
 
     return () => {

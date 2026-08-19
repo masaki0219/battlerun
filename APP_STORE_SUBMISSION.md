@@ -10,8 +10,9 @@ App Store Connectへ転記するための下書き。提出直前に、実際の
 - Marketing URL: https://masaki0219.github.io/
 - Privacy Policy URL: https://masaki0219.github.io/app-support/zelio/privacy.html
 - Terms of Service URL: https://masaki0219.github.io/app-support/zelio/terms.html
+- 特定商取引法に基づく表記: https://masaki0219.github.io/app-support/zelio/tokusho.html
 
-GitHub Pagesのデプロイ後、ログアウト状態のSafariで4URLが表示できることを確認する。
+GitHub Pagesのデプロイ後、ログアウト状態のSafariで5URLが表示できることを確認する。
 
 ## App Privacy 回答案
 
@@ -90,7 +91,7 @@ Terms of Service: https://masaki0219.github.io/app-support/zelio/terms.html
 - [x] 初回リリース対象をiOSのみに確定（2026-08-12ユーザー決定）。Androidは今回の提出・実機ゲート対象外
 - [ ] 現行差分からXcode 26 / iOS 26 SDKを使うArchiveを作成し、App Store Connectへアップロード（2026-04-28以降の必須要件）
 - [ ] App Store Connectの更新後の年齢レーティング質問へ回答し、現行UGC・位置情報・課金機能と一致させる
-- [ ] Support / Privacy / Termsの公開URLがログアウト状態で200を返す
+- [ ] Support / Privacy / Terms / 特商法表記の公開URLがログアウト状態で200を返す
 - [ ] デモアカウントでログインでき、公式チャレンジと相手区分が表示される
 - [x] monthly商品だけが審査対象ビルドに表示され、購入・復元できる（2026-08-12ユーザー確認済み）
 - [ ] yearly商品は将来用として保持する場合も、App Store Connectで審査提出・販売対象にせず、RevenueCatのCurrent Offeringから外す

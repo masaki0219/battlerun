@@ -3,6 +3,7 @@ export const LEGAL_URLS = {
   marketing: 'https://masaki0219.github.io/',
   termsOfService: 'https://masaki0219.github.io/app-support/zelio/terms.html',
   privacyPolicy: 'https://masaki0219.github.io/app-support/zelio/privacy.html',
+  tokusho: 'https://masaki0219.github.io/app-support/zelio/tokusho.html',
   support: 'https://masaki0219.github.io/app-support/zelio/',
 };
 

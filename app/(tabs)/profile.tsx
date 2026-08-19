@@ -628,6 +628,10 @@ export default function ProfileScreen() {
           <TouchableOpacity style={styles.legalButton} onPress={() => router.push('/legal/privacy' as any)}>
             <Text style={styles.legalLink}>{t('common.privacy')}</Text><Ionicons name="open-outline" size={11} color={Colors.textSecondary} />
           </TouchableOpacity>
+          <Text style={styles.legalSeparator}>|</Text>
+          <TouchableOpacity style={styles.legalButton} onPress={() => router.push('/legal/tokusho' as any)}>
+            <Text style={styles.legalLink}>{t('common.tokusho')}</Text><Ionicons name="open-outline" size={11} color={Colors.textSecondary} />
+          </TouchableOpacity>
         </View>
 
         {/* 管理者リンク */}
@@ -910,7 +914,7 @@ const styles = StyleSheet.create({
   freeDescDark: { fontSize: Typography.fontSize.sm, color: DarkColors.textSecondary, lineHeight: 20, marginTop: Spacing.sm },
   priceTextDark: { fontSize: Typography.fontSize.sm, color: DarkColors.textPrimary, fontWeight: Typography.fontWeight.semibold, marginTop: Spacing.sm },
   subscriptionDisclaimerDark: { fontSize: 10, color: DarkColors.textTertiary, lineHeight: 15, marginTop: Spacing.sm },
-  legalRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: Spacing.xs },
+  legalRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', paddingVertical: Spacing.xs },
   legalButton: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   legalLink: { fontSize: Typography.fontSize.xs, color: Colors.textSecondary },
   legalSeparator: { fontSize: Typography.fontSize.xs, color: Colors.textTertiary, marginHorizontal: Spacing.xs },

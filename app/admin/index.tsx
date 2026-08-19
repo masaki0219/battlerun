@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   ScrollView, ActivityIndicator, Alert, Modal, TextInput,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -317,61 +318,74 @@ export default function AdminIndexScreen() {
       </ScrollView>
 
       <Modal visible={endingBattle !== null} transparent animationType="slide" onRequestClose={closeEndConfirmation}>
-        <View style={styles.modalBackdrop}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalBackdrop}
+        >
           <View style={styles.modalSheet}>
             <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>{t('admin.finishTitle')}</Text>
-            <Text style={styles.modalWarning}>
-              {t('admin.finishWarning')}
-            </Text>
-
-            <Text style={styles.previewTitle}>{t('admin.currentRank')}</Text>
-            {endingStatsLoading ? (
-              <ActivityIndicator color={Colors.primary} style={styles.previewLoading} />
-            ) : endingStats.length === 0 ? (
-              <Text style={styles.previewEmpty}>{t('admin.noRankData')}</Text>
-            ) : endingStats.map((stats, index) => {
-              const value = endingBattle?.rankingType === 'total'
-                ? stats.totalDistanceKm
-                : stats.avgDistanceKm;
-              return (
-                <View key={stats.categoryId} style={styles.previewRow}>
-                  <Text style={styles.previewRank}>{t('common.rank', { rank: index + 1 })}</Text>
-                  <Text style={styles.previewLabel} numberOfLines={1}>{stats.label}</Text>
-                  <Text style={styles.previewValue}>{value.toFixed(2)}km</Text>
-                </View>
-              );
-            })}
-
-            <Text style={styles.inputLabel}>{t('admin.confirmName')}</Text>
-            <Text style={styles.confirmTitle}>{endingBattle?.title}</Text>
-            <TextInput
-              value={endingTitle}
-              onChangeText={setEndingTitle}
-              placeholder={t('admin.exactName')}
-              placeholderTextColor={Colors.textTertiary}
-              style={styles.confirmInput}
-              autoCapitalize="none"
-              autoCorrect={false}
-              editable={!updatingId}
-            />
-            <TouchableOpacity
-              style={[
-                styles.finishBtn,
-                endingTitle !== endingBattle?.title && styles.finishBtnDisabled,
-              ]}
-              onPress={handleFinishNow}
-              disabled={endingTitle !== endingBattle?.title || updatingId !== null}
+            {/* 順位プレビューだけをスクロール領域にし、入力対象名と入力欄は常に見える位置へ固定する */}
+            <ScrollView
+              style={styles.modalScroll}
+              contentContainerStyle={styles.modalScrollContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
             >
-              {updatingId
-                ? <ActivityIndicator color={Colors.textOnPrimary} />
-                : <Text style={styles.finishBtnText}>{t('admin.confirmFinish')}</Text>}
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.cancelBtn} onPress={closeEndConfirmation} disabled={updatingId !== null}>
-              <Text style={styles.cancelBtnText}>{t('common.cancel')}</Text>
-            </TouchableOpacity>
+              <Text style={styles.modalTitle}>{t('admin.finishTitle')}</Text>
+              <Text style={styles.modalWarning}>
+                {t('admin.finishWarning')}
+              </Text>
+
+              <Text style={styles.previewTitle}>{t('admin.currentRank')}</Text>
+              {endingStatsLoading ? (
+                <ActivityIndicator color={Colors.primary} style={styles.previewLoading} />
+              ) : endingStats.length === 0 ? (
+                <Text style={styles.previewEmpty}>{t('admin.noRankData')}</Text>
+              ) : endingStats.map((stats, index) => {
+                const value = endingBattle?.rankingType === 'total'
+                  ? stats.totalDistanceKm
+                  : stats.avgDistanceKm;
+                return (
+                  <View key={stats.categoryId} style={styles.previewRow}>
+                    <Text style={styles.previewRank}>{t('common.rank', { rank: index + 1 })}</Text>
+                    <Text style={styles.previewLabel} numberOfLines={1}>{stats.label}</Text>
+                    <Text style={styles.previewValue}>{value.toFixed(2)}km</Text>
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <Text style={styles.inputLabel}>{t('admin.confirmName')}</Text>
+              <Text style={styles.confirmTitle} selectable>{endingBattle?.title}</Text>
+              <TextInput
+                value={endingTitle}
+                onChangeText={setEndingTitle}
+                placeholder={t('admin.exactName')}
+                placeholderTextColor={Colors.textTertiary}
+                style={styles.confirmInput}
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!updatingId}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.finishBtn,
+                  endingTitle !== endingBattle?.title && styles.finishBtnDisabled,
+                ]}
+                onPress={handleFinishNow}
+                disabled={endingTitle !== endingBattle?.title || updatingId !== null}
+              >
+                {updatingId
+                  ? <ActivityIndicator color={Colors.textOnPrimary} />
+                  : <Text style={styles.finishBtnText}>{t('admin.confirmFinish')}</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.cancelBtn} onPress={closeEndConfirmation} disabled={updatingId !== null}>
+                <Text style={styles.cancelBtnText}>{t('common.cancel')}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -419,7 +433,10 @@ const styles = StyleSheet.create({
   resultBtn: { borderRadius: BorderRadius.sm, paddingVertical: Spacing.sm, alignItems: 'center', marginTop: Spacing.xs, backgroundColor: Colors.surfaceGray },
   resultBtnText: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.semibold, color: Colors.primary },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: DarkColors.modalBackdrop },
-  modalSheet: { maxHeight: '92%', padding: Spacing.lg, paddingBottom: Spacing.xl, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl, backgroundColor: Colors.surface },
+  modalSheet: { flexShrink: 1, maxHeight: '92%', padding: Spacing.lg, paddingBottom: Spacing.xl, borderTopLeftRadius: BorderRadius.xl, borderTopRightRadius: BorderRadius.xl, backgroundColor: Colors.surface },
+  modalScroll: { flexShrink: 1 },
+  modalScrollContent: { paddingBottom: Spacing.sm },
+  modalFooter: { paddingTop: Spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border },
   modalHandle: { width: 40, height: 4, alignSelf: 'center', marginBottom: Spacing.lg, borderRadius: BorderRadius.full, backgroundColor: Colors.border },
   modalTitle: { fontSize: Typography.fontSize.xl, fontWeight: Typography.fontWeight.bold, color: Colors.textPrimary },
   modalWarning: { marginTop: Spacing.sm, padding: Spacing.md, borderRadius: BorderRadius.md, backgroundColor: Colors.accentLight, fontSize: Typography.fontSize.sm, lineHeight: 21, color: Colors.error },
@@ -430,8 +447,8 @@ const styles = StyleSheet.create({
   previewRank: { width: 36, fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.bold, color: Colors.textSecondary },
   previewLabel: { flex: 1, fontSize: Typography.fontSize.sm, color: Colors.textPrimary },
   previewValue: { fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.semibold, color: Colors.primary },
-  inputLabel: { marginTop: Spacing.lg, fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.semibold, color: Colors.textPrimary },
-  confirmTitle: { marginTop: Spacing.xs, fontSize: Typography.fontSize.sm, color: Colors.error },
+  inputLabel: { marginTop: Spacing.sm, fontSize: Typography.fontSize.sm, fontWeight: Typography.fontWeight.semibold, color: Colors.textPrimary },
+  confirmTitle: { marginTop: Spacing.xs, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: BorderRadius.md, backgroundColor: Colors.surfaceGray, fontSize: Typography.fontSize.md, fontWeight: Typography.fontWeight.bold, color: Colors.error },
   confirmInput: { minHeight: 48, marginTop: Spacing.sm, paddingHorizontal: Spacing.md, borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.md, fontSize: Typography.fontSize.md, color: Colors.textPrimary, backgroundColor: Colors.background },
   finishBtn: { minHeight: 56, marginTop: Spacing.md, alignItems: 'center', justifyContent: 'center', borderRadius: BorderRadius.md, backgroundColor: Colors.error },
   finishBtnDisabled: { opacity: 0.4 },

@@ -1,6 +1,6 @@
 # HANDOFF
 
-最終更新: 2026-08-12
+最終更新: 2026-08-19
 
 ## プロジェクトの目的
 
@@ -29,6 +29,40 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 ※ 同フォルダの `BattleRunホーム画面作成 (コピー).zip` は旧版。パレット（`theme.css`）は同一だが、ヒーローが2陣営のVSゲージで、チーム内ランキングが無い。**最終版はこちら（コピーでない方）**。
 
 ## 最後に完了したこと
+
+### 2026-08-19 管理画面「今すぐ終了」シートで入力すべきチャレンジ名が見えなくなる問題を修正
+
+- 管理画面のパブリックチャレンジを終了するボトムシート（`app/admin/index.tsx`）は、シート全体が非スクロールの`View`（`maxHeight: 92%`）だった。チーム数が多いと順位プレビューでシートが上限に達し、下側にある「確認のためチャレンジ名を入力」ラベル・入力すべきタイトル・入力欄・確定/キャンセルボタンが画面外へ押し出され、スクロールもできなかった。加えてキーボード回避が無く、入力欄をタップするとキーボードがタイトル表示と入力欄を覆っていた。
+- 修正: シートを`KeyboardAvoidingView`（iOSは`padding`、AndroidはadjustResizeに任せる。他画面と同じ書き方）で包み、タイトル・警告・順位プレビューだけを`ScrollView`（`keyboardShouldPersistTaps="handled"`）に入れ、確認名・入力欄・ボタンは固定フッターとして常に表示されるようにした。入力対象のタイトルは淡グレー背景のボックス＋太字（`Colors.surfaceGray` / `Colors.error`）にし、`selectable`でコピーできるようにした。
+- 変更: `app/admin/index.tsx` のみ。`npx tsc --noEmit` と `npm test`（unit）は成功。commit・デプロイは未実施。
+- **未検証**: 実機／シミュレータでの表示確認（特にキーボード表示中のフッター位置と、順位が多い場合のスクロール）。
+
+### 2026-08-19 「使用中のみ」でもバックグラウンド計測できるよう修正
+
+- 従来は`getBackgroundPermissionsAsync()`が`granted`のときだけ`startLocationUpdatesAsync`を呼び、「常に許可」が無い利用者は`watchPositionAsync`のみになっていた。この経路はexpo-locationが`allowsBackgroundLocationUpdates = false`を明示設定するため（`ios/Providers/BaseLocationProvider.swift`）、他アプリへ切り替えると計測が止まる。音楽アプリを聞きながら走る通常の使い方が「常に許可」必須になっていた。
+- expo-locationは**前景権限だけで`startLocationUpdatesAsync`を許可する**（iOS `LocationModule.swift:165-172`はforeground権限のみ検査、Android `LocationModule.kt:246-257`は`foregroundService`指定時にACCESS_BACKGROUND_LOCATION不要と明記）。`UIBackgroundModes: ["location"]`と`foregroundService`は設定済みだったため、`hooks/useLocation.ts`のbg権限分岐を外し、前景権限があれば常にバックグラウンド追跡を試して失敗時のみ前景監視へフォールバックする形へ変更した。
+- 「常に許可」が効くのは**アプリ終了後もOSに計測を再開させる場合だけ**になったため、START前の二択カード（「画面を開いたまま」／「常に許可を設定」）と選択必須ガードを廃止した。カードは状態表示＋任意の「常に許可を設定」導線のみとし、GPS精度が整えばSTARTできる。
+- 文言を実態へ更新: `backgroundUnset`「画面OFF・他のアプリ利用中も記録できます」、`foregroundHint`「アプリを終了しても記録を続けたい場合は…」、`backgroundAllowed`「アプリを終了しても記録が続きます」、`backgroundReady`（記録中バナー）「画面OFF・他のアプリ利用中も記録中」。未使用になった`foregroundRecording` / `chooseRecordingMode` / `foregroundA11y` / `foregroundButton` / `chooseBackground`はja/enとも削除。
+- 変更: `hooks/useLocation.ts`、`app/(tabs)/record.tsx`、`lib/translations/ja.ts` / `en.ts`。`npm run typecheck`、`npm run test:unit`、`npm run test:localization`は成功。commit・デプロイは未実施。
+- **未検証**: 実機EASビルドでの動作確認。特にiOSで「使用中のみ」のままバックグラウンド計測を継続したときの持続時間とOSの挙動（青いインジケータ常時表示になる）、Androidでのフォアグラウンドサービス通知表示。Expo Goでは`startLocationUpdatesAsync`が失敗するため前景監視へ落ちる（従来どおり）。
+- 別件で未対応: `app/(tabs)/record.tsx`のGPSウォームアップは`useIsFocused`/`AppState`で止めていないため、記録タブを開いた後は他タブへ移動してもBestForNavigationの`watchPositionAsync`が生き続ける。バッテリー消費の要因になりうる。
+
+### 2026-08-19 特定商取引法に基づく表記の追加
+
+- 特商法表記がアプリ内・公開ページのどちらにも存在しなかったため新規追加した。ZELIO Proの販売に関する表記として、対象サービス・販売事業者・所在地/電話番号・お問い合わせ・販売価格・商品代金以外の必要料金・支払方法/時期・提供時期・自動更新と解約・返品/返金・動作環境の11項目を掲載する。
+- **事業者名・所在地・電話番号は掲載せず、「請求があった場合に遅滞なく開示する」旨とサポート窓口URLを記載する方針**（2026-08-19ユーザー決定）。開示請求を受けたら遅滞なく回答できる体制を維持すること。窓口は `SUPPORT_CONTACT_URL`（GitHub Issues）。
+- 追加/変更: `app/legal/tokusho.tsx`（新規、`LegalDocument`利用）、`lib/translations/ja.ts` / `en.ts` に `tokusho` ブロックと `common.tokusho`、`app/_layout.tsx` に `legal/tokusho` の Stack.Screen、`app/(tabs)/profile.tsx` のlegalRowへ導線追加（3リンクになるため `flexWrap: 'wrap'` を付与）、`public/legal/tokusho.html`（新規）、`public/support.html` の関連ページ、`lib/legal.ts` に `LEGAL_URLS.tokusho`。
+- 価格は数値を書かず購入画面/App Store表示に委ね、動作環境もApp Store製品ページの記載に委ねている。金額や対応OSを直接書き足す場合は実値と乖離しないよう注意すること。
+- `npx tsc --noEmit`、`npm run test:unit`、`npm run test:localization` は全て成功。デプロイ・commitは未実施。
+- 2026-08-19、`public/` を Firebase Hosting（`zelio-run`）へデプロイ済み。`https://zelio-run.web.app/legal/tokusho.html` は200を返し、`support.html` から特商法表記へのリンクも公開反映済み。
+- **未実施の残作業**: App Store Connectへ登録するURLの正本は `masaki0219/app-support` リポジトリ（GitHub Pages）であり、こちらへの `tokusho.html` 配置は未実施（別リポジトリのため本リポジトリからは反映できない）。既存4URLと同じ場所へ配置すること。
+
+### 2026-08-12 App Store公開用スクリーンショットの整備
+
+- `assets/screenshots/`へ追加された4枚を目視確認し、見出し・説明・端末モック・注釈・下部コピーに文字切れや明確な誤字、個人情報、通知表示、レイアウト崩れがないことを確認した。内容を生成的に描き変えず、掲載画像の忠実性を維持した。
+- 元画像852×1846pxを縦横比を歪めない中央トリミングで1320×2868pxへ拡大した。Apple公式の6.9インチ向け有効サイズに一致する。
+- 3枚に見た目上は不透明なアルファチャンネルが残っていたため、4枚すべてを不透明RGB PNGへ統一した。Apple公式仕様の「アルファチャンネル／透明度不可」に対応済み。
+- PillowのPNG検証、`sips`の寸法・形式・アルファ確認、4枚の再目視を実施し、全件1320×2868px・PNG・alphaなしで成功した。アプリコード変更、テスト、ビルド、デプロイはない。
 
 ### 2026-08-12 iOSリリース用の整理とXcode Releaseビルド
 
@@ -638,9 +672,10 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 
 ## 次にやること
 
-1. **Xcodeで`ios/Zelio.xcworkspace`を開き、実機署名したArchive／TestFlightビルドで`RELEASE_TEST_CHECKLIST.md`の最小ゲート（GPS/画面ロック、歩数一時停止、Apple・Google認証、A→logout→BのPush、2アカウントUGC、日英・AX5・VoiceOver）を通す。**
+1. **`assets/screenshots/`の4枚をApp Store Connectの6.9インチ用スクリーンショットへアップロードし、並び順と製品ページの縮小プレビューで文字の可読性・端の切れがないことを最終確認する。**
 
 ## その次の候補
+- 管理画面の「今すぐ終了」シートを、順位プレビューが多いチャレンジでシミュレータ表示し、キーボード表示中も入力対象のチャレンジ名と入力欄が見えることを目視確認する
 - `lib/socialAuth.ts` の純粋ロジック（エラーコード分岐、idToken欠落時throw、pending linkの10分失効）を`tests/`へ載せられる形へ切り出し、ユニットテストを追加する
 - 現行差分とApple／Googleログインを含むTestFlightビルドを作成し、`RELEASE_TEST_CHECKLIST.md`を2台の物理端末で全項目通して、GPS実走（バックグラウンド／画面ロック／オフライン復帰）、Push実配送、AX5全画面を確認する（RevenueCat購入／復元はユーザー確認により完了済み）
 - 同一端末・同一コースでGPS v3を最低5回実走し、既知距離の中央値誤差±2%以内・単発±5%以内・10分静止20m未満と、90度/Uターンを削りすぎないことを確認する
