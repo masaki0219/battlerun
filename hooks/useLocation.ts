@@ -177,7 +177,12 @@ export function useLocation({ enabled }: { enabled: boolean }) {
             },
           });
         }
-        if (cancelled) return;
+        if (cancelled) {
+          // 起動処理中に記録が停止された場合、cleanupが登録前に走っていても
+          // 高精度バックグラウンドタスクを残さない。
+          await stopBackgroundTask();
+          return;
+        }
         useRecordStore.setState({ locationMode: 'background' });
         startWatchdog();
       } catch (e) {

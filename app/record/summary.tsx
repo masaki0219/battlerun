@@ -15,6 +15,7 @@ import { Colors, DarkColors, BorderRadius, TextStyles, Animation } from '../../d
 import { MonoLabel } from '../../components/ui/MonoLabel';
 import { KmSplitsCard } from '../../components/run/KmSplitsCard';
 import { RunShareCard } from '../../components/run/RunShareCard';
+import { RunShareStylePicker } from '../../components/run/RunShareStylePicker';
 import { estimatedCalories, formatRunDistanceKm, type KmSplit } from '../../utils/displayStats';
 import { buildRouteVisualization } from '../../utils/routeSplits';
 import { buildRunShareMessage, formatShareDuration } from '../../utils/runShare';
@@ -143,9 +144,9 @@ export default function RecordingSummaryScreen() {
   const rankAnim = useRef(new Animated.Value(1)).current;
   const celebrationKeysRef = useRef(new Set<string>());
   const {
-    includeRouteInShare,
+    shareStyle,
     preferenceLoaded: sharePreferenceLoaded,
-    setIncludeRouteInShare,
+    setShareStyle,
   } = useRunSharePreference(user?.id);
   const shareCardRef = useRef<View>(null);
 
@@ -340,8 +341,8 @@ export default function RecordingSummaryScreen() {
     const message = buildRunShareMessage({
       distanceKm,
       durationSeconds,
-      pace,
-      impactLabel,
+      pace: shareStyle === 'stats' ? null : pace,
+      impactLabel: shareStyle === 'stats' ? null : impactLabel,
       language,
     });
     setSharing(true);
@@ -546,33 +547,17 @@ export default function RecordingSummaryScreen() {
                 ? t('summary.teamRankChanged', { title: primaryImpact.battleTitle, before: primaryImpact.rankBefore, after: primaryImpact.rankAfter })
                 : t('summary.teamRankKept', { title: primaryImpact.battleTitle, rank: t('common.rank', { rank: primaryImpact.rankAfter }) })
               : null}
-            mapRegion={includeRouteInShare ? mapRegion : null}
+            mapRegion={mapRegion}
             routeVisualization={routeVisualization}
+            shareStyle={shareStyle}
             showWatermark={!userIsPro}
           />
           {!!mapRegion && (
-            <TouchableOpacity
-              style={s.routeShareToggle}
-              onPress={() => setIncludeRouteInShare((current) => !current)}
+            <RunShareStylePicker
+              value={shareStyle}
               disabled={!sharePreferenceLoaded}
-              activeOpacity={0.75}
-              accessibilityRole="switch"
-              accessibilityState={{ checked: includeRouteInShare, disabled: !sharePreferenceLoaded }}
-              accessibilityLabel={t('summary.routeShareA11y')}
-            >
-              <Ionicons
-                name={includeRouteInShare ? 'map' : 'map-outline'}
-                size={16}
-                color={includeRouteInShare ? Colors.primaryDark : Colors.textSecondary}
-              />
-              <View style={{ flex: 1 }}>
-                <Text style={s.routeShareToggleTitle}>
-                  {includeRouteInShare ? t('summary.routeShown') : t('summary.routeHidden')}
-                </Text>
-                <Text style={s.routeShareToggleHint}>{t('summary.routePrivacy')}</Text>
-              </View>
-              <Ionicons name="swap-horizontal" size={16} color={Colors.textTertiary} />
-            </TouchableOpacity>
+              onChange={setShareStyle}
+            />
           )}
           <TouchableOpacity
             style={[s.shareBtn, (sharing || !sharePreferenceLoaded) && s.shareBtnDisabled]}
@@ -732,13 +717,6 @@ const s = StyleSheet.create({
   badgeNew: { fontSize: 11, color: Colors.goldText, fontWeight: '800' },
 
   // Share
-  routeShareToggle: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    marginTop: 10, padding: 11, borderRadius: BorderRadius.md,
-    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
-  },
-  routeShareToggleTitle: { fontSize: 12, fontWeight: '800', color: Colors.textPrimary },
-  routeShareToggleHint: { marginTop: 2, fontSize: 9, lineHeight: 13, color: Colors.textSecondary },
   shareBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     backgroundColor: DarkColors.background, borderRadius: BorderRadius.md, paddingVertical: 14, marginTop: 12,

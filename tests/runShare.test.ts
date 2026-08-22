@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { buildRunShareMessage, formatShareDuration, ZELIO_DISCOVERY_URL } from '../utils/runShare';
 import {
-  DEFAULT_INCLUDE_ROUTE_IN_SHARE,
+  DEFAULT_RUN_SHARE_STYLE,
   parseRunSharePreference,
   runSharePreferenceKey,
   serializeRunSharePreference,
@@ -11,13 +11,16 @@ assert.equal(formatShareDuration(0), '00:00');
 assert.equal(formatShareDuration(65), '01:05');
 assert.equal(formatShareDuration(3665), '1:01:05');
 assert.equal(formatShareDuration(Number.NaN), '00:00');
-assert.equal(DEFAULT_INCLUDE_ROUTE_IN_SHARE, false);
-assert.equal(parseRunSharePreference(null), false);
-assert.equal(parseRunSharePreference('0'), false);
-assert.equal(parseRunSharePreference('1'), true);
-assert.equal(serializeRunSharePreference(false), '0');
+assert.equal(DEFAULT_RUN_SHARE_STYLE, 'stats');
+assert.equal(parseRunSharePreference(null), 'stats');
+assert.equal(parseRunSharePreference('0'), 'stats');
+assert.equal(parseRunSharePreference('1'), 'map');
+assert.equal(parseRunSharePreference('map'), 'map');
+assert.equal(parseRunSharePreference('route'), 'route');
+assert.equal(parseRunSharePreference('stats'), 'stats');
+assert.equal(serializeRunSharePreference('route'), 'route');
 assert.equal(runSharePreferenceKey('alice'), '@zelio_run_share_include_route:alice');
-assert.equal(ZELIO_DISCOVERY_URL, 'https://masaki0219.github.io/app-support/zelio/');
+assert.equal(ZELIO_DISCOVERY_URL, 'https://apps.apple.com/jp/app/zelio/id6792252669');
 
 {
   const message = buildRunShareMessage({

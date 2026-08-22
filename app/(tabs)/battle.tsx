@@ -652,7 +652,7 @@ export default function BattleScreen() {
 
   // ── JSX ────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <View style={styles.headerCopy}>
           <Text style={styles.headerEyebrow}>ZELIO</Text>

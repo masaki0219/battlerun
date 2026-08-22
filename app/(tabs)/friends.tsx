@@ -345,7 +345,7 @@ export default function FriendsScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.headerEyebrow}>ZELIO</Text>
         <Text style={styles.headerTitle}>{t('friends.title')}</Text>

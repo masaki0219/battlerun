@@ -520,7 +520,7 @@ export const ja = {
     closeA11y: '閉じる', time: '時間', pace: 'ペース', steps: '歩数', calories: '推定 %{calories} kcal（体重60kg換算）', declarationAchieved: '宣言達成！', declarationAchievedBody: '自分で決めたランを完了しました',
     personalBest: '自己ベスト更新！ 🎉', personalBestBody: '今日のランで新しい記録が生まれました', kmLaps: '1kmラップ', fastest: '最速', battleImpact: 'チャレンジへの反映', calculating: '集計中です', checkLater: 'あとで活動詳細から確認できます',
     before: '変更前', after: '変更後', rankUp: '+%{count} 位', rankDown: '%{count} 位↓', rankKept: '%{rank}位をキープ', yourRunMovedTeam: 'あなたのランでチームは ', otherImpacts: 'ほか%{count}件のチャレンジにも反映されました', teamAddition: 'チーム加算', stepDailyCap: '歩数モード日次上限',
-    routeShareA11y: '共有画像にGPSルートを表示', routeShown: '共有画像にルートを表示中', routeHidden: '共有画像のルートは非表示', routePrivacy: '自宅付近などが映っていないか、プレビューを確認してください', shareA11y: '今日のラン結果をSNSに共有', preparingShare: '共有画像を準備中…', shareSocial: 'SNSにシェア', viewChallenge: 'チャレンジ詳細を見る', savedToRecent: '最近の記録に表示されました',
+    routeShareA11y: '共有画像にGPSルートを表示', routeShown: '共有画像にルートを表示中', routeHidden: '共有画像のルートは非表示', shareStyleTitle: '共有する内容', shareStyleMap: '地図付き', shareStyleRoute: 'ルートのみ', shareStyleStats: '距離・時間のみ', routePrivacy: '自宅付近などが映っていないか、プレビューを確認してください', shareA11y: '今日のラン結果をSNSに共有', preparingShare: '共有画像を準備中…', shareSocial: 'SNSにシェア', viewChallenge: 'チャレンジ詳細を見る', savedToRecent: '最近の記録に表示されました',
     previewA11y: '%{distance}キロ、時間%{duration}の共有画像プレビュー', shareTagline: '歩いても走っても、チームが強くなる。', shareToday: '今日', shareRunLine: '%{date}のラン: %{distance}km', shareTime: 'タイム %{duration}', sharePace: '平均ペース %{pace}/km', shareMessageTagline: '仲間と走ると、もっと続く。', separator: ' ・ ',
   },
   battleDetail: {

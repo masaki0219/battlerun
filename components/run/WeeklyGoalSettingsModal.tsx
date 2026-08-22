@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal, Pressable, ActivityIndicator,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ActionColors, Colors, DarkColors, Spacing, BorderRadius, Shadow } from '../../design_tokens';
 import type { WeeklyGoal } from '../../types';
 import { useTranslation } from '../../lib/i18n';
@@ -20,6 +20,7 @@ const DAYS_OPTIONS = [2, 3, 4, 5] as const;
 
 export function WeeklyGoalSettingsModal({ visible, currentGoal, onSave, onClear, onClose }: Props) {
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const [type, setType] = useState<WeeklyGoal['type']>('distance');
   const [value, setValue] = useState(10);
   const [saving, setSaving] = useState(false);
@@ -53,7 +54,7 @@ export function WeeklyGoalSettingsModal({ visible, currentGoal, onSave, onClear,
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.root}>
         <Pressable style={styles.backdrop} onPress={saving ? undefined : onClose} />
-        <SafeAreaView style={styles.sheet} edges={['bottom']}>
+        <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, Spacing.md) }]}>
           <View style={styles.handle} />
           <Text style={styles.title}>{t('goal.weekly')}</Text>
           <Text style={styles.intro}>{t('goal.intro')}</Text>
@@ -118,7 +119,7 @@ export function WeeklyGoalSettingsModal({ visible, currentGoal, onSave, onClear,
               <Text style={styles.clearText}>{t('goal.clear')}</Text>
             </TouchableOpacity>
           )}
-        </SafeAreaView>
+        </View>
       </View>
     </Modal>
   );

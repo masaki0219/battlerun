@@ -1,6 +1,6 @@
 # HANDOFF
 
-最終更新: 2026-08-19
+最終更新: 2026-08-22
 
 ## プロジェクトの目的
 
@@ -30,6 +30,23 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 
 ## 最後に完了したこと
 
+### 2026-08-22 週間目標シートの初回表示だけ下へずれる問題を修正
+
+- `WeeklyGoalSettingsModal`は`Modal`内部に`SafeAreaView edges={['bottom']}`を置いていた。iOSではModal用ネイティブ画面を初回生成した直後だけ下端safe areaの計測が1フレーム遅れ、スライド開始時のシート高が短く算出されるため、シート上端が下へずれて見える。2回目以降は計測値がキャッシュされるため再現しにくい。
+- Modal内でsafe areaを再計測する構成をやめ、親ツリーですでに確定している`useSafeAreaInsets()`の値を読み、通常の`View`へ`paddingBottom: Math.max(insets.bottom, Spacing.md)`として初回描画から適用した。ホームインジケータの余白は維持する。
+- `tests/releaseHardening.test.ts`へ、週間目標Modalが`useSafeAreaInsets`と明示的な下端paddingを使い、Modal内`SafeAreaView`へ戻らないことの回帰検査を追加した。
+- 成功: `npm run typecheck`、全unit、iOS Expo export、`git diff --check`。ログイン済みiOS画面でのアプリ起動後1回目／2回目の目視比較は未実施。
+
+### 2026-08-22 App Store共有URL・共有3形式・iOSタブ余白・GPS電池対策を更新
+
+- ZELIOはApp Storeで公開済み。ラン結果の共有文末URLをサポートページから `https://apps.apple.com/jp/app/zelio/id6792252669` へ変更した。
+- 共有画像を「地図付き」「ルートのみ」「距離・時間のみ」の3択にした。地図付きは地図タイル＋GPS軌跡、ルートのみは地図タイルなし＋GPS軌跡、距離・時間のみは軌跡・ペース・チャレンジ貢献を含めない。距離・時間のみを選んだ場合は共有文面も同じ情報範囲に揃える。選択はユーザー別に端末保存し、旧 `1` / `0` 設定は地図付き／距離・時間のみへ移行する。記録直後と活動詳細の両画面へ反映した。
+- iOS更新後にタブ上へ見える余白は、カスタムタブバーが下端safe areaを処理する一方、チャレンジ／フレンド／プロフィール画面の`SafeAreaView`も下端を確保する二重適用だった。5タブすべて上端のみを画面側のsafe area対象に統一した。
+- バックグラウンドGPSを再監査した。`UIBackgroundModes: ["location"]`、TaskManager、`EXLocationTaskConsumer`の`allowsBackgroundLocationUpdates = YES`、expo-locationのforeground権限検査を確認し、「使用中のみ」の権限でも記録開始後は画面OFF・音楽アプリ等への切替中にバックグラウンド追跡を開始する構成を維持した。「常に許可」はアプリ終了後の再開を望む利用者向けの任意導線で、STARTの必須条件ではない。
+- 電池対策として、開始前の`BestForNavigation`ウォームアップをランタブ表示中かつアプリ前面時だけに限定し、別タブ・他アプリ・画面OFFでは停止する。記録中の画面常時点灯（`expo-keep-awake`）を廃止し、バックグラウンド追跡の起動途中で記録停止された場合にも位置情報タスクが残らないcleanupを追加した。記録中だけは距離精度のため`BestForNavigation`・`Fitness`・自動pause無効を維持する。
+- 成功: `npm run typecheck`、全unit、`npm run test:localization`、iOS Expo export、iOS 26.5 / iPhone 17 Pro Simulator向けDebugネイティブbuild、`git diff --check`。iOS 26.5でアプリ起動までは確認したが、ログイン済みタブ画面と共有3形式の実表示、物理端末での画面ロック／音楽アプリ併用実走は未確認。
+- 主な変更: `utils/runShare.ts` / `runSharePreference.ts`、`hooks/useRunSharePreference.ts` / `useLocation.ts`、`components/run/RunShareCard.tsx` / `RunShareStylePicker.tsx`、`app/record/summary.tsx`、`app/activity/[id].tsx`、`app/(tabs)/_layout.tsx` / `record.tsx` / `battle.tsx` / `friends.tsx` / `profile.tsx`、日英翻訳、共有unit test、`package.json` / lock。
+
 ### 2026-08-19 管理画面「今すぐ終了」シートで入力すべきチャレンジ名が見えなくなる問題を修正
 
 - 管理画面のパブリックチャレンジを終了するボトムシート（`app/admin/index.tsx`）は、シート全体が非スクロールの`View`（`maxHeight: 92%`）だった。チーム数が多いと順位プレビューでシートが上限に達し、下側にある「確認のためチャレンジ名を入力」ラベル・入力すべきタイトル・入力欄・確定/キャンセルボタンが画面外へ押し出され、スクロールもできなかった。加えてキーボード回避が無く、入力欄をタップするとキーボードがタイトル表示と入力欄を覆っていた。
@@ -45,7 +62,7 @@ Expo slug `battlerun` と EAS projectId、内部永続化キー（`@battlerun_*`
 - 文言を実態へ更新: `backgroundUnset`「画面OFF・他のアプリ利用中も記録できます」、`foregroundHint`「アプリを終了しても記録を続けたい場合は…」、`backgroundAllowed`「アプリを終了しても記録が続きます」、`backgroundReady`（記録中バナー）「画面OFF・他のアプリ利用中も記録中」。未使用になった`foregroundRecording` / `chooseRecordingMode` / `foregroundA11y` / `foregroundButton` / `chooseBackground`はja/enとも削除。
 - 変更: `hooks/useLocation.ts`、`app/(tabs)/record.tsx`、`lib/translations/ja.ts` / `en.ts`。`npm run typecheck`、`npm run test:unit`、`npm run test:localization`は成功。commit・デプロイは未実施。
 - **未検証**: 実機EASビルドでの動作確認。特にiOSで「使用中のみ」のままバックグラウンド計測を継続したときの持続時間とOSの挙動（青いインジケータ常時表示になる）、Androidでのフォアグラウンドサービス通知表示。Expo Goでは`startLocationUpdatesAsync`が失敗するため前景監視へ落ちる（従来どおり）。
-- 別件で未対応: `app/(tabs)/record.tsx`のGPSウォームアップは`useIsFocused`/`AppState`で止めていないため、記録タブを開いた後は他タブへ移動してもBestForNavigationの`watchPositionAsync`が生き続ける。バッテリー消費の要因になりうる。
+- ~~別タブ／バックグラウンドでも開始前GPSウォームアップが残る~~ **解決済み（2026-08-22）**: ランタブのfocusとAppStateのactiveを両方満たす場合だけウォームアップする。記録中の画面常時点灯も廃止した。
 
 ### 2026-08-19 特定商取引法に基づく表記の追加
 
@@ -672,9 +689,10 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 
 ## 次にやること
 
-1. **`assets/screenshots/`の4枚をApp Store Connectの6.9インチ用スクリーンショットへアップロードし、並び順と製品ページの縮小プレビューで文字の可読性・端の切れがないことを最終確認する。**
+1. **現行差分をログイン済みiPhoneまたはiOS Simulatorでアプリ終了→再起動し、記録タブの週間目標を1回目／2回目と開いて、シート上端・保存ボタン・ホームインジケータ余白が同じ位置であることを確認する。**
 
 ## その次の候補
+- 現行差分のEAS development / TestFlight buildを物理iPhoneへ入れ、「使用中のみ」の位置情報で2km以上記録しながら画面ロックと音楽アプリ切替を行い、距離継続・終了後のGPS停止・電池消費を確認する。同じ記録で共有3形式のプレビューとApp Store URLも確認する
 - 管理画面の「今すぐ終了」シートを、順位プレビューが多いチャレンジでシミュレータ表示し、キーボード表示中も入力対象のチャレンジ名と入力欄が見えることを目視確認する
 - `lib/socialAuth.ts` の純粋ロジック（エラーコード分岐、idToken欠落時throw、pending linkの10分失効）を`tests/`へ載せられる形へ切り出し、ユニットテストを追加する
 - 現行差分とApple／Googleログインを含むTestFlightビルドを作成し、`RELEASE_TEST_CHECKLIST.md`を2台の物理端末で全項目通して、GPS実走（バックグラウンド／画面ロック／オフライン復帰）、Push実配送、AX5全画面を確認する（RevenueCat購入／復元はユーザー確認により完了済み）
@@ -693,6 +711,8 @@ v2 レポート（Rev.2）の指摘のうち、仕様判断が不要な11件を�
 - 機能ギャップ Phase 3 の T-20「インターバルワークアウト」を実装する
 
 ## 未解決・要確認
+
+- **2026-08-22 GPS・共有・タブ修正の物理端末確認が必要**: コード、expo-locationネイティブ実装、iOS 26.5 Simulator buildは確認済みだが、「使用中のみ」のまま画面ロック／音楽アプリ切替中の2km以上実走、終了後に位置情報インジケータが消えること、30分程度の電池消費、共有3形式（特に`mapType="none"`のルートのみ）、タブ上余白の実機表示は未確認。Expo GoではバックグラウンドGPS確認にならないためEAS development / TestFlight buildを使う。
 
 - **iOSリリース最小ゲート（2026-08-12、Codex最終判定）**: R3-1と課金購入・復元は完了。残る出荷条件は、(1)現行差分の新しい署名済みbuild、(2)屋外2km以上のGPS実走（画面OFF・バックグラウンド、既知距離との誤差記録）、(3)歩数モードの一時停止→再開、(4)Apple／Googleサインイン・provider link・再認証退会、(5)Push実配送とA→ログアウト→Bのアカウント切替、(6)2アカウントで参加上限文言・通報・ブロック、(7)日英・AX5・VoiceOver、(8)App Store ConnectのPrivacy/年齢レーティング/審査連絡先・デモアカウント/Apple Private Email Relay/公開URL、(9)JP/US以外へ配信する場合のGLOBAL公開Battle。本項と`RELEASE_TEST_CHECKLIST.md`を正とする。
 - ~~歩数モードの停止中callback防御~~ **解決済み（2026-08-12）**: 呼び出し元は元から停止時に購読解除していたため長時間継続加算の再現説明は誇張だったが、Storeの最新`isRecording`/`isPaused`も検証して遅延callbackを拒否する二重防御を追加した。停止中の歩数を再開後へ持ち越さない順序とunit testも確認済み。

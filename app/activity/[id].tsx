@@ -16,6 +16,7 @@ import { Colors, DarkColors, RoutePaceColors, BorderRadius, TextStyles } from '.
 import { MonoLabel } from '../../components/ui/MonoLabel';
 import { KmSplitsCard } from '../../components/run/KmSplitsCard';
 import { RunShareCard } from '../../components/run/RunShareCard';
+import { RunShareStylePicker } from '../../components/run/RunShareStylePicker';
 import { SafetyActionsModal } from '../../components/moderation/SafetyActionsModal';
 import { useBlockedUsers } from '../../hooks/useBlockedUsers';
 import { estimatedCalories, formatRunDistanceKm, kmSplits } from '../../utils/displayStats';
@@ -101,9 +102,9 @@ export default function ActivityDetailScreen() {
   const [deleting, setDeleting] = useState(false);
   const [sharing, setSharing] = useState(false);
   const {
-    includeRouteInShare,
+    shareStyle,
     preferenceLoaded: sharePreferenceLoaded,
-    setIncludeRouteInShare,
+    setShareStyle,
   } = useRunSharePreference(user?.id);
   const [showSafety, setShowSafety] = useState(false);
   const shareCardRef = useRef<View>(null);
@@ -274,9 +275,9 @@ export default function ActivityDetailScreen() {
     const message = buildRunShareMessage({
       distanceKm: activity.distanceKm,
       durationSeconds: activity.durationSeconds,
-      pace,
+      pace: shareStyle === 'stats' ? null : pace,
       dateLabel,
-      impactLabel,
+      impactLabel: shareStyle === 'stats' ? null : impactLabel,
       language,
     });
 
@@ -568,33 +569,17 @@ export default function ActivityDetailScreen() {
               paceLabel={sharePace?.includes('--') ? null : sharePace}
               dateLabel={shareDateStr}
               impactLabel={shareImpactLabel}
-              mapRegion={includeRouteInShare ? mapRegion : null}
+              mapRegion={mapRegion}
               routeVisualization={routeVisualization}
+              shareStyle={shareStyle}
               showWatermark={!userIsPro}
             />
             {!!mapRegion && (
-              <TouchableOpacity
-                style={s.routeShareToggle}
-                onPress={() => setIncludeRouteInShare((current) => !current)}
+              <RunShareStylePicker
+                value={shareStyle}
                 disabled={!sharePreferenceLoaded}
-                activeOpacity={0.75}
-                accessibilityRole="switch"
-                accessibilityState={{ checked: includeRouteInShare, disabled: !sharePreferenceLoaded }}
-                accessibilityLabel={t('summary.routeShareA11y')}
-              >
-                <Ionicons
-                  name={includeRouteInShare ? 'map' : 'map-outline'}
-                  size={16}
-                  color={includeRouteInShare ? Colors.primaryDark : Colors.textSecondary}
-                />
-                <View style={{ flex: 1 }}>
-                  <Text style={s.routeShareToggleTitle}>
-                    {includeRouteInShare ? t('summary.routeShown') : t('summary.routeHidden')}
-                  </Text>
-                  <Text style={s.routeShareToggleHint}>{t('summary.routePrivacy')}</Text>
-                </View>
-                <Ionicons name="swap-horizontal" size={16} color={Colors.textTertiary} />
-              </TouchableOpacity>
+                onChange={setShareStyle}
+              />
             )}
             <TouchableOpacity
               style={[s.shareBtn, (sharing || !sharePreferenceLoaded) && s.shareBtnDisabled]}
@@ -738,13 +723,6 @@ const s = StyleSheet.create({
   battleTitle: { fontSize: 13, fontWeight: '800', color: Colors.textPrimary },
   battleContrib: { fontSize: 12, color: Colors.accentText, fontWeight: '700', marginTop: 1, fontVariant: ['tabular-nums'] },
 
-  routeShareToggle: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    padding: 11, borderRadius: BorderRadius.md,
-    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
-  },
-  routeShareToggleTitle: { fontSize: 12, fontWeight: '800', color: Colors.textPrimary },
-  routeShareToggleHint: { marginTop: 2, fontSize: 9, lineHeight: 13, color: Colors.textSecondary },
   shareBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     minHeight: 48, borderRadius: BorderRadius.md, backgroundColor: DarkColors.background,

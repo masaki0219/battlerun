@@ -37,6 +37,7 @@ const profileSource = fs.readFileSync(path.join(projectRoot, 'app/(tabs)/profile
 const reactionNotificationsSource = fs.readFileSync(path.join(projectRoot, 'functions/src/notifications.ts'), 'utf8');
 const teamRankingSource = fs.readFileSync(path.join(projectRoot, 'hooks/useTeamRanking.ts'), 'utf8');
 const revenuecatSource = fs.readFileSync(path.join(projectRoot, 'functions/src/revenuecatWebhook.ts'), 'utf8');
+const weeklyGoalModalSource = fs.readFileSync(path.join(projectRoot, 'components/run/WeeklyGoalSettingsModal.tsx'), 'utf8');
 
 assert.match(authSource, /removeCurrentPushTokenForSignOut\(currentUser\.uid\)/, 'ログアウト前にこの端末のPush Tokenを削除する');
 assert.match(authSource, /clearDeviceNotificationsForSignOut\(\)/, 'ログアウト時に端末通知を解除する');
@@ -60,5 +61,8 @@ assert.match(reactionNotificationsSource, /reactionNotificationGuards/, 'リア�
 assert.match(teamRankingSource, /where\('categoryId', '==', categoryId\)/, 'チーム内ランキングで他チームの参加者まで購読しない');
 assert.match(revenuecatSource, /timingSafeEqual/, 'Webhook認証値は定数時間比較する');
 assert.match(revenuecatSource, /maxInstances: 5/, '未認証HTTPエンドポイントのスケールを個別に抑える');
+assert.match(weeklyGoalModalSource, /useSafeAreaInsets\(\)/, '週間目標Modalは親で確定済みのsafe areaを初回描画から使う');
+assert.match(weeklyGoalModalSource, /paddingBottom: Math\.max\(insets\.bottom, Spacing\.md\)/, '週間目標シートの下端余白を明示する');
+assert.doesNotMatch(weeklyGoalModalSource, /<SafeAreaView/, 'Modal内の初回safe area再計測によるシート位置ずれを避ける');
 
 console.log('release hardening tests passed');

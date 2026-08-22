@@ -12,7 +12,6 @@ import {
   subscribePendingActivityDiscards,
   useRecordStore,
 } from '../../stores/recordStore';
-import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useLocation } from '../../hooks/useLocation';
 import '../../lib/locationTask';
 import { useStepCounter } from '../../hooks/useStepCounter';
@@ -20,8 +19,6 @@ import { useRunPresence } from '../../hooks/useRunPresence';
 import { useBattleStore } from '../../stores/battleStore';
 import { Colors, Shadow } from '../../design_tokens';
 import { useTranslation } from '../../lib/i18n';
-
-const KEEP_AWAKE_TAG = 'zelio-recording';
 
 const PRIMARY = Colors.primary;
 const INK3    = Colors.textTertiary;
@@ -244,16 +241,6 @@ export default function TabLayout() {
       subscription.remove();
     };
   }, [user?.id]);
-
-  // 記録中は自動ロックを抑止する。
-  // ※ これはバックグラウンド計測の代わりではない。「常に許可」があれば画面が消えても
-  //    startLocationUpdatesAsync が継続する。ここで守るのは「使用中のみ許可」等で
-  //    フォアグラウンド監視にフォールバックしている場合に、自動ロックで計測が途切れることだけ。
-  useEffect(() => {
-    if (!isRecording) return;
-    void activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {});
-    return () => { void deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {}); };
-  }, [isRecording]);
 
   // 手動停止中だけ追跡を止める。自動停止中は再開速度を検知するためGPS更新を継続する。
   useLocation({ enabled: isRecording && (!isPaused || pauseKind === 'auto') });

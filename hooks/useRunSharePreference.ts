@@ -1,24 +1,25 @@
 import { useCallback, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  DEFAULT_INCLUDE_ROUTE_IN_SHARE,
+  DEFAULT_RUN_SHARE_STYLE,
   parseRunSharePreference,
   runSharePreferenceKey,
   serializeRunSharePreference,
+  type RunShareStyle,
 } from '../utils/runSharePreference';
 
 /** 記録直後と活動詳細で共有する、ユーザー別・端末内の共有形式設定。 */
 export function useRunSharePreference(userId?: string): {
-  includeRouteInShare: boolean;
+  shareStyle: RunShareStyle;
   preferenceLoaded: boolean;
-  setIncludeRouteInShare: (next: boolean | ((current: boolean) => boolean)) => void;
+  setShareStyle: (next: RunShareStyle) => void;
 } {
-  const [includeRouteInShare, setValue] = useState(DEFAULT_INCLUDE_ROUTE_IN_SHARE);
+  const [shareStyle, setValue] = useState<RunShareStyle>(DEFAULT_RUN_SHARE_STYLE);
   const [preferenceLoaded, setPreferenceLoaded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    setValue(DEFAULT_INCLUDE_ROUTE_IN_SHARE);
+    setValue(DEFAULT_RUN_SHARE_STYLE);
     setPreferenceLoaded(false);
     if (!userId) {
       setPreferenceLoaded(true);
@@ -36,18 +37,15 @@ export function useRunSharePreference(userId?: string): {
     return () => { cancelled = true; };
   }, [userId]);
 
-  const setIncludeRouteInShare = useCallback((next: boolean | ((current: boolean) => boolean)) => {
-    setValue((current) => {
-      const resolved = typeof next === 'function' ? next(current) : next;
-      if (userId) {
-        void AsyncStorage.setItem(
-          runSharePreferenceKey(userId),
-          serializeRunSharePreference(resolved),
-        ).catch((error) => console.warn('[RunSharePreference] save failed:', error));
-      }
-      return resolved;
-    });
+  const setShareStyle = useCallback((next: RunShareStyle) => {
+    setValue(next);
+    if (userId) {
+      void AsyncStorage.setItem(
+        runSharePreferenceKey(userId),
+        serializeRunSharePreference(next),
+      ).catch((error) => console.warn('[RunSharePreference] save failed:', error));
+    }
   }, [userId]);
 
-  return { includeRouteInShare, preferenceLoaded, setIncludeRouteInShare };
+  return { shareStyle, preferenceLoaded, setShareStyle };
 }

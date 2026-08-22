@@ -132,6 +132,8 @@ export default function RecordScreen() {
     startRecording, pauseRecording, resumeRecording, stopRecording, reset, setAutoPauseEnabled,
   } = useRecordStore();
   const elapsed = useElapsedTime();
+  const [isScreenFocused, setIsScreenFocused] = useState(true);
+  const [isAppActive, setIsAppActive] = useState(AppState.currentState === 'active');
 
   // 画面マウント時にバトルデータをロード（battle タブ未訪問の場合に備えて）
   useEffect(() => {
@@ -164,17 +166,31 @@ export default function RecordScreen() {
 
   useFocusEffect(useCallback(() => {
     let cancelled = false;
+    setIsScreenFocused(true);
     if (!user?.id) {
       setSelectedDeclarationBattleId(null);
-      return () => { cancelled = true; };
+      return () => {
+        cancelled = true;
+        setIsScreenFocused(false);
+      };
     }
     void AsyncStorage.getItem(selectedBattleStorageKey(user.id))
       .then((battleId) => {
         if (!cancelled) setSelectedDeclarationBattleId(battleId);
       })
       .catch((error) => console.warn('[RecordScreen] selected battle restore failed:', error));
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      setIsScreenFocused(false);
+    };
   }, [user?.id]));
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      setIsAppActive(state === 'active');
+    });
+    return () => subscription.remove();
+  }, []);
 
   useEffect(() => {
     if (!declarationBattle || !declarationCategoryId || !user) return;
@@ -347,9 +363,13 @@ export default function RecordScreen() {
   }, [distanceKm, isPaused, isRecording, measurementType]);
 
   // 記録開始前から本番と同じBestForNavigationでウォームアップする。
+  // 高精度GPSを不要に動かさないよう、ランタブ表示中かつアプリ前面時だけ起動する。
   // distanceIntervalは更新通知条件であり、記録中の3mジッター除去とは別の処理。
   useEffect(() => {
-    if (isRecording || selectedMode !== 'gps') { setGpsReadiness(null); return; }
+    if (isRecording || selectedMode !== 'gps' || !isScreenFocused || !isAppActive) {
+      setGpsReadiness(null);
+      return;
+    }
     let cancelled = false;
     let expiryTimer: ReturnType<typeof setInterval> | null = null;
     let localSubscription: Location.LocationSubscription | null = null;
@@ -457,7 +477,7 @@ export default function RecordScreen() {
       cancelled = true;
       stopWarmup();
     };
-  }, [isRecording, selectedMode, gpsWarmupRestartKey]);
+  }, [isRecording, selectedMode, gpsWarmupRestartKey, isScreenFocused, isAppActive]);
 
   // 画面OFF時の記録可否を開始前に見える状態にする。
   // 端末設定から戻った場合も再確認し、表示だけが古いまま残らないようにする。

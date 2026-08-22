@@ -1,9 +1,8 @@
-import { LEGAL_URLS } from '../lib/legal';
 import { formatRunDistanceKm } from './displayStats';
 import type { AppLanguage } from '../lib/language';
 import { translateIn } from '../lib/translate';
 
-export const ZELIO_DISCOVERY_URL = LEGAL_URLS.support;
+export const ZELIO_DISCOVERY_URL = 'https://apps.apple.com/jp/app/zelio/id6792252669';
 
 export interface RunShareMessageInput {
   distanceKm: number;

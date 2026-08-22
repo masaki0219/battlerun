@@ -7,6 +7,7 @@ import {
 import type { RouteVisualization, RoutePaceBand } from '../../utils/routeSplits';
 import { useTranslation } from '../../lib/i18n';
 import { formatRunDistanceKm } from '../../utils/displayStats';
+import type { RunShareStyle } from '../../utils/runSharePreference';
 
 const ROUTE_PACE_COLOR: Record<RoutePaceBand, string> = {
   fast: RoutePaceColors.fast,
@@ -29,6 +30,7 @@ interface RunShareCardProps {
   impactLabel?: string | null;
   mapRegion?: RunShareMapRegion | null;
   routeVisualization?: RouteVisualization | null;
+  shareStyle: RunShareStyle;
   showWatermark: boolean;
 }
 
@@ -40,10 +42,12 @@ export const RunShareCard = forwardRef<View, RunShareCardProps>(function RunShar
   impactLabel,
   mapRegion,
   routeVisualization,
+  shareStyle,
   showWatermark,
 }, ref) {
   const { t } = useTranslation();
-  const showMap = !!mapRegion && !!routeVisualization;
+  const showRoute = shareStyle !== 'stats' && !!mapRegion && !!routeVisualization;
+  const showRunDetails = shareStyle !== 'stats';
   const safeDistance = Number.isFinite(distanceKm) ? Math.max(0, distanceKm) : 0;
   return (
     <View
@@ -52,40 +56,43 @@ export const RunShareCard = forwardRef<View, RunShareCardProps>(function RunShar
       style={s.card}
       accessibilityLabel={t('summary.previewA11y', { distance: formatRunDistanceKm(safeDistance), duration: durationLabel })}
     >
-      {showMap ? (
-        <MapView
-          style={s.map}
-          provider={PROVIDER_DEFAULT}
-          initialRegion={mapRegion}
-          scrollEnabled={false}
-          zoomEnabled={false}
-          rotateEnabled={false}
-          pitchEnabled={false}
-          pointerEvents="none"
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-        >
-          {routeVisualization.segments.map((segment) => (
-            <Polyline
-              key={`share-${segment.id}`}
-              coordinates={segment.coordinates}
-              strokeColor={ROUTE_PACE_COLOR[segment.band]}
-              strokeWidth={4}
-            />
-          ))}
-          {routeVisualization.kmMarkers.map((marker) => (
-            <Marker
-              key={`share-km-${marker.km}`}
-              coordinate={marker}
-              anchor={{ x: 0.5, y: 0.5 }}
-              tracksViewChanges={false}
-            >
-              <View style={s.kmMarker}>
-                <Text allowFontScaling={false} style={s.kmMarkerText}>{marker.km}</Text>
-              </View>
-            </Marker>
-          ))}
-        </MapView>
+      {showRoute ? (
+        <View style={s.routeHero}>
+          <MapView
+            style={s.map}
+            provider={PROVIDER_DEFAULT}
+            mapType={shareStyle === 'route' ? 'none' : 'standard'}
+            initialRegion={mapRegion}
+            scrollEnabled={false}
+            zoomEnabled={false}
+            rotateEnabled={false}
+            pitchEnabled={false}
+            pointerEvents="none"
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
+            {routeVisualization.segments.map((segment) => (
+              <Polyline
+                key={`share-${segment.id}`}
+                coordinates={segment.coordinates}
+                strokeColor={ROUTE_PACE_COLOR[segment.band]}
+                strokeWidth={4}
+              />
+            ))}
+            {routeVisualization.kmMarkers.map((marker) => (
+              <Marker
+                key={`share-km-${marker.km}`}
+                coordinate={marker}
+                anchor={{ x: 0.5, y: 0.5 }}
+                tracksViewChanges={false}
+              >
+                <View style={s.kmMarker}>
+                  <Text allowFontScaling={false} style={s.kmMarkerText}>{marker.km}</Text>
+                </View>
+              </Marker>
+            ))}
+          </MapView>
+        </View>
       ) : (
         <View style={s.noMapHero}>
           <View style={s.noMapRingOuter} />
@@ -115,7 +122,7 @@ export const RunShareCard = forwardRef<View, RunShareCardProps>(function RunShar
             <Text allowFontScaling={false} style={s.statLabel}>{t('locale.time')}</Text>
             <Text allowFontScaling={false} style={s.statValue}>{durationLabel}</Text>
           </View>
-          {!!paceLabel && (
+          {showRunDetails && !!paceLabel && (
             <>
               <View style={s.statDivider} />
               <View style={s.statCell}>
@@ -126,7 +133,7 @@ export const RunShareCard = forwardRef<View, RunShareCardProps>(function RunShar
           )}
         </View>
 
-        {!!impactLabel && (
+        {showRunDetails && !!impactLabel && (
           <View style={s.impactPill}>
             <Text allowFontScaling={false} numberOfLines={2} style={s.impactText}>{impactLabel}</Text>
           </View>
@@ -157,7 +164,8 @@ const s = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
   },
-  map: { height: 184, width: '100%' },
+  routeHero: { height: 184, width: '100%', backgroundColor: DarkColors.surfaceDeep },
+  map: { ...StyleSheet.absoluteFillObject },
   noMapHero: {
     height: 116,
     overflow: 'hidden',
